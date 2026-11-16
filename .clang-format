@@ -1,0 +1,59 @@
+BasedOnStyle: LLVM
+Standard: Latest
+ColumnLimit: 80
+IndentWidth: 2
+ContinuationIndentWidth: 2
+ObjCBlockIndentWidth: 2
+UseTab: Never
+PointerAlignment: Right
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  AfterObjCDeclaration: false
+  BeforeElse: true
+  BeforeWhile: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+
+IndentCaseLabels: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+InsertBraces: true
+SeparateDefinitionBlocks: Always
+MaxEmptyLinesToKeep: 1
+KeepEmptyLines:
+  AtStartOfBlock: false
+  AtStartOfFile: false
+
+AlignAfterOpenBracket: Align
+AlignEscapedNewlines: Left
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+SpaceBeforeParens: ControlStatementsExceptControlMacros
+ForEachMacros:
+  - vec_each
+  - CIVUE_DIV
+  - CIVUE_CLIPPED
+  - CIVUE_OVERLAY
+  - CIVUE_SCROLLING
+  - div
+  - clipped
+  - overlay
+  - scrolling
+
+IncludeBlocks: Preserve
+SortIncludes:
+  Enabled: false
+InsertNewlineAtEOF: true
