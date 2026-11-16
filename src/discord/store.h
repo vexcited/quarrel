@@ -1,0 +1,860 @@
+#ifndef QUARREL_DISCORD_STORE_H
+#define QUARREL_DISCORD_STORE_H
+
+#include "discord/permissions.h"
+#include "discord/util.h"
+#include "json.h"
+
+/* ========================================================================== */
+/* the model the ui reads. everything lives on the main thread, without       */
+/* locks, and only changes while an event is applied or a session call runs,  */
+/* never during a frame.                                                      */
+/*                                                                            */
+/* pointers. a User, Guild, Channel, Role, Member or Message stays where it   */
+/* is until it is removed, so a pointer is good for the frame that looked it  */
+/* up. keep ids across frames, not pointers, and look them up again: a        */
+/* lookup is one probe of a map. arrays the store answers with, like          */
+/* store_guild_channels, are caches good until the next change.               */
+/*                                                                            */
+/* strings are utf-8 from malloc, owned by the store, and null when discord   */
+/* sent none, a user without an avatar for one. the store_*_name helpers      */
+/* never answer null.                                                         */
+/*                                                                            */
+/* versions. every change bumps the counters of what it touched, so the ui    */
+/* memoizes on them:                                                          */
+/*   store->version           anything at all                                 */
+/*   store->users_version     a user's names, avatar or presence              */
+/*   store->guilds_version    the guilds there are, their order and folders   */
+/*   store->private_version   the dms there are and their order               */
+/*   guild->version           anything in the guild, its channels included    */
+/*   guild->members_version   its members and roles, what names and colors    */
+/*                            of authors are made of                          */
+/*   channel->version         the channel, its messages, read state, typing   */
+/*   list->version            a member list                                   */
+/* ========================================================================== */
+
+typedef struct Store Store;
+typedef struct Guild Guild;
+typedef struct Channel Channel;
+typedef struct Message Message;
+
+/* ========================================================================== */
+/* users and presences.                                                       */
+/* ========================================================================== */
+
+typedef enum : uint8_t {
+  STATUS_OFFLINE,
+  STATUS_ONLINE,
+  STATUS_IDLE,
+  STATUS_DND,
+} UserStatus;
+
+typedef enum : uint8_t {
+  ACTIVITY_PLAYING = 0,
+  ACTIVITY_STREAMING = 1,
+  ACTIVITY_LISTENING = 2,
+  ACTIVITY_WATCHING = 3,
+  ACTIVITY_CUSTOM = 4,
+  ACTIVITY_COMPETING = 5,
+} ActivityType;
+
+// something a user is doing, as their presence tells it.
+typedef struct {
+  ActivityType type;
+  char *name, *details, *state;
+  Snowflake application_id;
+  // `assets.large_image` as discord sends it, see cdn_activity_image.
+  char *large_image;
+  // which field stands for the activity in a status line: the name for
+  // 0, the state for 1, the details for 2.
+  uint8_t display;
+  // a song played through spotify, its state holding the artists.
+  bool spotify;
+  // unix milliseconds it started at, 0 when the activity does not say,
+  // and when the presence first carried it.
+  int64_t started_ms, created_ms;
+} Activity;
+
+// what stands for the activity in one line, like under a friend's name:
+// a field of the activity, or `out` when the text had to be made. null
+// when the activity has nothing to show.
+const char *activity_status_text(const Activity *a, char *out, size_t cap);
+
+// where a user is connected to voice.
+typedef struct {
+  Snowflake user_id;
+  // 0 for a call in a private channel.
+  Snowflake guild_id, channel_id;
+  // sharing their screen.
+  bool streaming;
+} VoiceState;
+
+typedef struct {
+  Snowflake id;
+  char *username;
+  // the display name the user chose, null when none.
+  char *global_name;
+  // null or "0" for a unique username, four digits for bots and old accounts.
+  char *discriminator;
+  char *avatar, *banner;
+  uint64_t public_flags;
+  bool bot, system;
+
+  // offline until a presence says otherwise.
+  UserStatus status;
+  bool on_desktop, on_mobile, on_web;
+  // what is shown under the name: the custom status, or "Playing a game".
+  char *activity;
+  // whether `activity` is the status the user wrote themselves.
+  bool custom_status;
+  // what the user is doing, their custom status left out.
+  Activity *activities;
+  size_t nactivities;
+  // the tag of the guild the user wears, null when none, with the guild
+  // and the hash of its badge.
+  char *tag, *tag_badge;
+  Snowflake tag_guild_id;
+} User;
+
+typedef enum : uint8_t {
+  RELATIONSHIP_NONE = 0,
+  RELATIONSHIP_FRIEND = 1,
+  RELATIONSHIP_BLOCKED = 2,
+  RELATIONSHIP_INCOMING = 3,
+  RELATIONSHIP_OUTGOING = 4,
+  RELATIONSHIP_IMPLICIT = 5,
+} RelationshipType;
+
+typedef struct {
+  Snowflake user_id;
+  RelationshipType type;
+  // the name the current user gave this friend, null when none.
+  char *nickname;
+} Relationship;
+
+/* ========================================================================== */
+/* guilds.                                                                    */
+/* ========================================================================== */
+
+typedef struct {
+  Snowflake id;
+  char *name;
+  // 0xrrggbb, 0 for no color.
+  uint32_t color;
+  int32_t position;
+  Permissions permissions;
+  // shown apart in the member list.
+  bool hoist, mentionable, managed;
+  char *icon, *unicode_emoji;
+} Role;
+
+typedef struct {
+  Snowflake user_id;
+  char *nick;
+  // the avatar set for this guild, null for the user's own.
+  char *avatar;
+  Snowflake *roles;
+  size_t nroles;
+  // unix milliseconds, 0 when unknown.
+  int64_t joined_at;
+  // unix milliseconds the member is timed out until, 0 when not.
+  int64_t timeout_until;
+  bool pending;
+
+  // the store's own.
+  uint32_t color;
+  uint64_t color_stamp;
+} Member;
+
+typedef struct {
+  Snowflake id;
+  char *name;
+  bool animated, available;
+} Emoji;
+
+typedef enum : uint8_t {
+  NOTIFY_ALL_MESSAGES = 0,
+  NOTIFY_ONLY_MENTIONS = 1,
+  NOTIFY_NOTHING = 2,
+  // a channel following its guild.
+  NOTIFY_INHERIT = 3,
+} NotifyLevel;
+
+typedef struct {
+  bool unread;
+  // the channel, its category or its guild is muted: `unread` should not be
+  // shown, `mentions` still are.
+  bool muted;
+  uint32_t mentions;
+} Unread;
+
+typedef enum : uint8_t {
+  MEMBER_ROW_UNLOADED,
+  MEMBER_ROW_GROUP,
+  MEMBER_ROW_MEMBER,
+} MemberRowKind;
+
+typedef enum : uint8_t {
+  MEMBER_GROUP_ROLE,
+  MEMBER_GROUP_ONLINE,
+  MEMBER_GROUP_OFFLINE,
+} MemberGroupKind;
+
+typedef struct {
+  MemberRowKind kind;
+  // for a group row.
+  MemberGroupKind group;
+  // the user of a member row, the role of a group row of MEMBER_GROUP_ROLE.
+  Snowflake id;
+  // the members of a group row.
+  uint32_t count;
+} MemberRow;
+
+// the member list of the channels sharing the same viewers, as the gateway
+// keeps it in sync for the ranges the session subscribed to.
+typedef struct {
+  // "everyone" or a hash of the overwrites.
+  char *id;
+  Snowflake guild_id;
+  uint32_t member_count, online_count;
+  // every row of the list, the ones outside the subscribed ranges being
+  // MEMBER_ROW_UNLOADED.
+  MemberRow *rows;
+  size_t nrows;
+  uint64_t version;
+
+  // the store's own.
+  size_t rows_cap;
+  uint64_t touched;
+} MemberList;
+
+typedef enum : uint8_t {
+  CHANNEL_ROW_CATEGORY,
+  CHANNEL_ROW_CHANNEL,
+  CHANNEL_ROW_THREAD,
+} ChannelRowKind;
+
+typedef struct {
+  ChannelRowKind kind;
+  Channel *channel;
+} ChannelRow;
+
+struct Guild {
+  Snowflake id;
+  char *name, *icon, *banner, *splash, *description;
+  Snowflake owner_id, system_channel_id, rules_channel_id;
+  uint32_t member_count;
+  uint8_t premium_tier;
+  uint32_t premium_subscription_count;
+  // an outage: nothing but the id is known.
+  bool unavailable;
+  bool large;
+  // unix milliseconds the current user joined at.
+  int64_t joined_at;
+
+  // highest first.
+  Role **roles;
+  size_t nroles;
+  Emoji *emojis;
+  size_t nemojis;
+  // every channel of the guild and the threads known in it, in no order. see
+  // store_guild_channels for the list to show.
+  Channel **channels;
+  size_t nchannels;
+
+  // the current user's notification settings for the guild.
+  bool muted;
+  // unix milliseconds the mute ends at, 0 for never.
+  int64_t mute_until;
+  NotifyLevel notifications;
+  bool suppress_everyone, suppress_roles;
+
+  uint64_t version, members_version;
+
+  // the store's own.
+  CILO_MAP(Snowflake, Member *) members;
+  MemberList **lists;
+  size_t nlists;
+  ChannelRow *rows;
+  size_t nrows;
+  // bumped by what the channel list and permissions are made of.
+  uint64_t rows_stamp, layout_version;
+  Unread unread;
+  uint64_t unread_stamp;
+};
+
+// a folder of the guild bar, or one guild on its own when `id` is 0 and it
+// holds a single guild.
+typedef struct {
+  Snowflake id;
+  char *name;
+  // 0xrrggbb when `has_color`.
+  uint32_t color;
+  bool has_color;
+  Guild **guilds;
+  size_t nguilds;
+} GuildFolder;
+
+/* ========================================================================== */
+/* channels.                                                                  */
+/* ========================================================================== */
+
+// unknown types are kept and shown as text channels when they can be.
+typedef enum : uint8_t {
+  CHANNEL_GUILD_TEXT = 0,
+  CHANNEL_DM = 1,
+  CHANNEL_GUILD_VOICE = 2,
+  CHANNEL_GROUP_DM = 3,
+  CHANNEL_GUILD_CATEGORY = 4,
+  CHANNEL_GUILD_ANNOUNCEMENT = 5,
+  CHANNEL_ANNOUNCEMENT_THREAD = 10,
+  CHANNEL_PUBLIC_THREAD = 11,
+  CHANNEL_PRIVATE_THREAD = 12,
+  CHANNEL_GUILD_STAGE = 13,
+  CHANNEL_GUILD_DIRECTORY = 14,
+  CHANNEL_GUILD_FORUM = 15,
+  CHANNEL_GUILD_MEDIA = 16,
+} ChannelType;
+
+typedef struct {
+  Snowflake user_id;
+  // unix seconds the indicator goes away at.
+  double until;
+} Typing;
+
+typedef struct {
+  // false when discord never sent a read state for the channel.
+  bool known;
+  Snowflake last_acked_id;
+  uint32_t mention_count;
+  uint32_t flags;
+} ReadState;
+
+struct Channel {
+  Snowflake id;
+  // 0 for dms and group dms.
+  Snowflake guild_id;
+  // the category of a channel, the channel of a thread, 0 for none.
+  Snowflake parent_id;
+  // a ChannelType, or a number this build does not know.
+  uint8_t type;
+  char *name, *topic;
+  int32_t position;
+  uint32_t flags;
+  bool nsfw;
+  uint32_t rate_limit_per_user;
+  Overwrite *overwrites;
+  size_t noverwrites;
+  Snowflake last_message_id;
+
+  // dms and group dms: the other users, the current one left out.
+  Snowflake *recipients;
+  size_t nrecipients;
+  // the owner of a group dm, the creator of a thread.
+  Snowflake owner_id;
+  // a group dm's icon.
+  char *icon;
+
+  // threads.
+  bool thread_archived, thread_locked;
+  // the current user is a member of the thread.
+  bool thread_joined;
+  uint32_t message_count, member_count;
+
+  // the current user's notification settings for the channel.
+  bool muted;
+  int64_t mute_until;
+  NotifyLevel notifications;
+  // a category the user folded.
+  bool collapsed;
+
+  // oldest first. pending and failed messages sit at the end, where they
+  // were typed.
+  Message **messages;
+  size_t nmessages;
+  // the latest messages were fetched once, see session_select_channel.
+  bool history_loaded;
+  // messages older than the first one loaded exist.
+  bool has_older;
+  // a fetch of history is running.
+  bool loading;
+
+  Typing *typing;
+  size_t ntyping;
+
+  uint64_t version;
+
+  // the store's own.
+  size_t messages_cap;
+  Permissions perms;
+  uint64_t perms_stamp;
+};
+
+/* ========================================================================== */
+/* messages.                                                                  */
+/* ========================================================================== */
+
+// the types drawn as a line of their own rather than as what someone said.
+// see message_is_system.
+typedef enum : uint8_t {
+  MESSAGE_DEFAULT = 0,
+  MESSAGE_RECIPIENT_ADD = 1,
+  MESSAGE_RECIPIENT_REMOVE = 2,
+  MESSAGE_CALL = 3,
+  MESSAGE_CHANNEL_NAME_CHANGE = 4,
+  MESSAGE_CHANNEL_ICON_CHANGE = 5,
+  MESSAGE_CHANNEL_PINNED_MESSAGE = 6,
+  MESSAGE_USER_JOIN = 7,
+  MESSAGE_GUILD_BOOST = 8,
+  MESSAGE_GUILD_BOOST_TIER_1 = 9,
+  MESSAGE_GUILD_BOOST_TIER_2 = 10,
+  MESSAGE_GUILD_BOOST_TIER_3 = 11,
+  MESSAGE_CHANNEL_FOLLOW_ADD = 12,
+  MESSAGE_THREAD_CREATED = 18,
+  MESSAGE_REPLY = 19,
+  MESSAGE_CHAT_INPUT_COMMAND = 20,
+  MESSAGE_THREAD_STARTER_MESSAGE = 21,
+  MESSAGE_CONTEXT_MENU_COMMAND = 23,
+  MESSAGE_AUTO_MODERATION_ACTION = 24,
+} MessageType;
+
+typedef enum : uint8_t {
+  MESSAGE_SENT,
+  // typed here and on its way, matched to discord's by its nonce.
+  MESSAGE_PENDING,
+  // discord refused it or never answered. `error` may say why.
+  MESSAGE_FAILED,
+} MessageState;
+
+constexpr uint32_t MESSAGE_FLAG_SUPPRESS_EMBEDS = 1u << 2;
+constexpr uint32_t MESSAGE_FLAG_EPHEMERAL = 1u << 6;
+constexpr uint32_t MESSAGE_FLAG_LOADING = 1u << 7;
+constexpr uint32_t MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS = 1u << 12;
+constexpr uint32_t MESSAGE_FLAG_VOICE_MESSAGE = 1u << 13;
+
+typedef struct {
+  Snowflake id;
+  char *filename, *description, *content_type;
+  // `url` is the file, `proxy_url` what cdn_media resizes.
+  char *url, *proxy_url;
+  uint64_t size;
+  // 0 for what is no image or video.
+  uint32_t width, height;
+  // the file is named SPOILER_ or flagged as one.
+  bool spoiler;
+} Attachment;
+
+typedef struct {
+  char *url, *proxy_url;
+  uint32_t width, height;
+} EmbedMedia;
+
+typedef struct {
+  char *name, *value;
+  // drawn next to its neighbours rather than under them.
+  bool is_inline;
+} EmbedField;
+
+typedef struct {
+  // "rich", "image", "video", "gifv", "article", "link" and so on.
+  char *type;
+  char *title, *description, *url;
+  // 0xrrggbb when `has_color`.
+  uint32_t color;
+  bool has_color;
+  // unix milliseconds, 0 for none.
+  int64_t timestamp;
+  char *author_name, *author_url, *author_icon;
+  char *footer_text, *footer_icon;
+  char *provider_name;
+  EmbedMedia image, thumbnail, video;
+  EmbedField *fields;
+  size_t nfields;
+} Embed;
+
+typedef struct {
+  // 0 for a unicode emoji, whose utf-8 is `name`.
+  Snowflake emoji_id;
+  char *name;
+  bool animated;
+  uint32_t count;
+  // the current user reacted with it.
+  bool me;
+} Reaction;
+
+typedef struct {
+  Snowflake id;
+  char *name;
+  // a StickerFormat of cdn.h.
+  uint8_t format;
+} Sticker;
+
+struct Message {
+  Snowflake id, channel_id;
+  // look the author up with store_user, or use store_author.
+  Snowflake author_id;
+  // not 0 for a webhook's message, whose author is no real user.
+  Snowflake webhook_id;
+  // a MessageType, or a number this build does not know.
+  uint8_t type;
+  uint32_t flags;
+  MessageState state;
+  // never null, "" when empty.
+  char *content;
+  // unix milliseconds. `edited_at` is 0 when never edited.
+  int64_t timestamp, edited_at;
+  bool pinned, tts, mention_everyone;
+  // the current user is mentioned, by name, by role or by @everyone.
+  bool mentions_me;
+
+  Snowflake *mentions;
+  size_t nmentions;
+  Snowflake *mention_roles;
+  size_t nmention_roles;
+
+  Attachment *attachments;
+  size_t nattachments;
+  Embed *embeds;
+  size_t nembeds;
+  Reaction *reactions;
+  size_t nreactions;
+  Sticker *stickers;
+  size_t nstickers;
+
+  // what the message answers or forwards, 0 for none.
+  Snowflake reference_id, reference_channel_id;
+  // the reference is a forward, `referenced` holding what was forwarded.
+  bool forwarded;
+  // a copy of the message answered or forwarded as it was when this one was
+  // sent, null when discord sent none or when it was deleted.
+  Message *referenced;
+
+  // the command this message answers, null for none, and who ran it.
+  char *interaction_name;
+  Snowflake interaction_user_id;
+
+  // pending and failed messages: the nonce they were sent with, and why
+  // sending failed.
+  Snowflake nonce;
+  char *error;
+};
+
+static inline bool message_is_system(const Message *m) {
+  return m->type != MESSAGE_DEFAULT && m->type != MESSAGE_REPLY &&
+         m->type != MESSAGE_CHAT_INPUT_COMMAND &&
+         m->type != MESSAGE_CONTEXT_MENU_COMMAND;
+}
+
+/* ========================================================================== */
+/* the store.                                                                 */
+/* ========================================================================== */
+
+typedef struct {
+  Snowflake id;
+  char *name;
+  uint32_t color;
+  bool has_color;
+  Snowflake *guild_ids;
+  size_t nguilds;
+} StoredFolder;
+
+struct Store {
+  // the current user, 0 and null before READY.
+  Snowflake self_id;
+  User *self;
+  // the status the user picked in their settings: what to show for them and
+  // what to tell the gateway.
+  UserStatus self_status;
+  // true once READY was applied.
+  bool ready;
+
+  uint64_t version, users_version, guilds_version, private_version;
+
+  // friends, blocked users and requests, in no order.
+  Relationship *relationships;
+  size_t nrelationships;
+
+  // the users discord thinks the current one is close to, closest first.
+  Snowflake *affinities;
+  size_t naffinities;
+
+  // everyone known to be in a voice channel, in no order.
+  VoiceState *voice_states;
+  size_t nvoice_states;
+
+  // the session id and the url to resume at, as READY gave them.
+  char *session_id, *resume_gateway_url;
+  // the token discord wants used from now on, when READY carried one.
+  char *refreshed_token;
+
+  // the store's own.
+  CILO_MAP(Snowflake, User *) users;
+  CILO_MAP(Snowflake, Guild *) guilds;
+  CILO_MAP(Snowflake, Channel *) channels;
+  CILO_MAP(Snowflake, ReadState) read_states;
+  // the guilds in the order READY gave them, new ones first.
+  Snowflake *guild_order;
+  size_t nguild_order;
+  StoredFolder *stored_folders;
+  size_t nstored_folders;
+  bool has_stored_folders;
+  GuildFolder *folders;
+  size_t nfolders;
+  uint64_t folders_stamp;
+  Channel **privates;
+  size_t nprivates;
+  uint64_t privates_stamp;
+  Unread private_unread;
+  uint64_t private_unread_stamp;
+  uint64_t list_clock;
+  // unix seconds standing for now when not 0, for tests.
+  double clock;
+};
+
+Store *store_new(void);
+void store_free(Store *s);
+// forgets everything, as after a logout. versions keep counting.
+void store_reset(Store *s);
+// unix seconds, the system's clock unless `clock` is set.
+double store_now(const Store *s);
+
+/* ========================================================================== */
+/* reading.                                                                   */
+/* ========================================================================== */
+
+// null when unknown.
+User *store_user(const Store *s, Snowflake id);
+Guild *store_guild(const Store *s, Snowflake id);
+Channel *store_channel(const Store *s, Snowflake id);
+Role *store_role(const Guild *g, Snowflake id);
+Member *store_member(const Guild *g, Snowflake user_id);
+Emoji *store_emoji(const Guild *g, Snowflake id);
+Message *store_message(const Channel *c, Snowflake id);
+const Relationship *store_relationship(const Store *s, Snowflake user_id);
+// null when the user is in no voice channel the store heard of.
+const VoiceState *store_voice_state(const Store *s, Snowflake user_id);
+
+// the name to show for a user: their display name, else their username.
+// "Unknown User" for null.
+const char *store_user_name(const User *u);
+// the same in a guild, where a nickname comes first. `guild_id` may be 0.
+const char *store_display_name(const Store *s, Snowflake guild_id,
+                               Snowflake user_id);
+// 0xrrggbb of the member's highest role that has a color, 0 for none.
+uint32_t store_member_color(const Store *s, Snowflake guild_id,
+                            Snowflake user_id);
+
+// who wrote a message as it should be shown.
+typedef struct {
+  // null for an author the store never saw.
+  const User *user;
+  // null outside a guild or for a member not loaded yet.
+  const Member *member;
+  // never null.
+  const char *name;
+  // 0 for none.
+  uint32_t color;
+} Author;
+
+Author store_author(const Store *s, const Message *m);
+
+// a channel's name as shown: its own, the other user's for a dm, the
+// recipients' for a group dm without one. written to `out`, never empty.
+const char *store_channel_name(const Store *s, const Channel *c, char *out,
+                               size_t cap);
+
+static inline bool channel_is_thread(const Channel *c) {
+  return c->type == CHANNEL_ANNOUNCEMENT_THREAD ||
+         c->type == CHANNEL_PUBLIC_THREAD || c->type == CHANNEL_PRIVATE_THREAD;
+}
+
+static inline bool channel_is_voice(const Channel *c) {
+  return c->type == CHANNEL_GUILD_VOICE || c->type == CHANNEL_GUILD_STAGE;
+}
+
+static inline bool channel_is_private(const Channel *c) {
+  return c->type == CHANNEL_DM || c->type == CHANNEL_GROUP_DM;
+}
+
+// a channel that holds messages to read.
+static inline bool channel_has_text(const Channel *c) {
+  return c->type != CHANNEL_GUILD_CATEGORY &&
+         c->type != CHANNEL_GUILD_DIRECTORY && c->type != CHANNEL_GUILD_FORUM &&
+         c->type != CHANNEL_GUILD_MEDIA;
+}
+
+// the guild bar: folders and lone guilds in the user's order, guilds they
+// never placed first. the order READY gave when discord sent no folders.
+//
+//   size_t n;
+//   const GuildFolder *folders = store_guild_folders(store, &n);
+//   for (size_t i = 0; i < n; i++)
+//     for (size_t j = 0; j < folders[i].nguilds; j++) ...
+const GuildFolder *store_guild_folders(Store *s, size_t *count);
+
+// a guild's channels as discord lists them and as the current user may view
+// them: the channels without a category, then each category followed by its
+// channels, text before voice, by position. the threads the user joined
+// follow their channel. categories left empty are dropped unless the user
+// manages channels.
+//
+//   size_t n;
+//   const ChannelRow *rows = store_guild_channels(store, guild, &n);
+const ChannelRow *store_guild_channels(Store *s, Guild *g, size_t *count);
+
+// dms and group dms, the latest message first.
+Channel *const *store_private_channels(Store *s, size_t *count);
+
+// what the current user may do in a channel. PERM_DM for dms.
+Permissions store_permissions(Store *s, const Channel *c);
+
+static inline bool store_can(Store *s, const Channel *c, Permissions p) {
+  return (store_permissions(s, c) & p) == p;
+}
+
+// read states. a channel is unread when its last message is newer than the
+// last one acknowledged.
+Unread store_channel_unread(Store *s, const Channel *c);
+// every channel of the guild the user may view, muted ones left out of
+// `unread` but not of `mentions`.
+Unread store_guild_unread(Store *s, Guild *g);
+// every dm and group dm.
+Unread store_private_unread(Store *s);
+// the last message acknowledged in the channel, 0 when unknown. the unread
+// divider goes after it.
+Snowflake store_last_acked(const Store *s, Snowflake channel_id);
+
+// the users typing in a channel but the current one, into `out`. returns how
+// many there are, which may be more than `cap`.
+size_t store_typing(const Store *s, const Channel *c, Snowflake *out,
+                    size_t cap);
+
+// the member list of a channel, null until the gateway synced it. see
+// session_select_channel and session_member_list_range.
+//
+//   const MemberList *list = store_member_list(store, channel);
+//   for (size_t i = 0; list && i < list->nrows; i++) {
+//     const MemberRow *row = &list->rows[i];
+//     if (row->kind == MEMBER_ROW_GROUP) ...   a role, online or offline
+//     if (row->kind == MEMBER_ROW_MEMBER) ...  store_user(store, row->id)
+//   }
+const MemberList *store_member_list(Store *s, const Channel *c);
+// the id discord gives the member list of a channel.
+void store_member_list_id(const Store *s, const Channel *c, char *out,
+                          size_t cap);
+
+/* ========================================================================== */
+/* writing. for events.c and session.c, the ui never calls these.             */
+/* ========================================================================== */
+
+// each takes an object as discord sends it, whole or partial, and survives
+// anything missing or mistyped in it. they return null when the object has no
+// usable id.
+User *store_put_user(Store *s, const Json *user);
+void store_put_presence(Store *s, const Json *presence);
+// a guild as READY and GUILD_CREATE send it, its channels, threads, roles,
+// emojis and members included.
+Guild *store_put_guild(Store *s, const Json *guild);
+// GUILD_UPDATE, which carries no channels.
+void store_update_guild(Store *s, const Json *guild);
+void store_remove_guild(Store *s, Snowflake id);
+Role *store_put_role(Store *s, Guild *g, const Json *role);
+void store_remove_role(Store *s, Guild *g, Snowflake id);
+void store_put_emojis(Store *s, Guild *g, const Json *emojis);
+// `user_id` is used when the member carries neither a user nor a user_id.
+Member *store_put_member(Store *s, Guild *g, const Json *member,
+                         Snowflake user_id);
+void store_remove_member(Store *s, Guild *g, Snowflake user_id);
+// `guild_id` is used when the channel does not say.
+Channel *store_put_channel(Store *s, const Json *channel, Snowflake guild_id);
+void store_remove_channel(Store *s, Snowflake id);
+void store_recipient_add(Store *s, Snowflake channel_id, const Json *user);
+void store_recipient_remove(Store *s, Snowflake channel_id, Snowflake user_id);
+// THREAD_LIST_SYNC.
+void store_sync_threads(Store *s, const Json *sync);
+// whether the current user is a member of a thread.
+void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined);
+// a channel's last message as passive updates tell it.
+void store_set_last_message(Store *s, Snowflake channel_id, Snowflake id);
+
+// MESSAGE_CREATE: adds the message, replaces the pending one it answers,
+// moves read states and mention counts.
+Message *store_create_message(Store *s, const Json *message);
+// MESSAGE_UPDATE, which may carry only what changed.
+void store_update_message(Store *s, const Json *message);
+void store_remove_message(Store *s, Snowflake channel_id, Snowflake id);
+
+typedef enum : uint8_t {
+  // the latest messages of the channel.
+  HISTORY_LATEST,
+  // older than the first one loaded.
+  HISTORY_BEFORE,
+  HISTORY_AFTER,
+} HistoryKind;
+
+// the answer of a fetch of `limit` messages, in any order.
+void store_put_history(Store *s, Channel *c, const Json *messages,
+                       HistoryKind kind, uint32_t limit);
+// keeps the `keep` latest messages of a channel no longer shown.
+void store_trim_messages(Store *s, Channel *c, size_t keep);
+
+// a message of the current user shown before discord confirms it.
+Message *store_add_pending(Store *s, Channel *c, const char *content,
+                           Snowflake nonce, Snowflake reply_to);
+void store_fail_pending(Store *s, Snowflake channel_id, Snowflake nonce,
+                        const char *error);
+void store_remove_pending(Store *s, Snowflake channel_id, Snowflake nonce);
+
+void store_reaction_add(Store *s, Snowflake channel_id, Snowflake message_id,
+                        Snowflake user_id, const Json *emoji);
+void store_reaction_remove(Store *s, Snowflake channel_id, Snowflake message_id,
+                           Snowflake user_id, const Json *emoji);
+// every reaction of a message, or only the ones of `emoji` when given.
+void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
+                          const Json *emoji);
+
+void store_put_read_state(Store *s, const Json *read_state);
+// MESSAGE_ACK and the session's own acks. a negative `mention_count` keeps
+// the count as it is.
+void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
+               int64_t mention_count);
+// one entry of user_guild_settings.
+void store_put_guild_settings(Store *s, const Json *settings);
+// user_settings, whole or partial.
+void store_put_user_settings(Store *s, const Json *settings);
+// a voice state of `guild_id`, 0 when the state names its guild or has
+// none. one without a channel means the user left.
+void store_put_voice_state(Store *s, const Json *state, Snowflake guild_id);
+void store_remove_voice_state(Store *s, Snowflake user_id, Snowflake guild_id);
+// the `user_affinities` of the affinities route, replacing the ones known.
+void store_put_affinities(Store *s, const Json *affinities);
+void store_put_relationship(Store *s, const Json *relationship);
+void store_remove_relationship(Store *s, Snowflake user_id);
+
+void store_typing_start(Store *s, Snowflake channel_id, Snowflake user_id);
+// drops the indicators that ran out. returns the unix seconds the next one
+// runs out at, 0 when nobody is typing anywhere.
+double store_typing_expire(Store *s);
+
+// GUILD_MEMBER_LIST_UPDATE.
+void store_member_list_update(Store *s, const Json *update);
+
+// call after changing a channel or a guild by hand.
+void store_touch_channel(Store *s, Channel *c);
+void store_touch_guild(Store *s, Guild *g);
+
+/* ========================================================================== */
+/* events. the path every gateway dispatch takes into the store.              */
+/* ========================================================================== */
+
+// applies one dispatch, `type` being its name like "MESSAGE_CREATE" and
+// `data` its payload. unknown ones are ignored.
+void events_dispatch(Store *s, const char *type, const Json *data);
+
+// applies recorded gateway payloads: one payload, or an array of them, each
+// an object with "t" and "d". false when `text` is not that.
+bool events_feed(Store *s, const char *text, size_t len);
+// the same from a file.
+bool events_feed_file(Store *s, const char *path);
+
+#endif
