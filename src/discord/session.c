@@ -8,7 +8,11 @@
 #include "http.h"
 #include "platform/platform.h"
 
-#define TOKEN_KEY "token"
+// the keychain holds one token per account, under "token:" and its id. the
+// bare key is where the only token lived before accounts could be switched.
+#define LEGACY_TOKEN_KEY "token"
+#define ACCOUNTS_KEY "accounts"
+#define LAST_ACCOUNT_KEY "last_account"
 
 constexpr uint32_t HISTORY_PAGE = 50;
 constexpr size_t KEEP_UNSELECTED = 100;
@@ -25,6 +29,7 @@ struct Call {
   Session *s;
   Snowflake channel_id, id;
   HistoryKind kind;
+  uint64_t epoch;
 };
 
 static Call *call_new(Session *s, Snowflake channel_id, Snowflake id) {
@@ -37,6 +42,7 @@ static Call *call_new(Session *s, Snowflake channel_id, Snowflake id) {
   call->s = s;
   call->channel_id = channel_id;
   call->id = id;
+  call->epoch = s->epoch;
   call->next = s->calls;
   s->calls = call;
   return call;
@@ -52,6 +58,16 @@ static void call_end(Call *call) {
   }
 
   free(call);
+}
+
+// the answer is for an account the session left.
+static bool call_stale(Call *call) {
+  if (call->epoch == call->s->epoch) {
+    return false;
+  }
+
+  call_end(call);
+  return true;
 }
 
 static void changed(Session *s) {
@@ -149,6 +165,11 @@ static void request_unknown_members(Session *s, const Channel *c) {
 
 static void on_history(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
   Session *s = call->s;
   Channel *c = store_channel(s->store, call->channel_id);
 
@@ -285,16 +306,190 @@ void session_member_list_range(Session *s, uint32_t first_row,
 }
 
 /* ========================================================================== */
-/* the gateway.                                                               */
+/* the saved accounts.                                                        */
 /* ========================================================================== */
 
-static void save_token(Session *s) {
-  bool from_env = getenv("QUARREL_TOKEN") != nullptr;
-
-  if (!s->options.no_keychain && !from_env && s->token != nullptr) {
-    platform_secret_set(TOKEN_KEY, s->token);
-  }
+static bool persists(const Session *s) {
+  return !s->options.no_keychain && !s->offline &&
+         getenv("QUARREL_TOKEN") == nullptr;
 }
+
+static char *token_key(Snowflake id, char out[static 32]) {
+  char digits[21];
+
+  snprintf(out, 32, "token:%s", snowflake_format(id, digits));
+  return out;
+}
+
+// a token starts with its user's id in base64, up to the first dot.
+static Snowflake token_account(const char *token) {
+  size_t len = strcspn(token, ".");
+  char *head = str_dup_n(token, len);
+  size_t ndigits = 0;
+  uint8_t *digits = base64_decode(head, &ndigits);
+  Snowflake id =
+    digits != nullptr ? snowflake_parse_n((const char *)digits, ndigits) : 0;
+
+  free(digits);
+  free(head);
+  return id;
+}
+
+static void account_clear(SessionAccount *a) {
+  free(a->username);
+  free(a->global_name);
+  free(a->discriminator);
+  free(a->avatar);
+}
+
+static SessionAccount *account_find(Session *s, Snowflake id) {
+  for (size_t i = 0; i < s->naccounts; i++) {
+    if (s->accounts[i].id == id) {
+      return &s->accounts[i];
+    }
+  }
+
+  return nullptr;
+}
+
+static SessionAccount *account_add(Session *s, Snowflake id) {
+  SessionAccount *found = account_find(s, id);
+
+  if (found != nullptr) {
+    return found;
+  }
+
+  size_t size = (s->naccounts + 1) * sizeof *s->accounts;
+  SessionAccount *grown = realloc(s->accounts, size);
+
+  if (grown == nullptr) {
+    cilo_oom(size);
+  }
+
+  s->accounts = grown;
+  s->accounts[s->naccounts] = (SessionAccount){.id = id};
+  return &s->accounts[s->naccounts++];
+}
+
+static void save_last(Snowflake id) {
+  char digits[21];
+
+  platform_pref_set(LAST_ACCOUNT_KEY,
+                    id != 0 ? snowflake_format(id, digits) : nullptr);
+}
+
+static void save_accounts(const Session *s) {
+  JsonWriter w = {};
+
+  jw_array(&w);
+
+  for (size_t i = 0; i < s->naccounts; i++) {
+    const SessionAccount *a = &s->accounts[i];
+
+    jw_object(&w);
+    jw_key(&w, "id"), jw_id(&w, a->id);
+    jw_key(&w, "username"), jw_str(&w, a->username);
+    jw_key(&w, "global_name"), jw_str(&w, a->global_name);
+    jw_key(&w, "discriminator"), jw_str(&w, a->discriminator);
+    jw_key(&w, "avatar"), jw_str(&w, a->avatar);
+    jw_end(&w);
+  }
+
+  jw_end(&w);
+  platform_pref_set(ACCOUNTS_KEY, w.data);
+  jw_free(&w);
+}
+
+static void load_accounts(Session *s) {
+  char *text = platform_pref_get(ACCOUNTS_KEY);
+
+  if (text == nullptr) {
+    return;
+  }
+
+  cilo_arena arena = {};
+  const Json *saved = json_parse(&arena, text, strlen(text), nullptr);
+
+  json_each(item, saved) {
+    Snowflake id = json_get_u64(item, "id");
+
+    if (id == 0) {
+      continue;
+    }
+
+    SessionAccount *a = account_add(s, id);
+
+    str_set(&a->username, json_get_str(item, "username"));
+    str_set(&a->global_name, json_get_str(item, "global_name"));
+    str_set(&a->discriminator, json_get_str(item, "discriminator"));
+    str_set(&a->avatar, json_get_str(item, "avatar"));
+  }
+
+  cilo_arena_drop(&arena);
+  free(text);
+}
+
+// keeps the account for the next launch: its token, what the switcher shows
+// of it, and that it was the last one used.
+static void remember(Session *s) {
+  if (!persists(s) || s->token == nullptr || s->account_id == 0) {
+    return;
+  }
+
+  char key[32];
+
+  if (!s->token_saved) {
+    s->token_saved =
+      platform_secret_set(token_key(s->account_id, key), s->token);
+    platform_secret_delete(LEGACY_TOKEN_KEY);
+  }
+
+  SessionAccount *a = account_add(s, s->account_id);
+  const User *self = s->store->self;
+
+  if (self != nullptr && self->id == a->id) {
+    str_set(&a->username, self->username);
+    str_set(&a->global_name, self->global_name);
+    str_set(&a->discriminator, self->discriminator);
+    str_set(&a->avatar, self->avatar);
+  }
+
+  save_accounts(s);
+  save_last(s->account_id);
+}
+
+static void forget(Session *s, Snowflake id) {
+  SessionAccount *a = account_find(s, id);
+
+  if (!persists(s) || id == 0) {
+    return;
+  }
+
+  char key[32];
+
+  platform_secret_delete(token_key(id, key));
+
+  if (a != nullptr) {
+    size_t after = s->naccounts - (size_t)(a - s->accounts) - 1;
+
+    account_clear(a);
+    memmove(a, a + 1, after * sizeof *a);
+    s->naccounts--;
+    save_accounts(s);
+  }
+
+  char *last = platform_pref_get(LAST_ACCOUNT_KEY);
+
+  if (snowflake_parse(last) == id) {
+    save_last(s->naccounts > 0 ? s->accounts[0].id : 0);
+  }
+
+  free(last);
+}
+
+/* ========================================================================== */
+/* the gateway.                                                               */
+/* ========================================================================== */
 
 static void on_typing_timer(void *ctx);
 
@@ -321,6 +516,11 @@ static void on_typing_timer(void *ctx) {
 
 static void on_affinities(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
   Session *s = call->s;
 
   if (res->ok) {
@@ -353,8 +553,12 @@ static void on_dispatch(void *ctx, const char *type, const Json *data) {
     if (s->store->refreshed_token != nullptr) {
       str_set(&s->token, s->store->refreshed_token);
       api_set_token(s->api, s->token);
-      save_token(s);
+      gateway_set_token(s->gateway, s->token);
+      s->token_saved = false;
     }
+
+    s->account_id = s->store->self_id;
+    remember(s);
   }
   else if (strcmp(type, "TYPING_START") == 0) {
     schedule_typing(s);
@@ -398,6 +602,9 @@ static void end_session(Session *s, const char *error) {
   clear_login(s);
   store_reset(s->store);
 
+  s->epoch++;
+  s->account_id = 0;
+  s->token_saved = false;
   s->was_ready = false;
   s->offline = false;
   s->selected_channel_id = 0;
@@ -414,10 +621,7 @@ static void on_fatal(void *ctx, GatewayFatal why, int code,
   char text[160];
 
   if (why == GATEWAY_FATAL_AUTH) {
-    if (!s->options.no_keychain && getenv("QUARREL_TOKEN") == nullptr) {
-      platform_secret_delete(TOKEN_KEY);
-    }
-
+    forget(s, s->account_id);
     end_session(s, "Discord no longer accepts this login. Log in again.");
     return;
   }
@@ -453,17 +657,30 @@ static void connect(Session *s) {
 /* logging in and out.                                                        */
 /* ========================================================================== */
 
-static void finish_login(Session *s, const char *token) {
+// connects with a token the keychain may not hold yet.
+static void enter(Session *s, const char *token, bool saved) {
   str_set(&s->token, token);
+  s->account_id = token_account(token);
+  s->token_saved = saved;
+
   clear_login(s);
   set_error(s, nullptr);
-  save_token(s);
+  remember(s);
   connect(s);
+}
+
+static void finish_login(Session *s, const char *token) {
+  enter(s, token, false);
 }
 
 static void on_login(void *ctx, const ApiLoginResult *result) {
   Session *s = ctx;
   bool second_factor = s->mfa_ticket != nullptr;
+
+  // the login was left while its answer was on its way.
+  if (s->login == nullptr && !second_factor) {
+    return;
+  }
 
   switch (result->kind) {
     case API_LOGIN_TOKEN:
@@ -626,12 +843,39 @@ void session_logout(Session *s) {
     api_logout(s->api, nullptr, nullptr);
   }
 
-  if (!s->options.no_keychain && getenv("QUARREL_TOKEN") == nullptr &&
-      !s->offline) {
-    platform_secret_delete(TOKEN_KEY);
+  forget(s, s->account_id);
+  end_session(s, nullptr);
+
+  if (s->naccounts > 0) {
+    session_switch_account(s, s->accounts[0].id);
+  }
+}
+
+void session_switch_account(Session *s, Snowflake account_id) {
+  if (account_id == 0 || account_id == s->account_id || !persists(s)) {
+    return;
+  }
+
+  char key[32];
+  char *token = platform_secret_get(token_key(account_id, key));
+
+  // the keychain lost it, so the account is no longer logged in.
+  if (token == nullptr || token[0] == '\0') {
+    wipe(&token);
+    forget(s, account_id);
+    changed(s);
+    return;
   }
 
   end_session(s, nullptr);
+  enter(s, token, true);
+  wipe(&token);
+}
+
+void session_add_account(Session *s) {
+  if (s->state != SESSION_LOGGED_OUT) {
+    end_session(s, nullptr);
+  }
 }
 
 /* ========================================================================== */
@@ -675,15 +919,38 @@ void session_start(Session *s) {
     return;
   }
 
-  char *saved =
-    s->options.no_keychain ? nullptr : platform_secret_get(TOKEN_KEY);
-
-  if (saved != nullptr && saved[0] != '\0') {
-    str_set(&s->token, saved);
-    connect(s);
+  if (!persists(s)) {
+    return;
   }
 
-  wipe(&saved);
+  load_accounts(s);
+
+  char *last = platform_pref_get(LAST_ACCOUNT_KEY);
+  Snowflake id = snowflake_parse(last);
+
+  free(last);
+
+  if (id == 0 && s->naccounts > 0) {
+    id = s->accounts[0].id;
+  }
+
+  // an account whose token is gone is forgotten, the next one is tried.
+  while (id != 0 && s->token == nullptr) {
+    session_switch_account(s, id);
+    id = s->naccounts > 0 ? s->accounts[0].id : 0;
+  }
+
+  if (s->token != nullptr) {
+    return;
+  }
+
+  char *legacy = platform_secret_get(LEGACY_TOKEN_KEY);
+
+  if (legacy != nullptr && legacy[0] != '\0') {
+    enter(s, legacy, false);
+  }
+
+  wipe(&legacy);
 }
 
 Session *session_new(const SessionOptions *options) {
@@ -718,6 +985,11 @@ void session_free(Session *s) {
     call = next;
   }
 
+  for (size_t i = 0; i < s->naccounts; i++) {
+    account_clear(&s->accounts[i]);
+  }
+
+  free(s->accounts);
   clear_login(s);
   wipe(&s->token);
   store_free(s->store);
@@ -791,6 +1063,11 @@ static void echo_message(Session *s, const Channel *c, const Message *pending) {
 
 static void on_sent(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
   Session *s = call->s;
 
   if (res->ok) {
@@ -1045,6 +1322,11 @@ void session_ack(Session *s, Snowflake channel_id) {
 
 static void on_dm_opened(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
   Session *s = call->s;
 
   if (res->ok) {

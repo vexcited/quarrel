@@ -20,7 +20,7 @@
 /*                          without an account. what is sent, edited, read or */
 /*                          reacted to is then applied to the store only.     */
 /*   QUARREL_TOKEN=token    session_start uses this token and leaves the      */
-/*                          keychain alone.                                   */
+/*                          keychain and the saved accounts alone.            */
 /* ========================================================================== */
 
 typedef enum : uint8_t {
@@ -67,6 +67,13 @@ typedef struct {
   char *session_id, *rqtoken;
 } SessionCaptcha;
 
+// an account logged in on this machine. the names are null until its first
+// READY.
+typedef struct {
+  Snowflake id;
+  char *username, *global_name, *discriminator, *avatar;
+} SessionAccount;
+
 typedef struct {
   // called on the main thread after the state or the store changed.
   // civue_window_wake fits as it is.
@@ -91,6 +98,11 @@ typedef struct Session {
   Snowflake selected_channel_id;
   // the store came from a fixture and nothing touches the network.
   bool offline;
+  // the accounts that stay logged in, in the order they were added.
+  SessionAccount *accounts;
+  size_t naccounts;
+  // the account connected or connecting, 0 on the login form.
+  Snowflake account_id;
   // bumped with every change of the fields above.
   uint64_t version;
 
@@ -99,6 +111,10 @@ typedef struct Session {
   Api *api;
   Gateway *gateway;
   char *token;
+  // the keychain holds `token` under the account's key.
+  bool token_saved;
+  // bumped when the session ends, so answers meant for it are dropped.
+  uint64_t epoch;
   char *login, *password;
   char *mfa_ticket, *mfa_instance_id;
   bool was_ready;
@@ -116,7 +132,7 @@ Session *session_new(const SessionOptions *options);
 void session_free(Session *s);
 
 // what to do at launch: plays QUARREL_FIXTURE when set, else connects with
-// QUARREL_TOKEN or the token saved in the keychain, else stays logged out.
+// QUARREL_TOKEN or as the account used last, else stays logged out.
 void session_start(Session *s);
 // plays recorded gateway events as if they came from the gateway and goes
 // to SESSION_READY, offline. false when the file cannot be read as json.
@@ -140,8 +156,13 @@ void session_request_sms(Session *s);
 void session_submit_captcha(Session *s, const char *solution);
 // leaves SESSION_MFA or SESSION_CAPTCHA for SESSION_LOGGED_OUT.
 void session_cancel_login(Session *s);
-// ends the session on discord's side too and forgets the token.
+// ends the session on discord's side too and forgets the account, then
+// connects as another saved one when there is one.
 void session_logout(Session *s);
+// connects as a saved account. the one left stays logged in.
+void session_switch_account(Session *s, Snowflake account_id);
+// leaves the account for the login form without logging it out.
+void session_add_account(Session *s);
 
 /* ========================================================================== */
 /* channels and messages. each call is a no op when its channel or message    */
