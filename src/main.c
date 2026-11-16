@@ -94,6 +94,10 @@ static void frame(void *ctx, civue_ui *ui) {
   ui->scrollbars = nullptr;
   settle_hover(app, ui);
 
+  if (app->account_id != session->account_id) {
+    app_reset(app);
+  }
+
   switch (session->state) {
     case SESSION_READY:
     case SESSION_RECONNECTING:

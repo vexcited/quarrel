@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 Channel *app_channel(App *app) {
   Snowflake id = app->session->selected_channel_id;
@@ -32,6 +33,39 @@ static LastChannel *last_of(App *app, Snowflake guild_id) {
   *last = (LastChannel){.guild_id = guild_id};
 
   return last;
+}
+
+static void drop(char **text) {
+  free(*text);
+  *text = nullptr;
+}
+
+void app_reset(App *app) {
+  app->account_id = app->session->account_id;
+  app->accounts_open = false;
+  app->guild_id = 0;
+  app->last_channels.len = 0;
+  app->revealed.len = 0;
+
+  // the password does not stay around once it served.
+  if (app->password) {
+    memset(app->password, 0, strlen(app->password));
+  }
+
+  drop(&app->login);
+  drop(&app->password);
+  drop(&app->code);
+  drop(&app->draft);
+  drop(&app->kept_draft);
+  drop(&app->friends_search);
+
+  app->reply_to = 0;
+  app->editing = 0;
+  app->list_channel = 0;
+  app->stick = true;
+  app->hover_message = 0;
+  app->hover_next = 0;
+  app->friends_tab = FRIENDS_ONLINE;
 }
 
 static void leave_composer(App *app) {

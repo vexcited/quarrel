@@ -32,6 +32,10 @@ typedef struct {
   Look look;
   civue_scrollbar_look bars, thin_bars;
 
+  // the account what is below belongs to, and whether its switcher shows.
+  Snowflake account_id;
+  bool accounts_open;
+
   // the guild whose channels show, 0 for the direct messages.
   Snowflake guild_id;
   CIVUE_VEC(LastChannel) last_channels;
@@ -76,6 +80,8 @@ typedef struct {
   CIVUE_VEC(civue_id) revealed;
 } App;
 
+// forgets what was shown and typed, for another account.
+void app_reset(App *app);
 void app_select_guild(App *app, Snowflake guild_id);
 void app_select_channel(App *app, Snowflake channel_id);
 Channel *app_channel(App *app);

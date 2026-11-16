@@ -256,10 +256,13 @@ void user_panel(App *app) {
   Store *store = session->store;
   const User *self = store->self;
   civue_id id = id("status");
+  civue_rect panel = {}, toggle = {};
 
   div(absolute, left(2), right(2), bottom(2), flex, items_center, gap(2),
       h(px(56)), px(2), rounded(lg), bg(k->panel), border(1),
       border_color(k->border)) {
+    panel = here();
+
     div(key(id), flex, items_center, gap(2), flex_1, min_w(0), p(1),
         rounded(lg), hover(bg(k->hover)), cursor_pointer) {
       civue_button_state state = button();
@@ -292,9 +295,23 @@ void user_panel(App *app) {
       hint(app, id, &state.response, "Change status", CIVUE_TOOLTIP_ABOVE);
     }
 
+    if (!session->offline) {
+      div(flex_shrink_0) {
+        toggle = here();
+
+        if (icon_button(app, id("switch"), CIVUE_ICON(lucide, arrow_left_right),
+                        32, 20,
+                        app->accounts_open ? nullptr : "Switch Accounts")) {
+          app->accounts_open = !app->accounts_open;
+        }
+      }
+    }
+
     if (icon_button(app, id("logout"), CIVUE_ICON(lucide, log_out), 32, 20,
                     "Log Out")) {
       session_logout(session);
     }
   }
+
+  account_switcher(app, panel, toggle);
 }

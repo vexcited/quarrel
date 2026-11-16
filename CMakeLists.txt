@@ -100,6 +100,7 @@ endif()
 
 add_executable(quarrel
   src/main.c
+  src/ui/accounts.c
   src/ui/app.c
   src/ui/chat.c
   src/ui/composer.c

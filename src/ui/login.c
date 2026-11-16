@@ -218,6 +218,8 @@ static void credentials(App *app) {
       civue_open_url("https://discord.com/register");
     }
   }
+
+  account_choices(app);
 }
 
 static void method_choice(App *app, SessionMfaMethod method, const char *label,
