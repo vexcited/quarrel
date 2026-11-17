@@ -11,7 +11,7 @@
 /*                                                                            */
 /*   char url[CDN_URL_MAX];                                                   */
 /*   cdn_avatar(url, user->id, user->avatar, user->discriminator, 80);        */
-/*   Image avatar = images_get(cache, ui, url, 80);                           */
+/*   civue_image_info a = civue_images_get(im, ui, url, 80);                  */
 /* ========================================================================== */
 
 constexpr size_t CDN_URL_MAX = 1024;

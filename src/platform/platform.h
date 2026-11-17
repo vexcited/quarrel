@@ -11,12 +11,6 @@
 /* here: it goes through ciphon and cinc, see http.h.                         */
 /* ========================================================================== */
 
-// something still running, an image being decoded. 0 is never one.
-typedef uint64_t PlatformOp;
-
-// forgets `op`: its callback never runs. finished or unknown ones are fine.
-void platform_cancel(PlatformOp op);
-
 /* ========================================================================== */
 /* websockets. messages may be many megabytes.                                */
 /* ========================================================================== */
@@ -61,26 +55,6 @@ typedef struct PlatformTimer PlatformTimer;
 PlatformTimer *platform_timer(double seconds, void (*fn)(void *ctx), void *ctx);
 // null is fine.
 void platform_timer_cancel(PlatformTimer *timer);
-
-/* ========================================================================== */
-/* images.                                                                    */
-/* ========================================================================== */
-
-typedef struct {
-  uint32_t width, height;
-  // premultiplied rgba8, rows from the top, only valid during the callback.
-  const uint8_t *rgba;
-} PlatformImage;
-
-// null when the bytes are no image.
-typedef void (*PlatformImageDone)(void *ctx, const PlatformImage *image);
-
-// decodes png, jpeg, webp or the first frame of a gif off the main thread.
-// its longest side is at most `max_pixels` when that is not 0. `bytes` are
-// copied.
-PlatformOp platform_image_decode(const void *bytes, size_t len,
-                                 uint32_t max_pixels, PlatformImageDone done,
-                                 void *ctx);
 
 /* ========================================================================== */
 /* storage. secrets go to the keychain, preferences to the user's defaults.   */

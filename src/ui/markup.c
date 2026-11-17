@@ -389,11 +389,12 @@ static void custom_emoji(Flow *f, const Run *r, const MdNode *node) {
 
     cdn_emoji(url, node->id, pixels);
 
-    Image image = images_get(f->app->images, f->ui, url, pixels);
+    civue_image_info image =
+      civue_images_get(f->app->images, f->ui, url, pixels);
     civue_rect at = xywh(f->origin.x + f->x,
                          f->origin.y + f->y + (f->line - side) / 2, side, side);
 
-    if (image.state == IMAGE_READY) {
+    if (image.state == CIVUE_IMAGE_READY) {
       civue_image(f->ui, image.texture, at, (float[4]){0, 0, 1, 1}, 1, 0,
                   false);
     }
