@@ -192,6 +192,9 @@ typedef struct {
   Snowflake reply_to;
   // whether the author of the message answered is pinged.
   bool reply_ping;
+  // the message forwarded, 0 for none, with its channel and its guild, 0
+  // outside one.
+  Snowflake forward_id, forward_channel_id, forward_guild_id;
 } ApiSendMessage;
 
 void api_send_message(Api *api, Snowflake channel_id,
@@ -205,6 +208,11 @@ void api_delete_message(Api *api, Snowflake channel_id, Snowflake message_id,
 void api_ack_message(Api *api, Snowflake channel_id, Snowflake message_id,
                      uint32_t flags, uint32_t last_viewed, ApiDone done,
                      void *ctx);
+// marks the channel unread from after `message_id`, as the user asks.
+void api_ack_manual(Api *api, Snowflake channel_id, Snowflake message_id,
+                    uint32_t mentions, ApiDone done, void *ctx);
+void api_pin_message(Api *api, Snowflake channel_id, Snowflake message_id,
+                     bool pin, ApiDone done, void *ctx);
 void api_trigger_typing(Api *api, Snowflake channel_id, ApiDone done,
                         void *ctx);
 
@@ -219,5 +227,13 @@ void api_remove_reaction(Api *api, Snowflake channel_id, Snowflake message_id,
 
 // opens the dm with a user, or finds it again. the answer is the channel.
 void api_open_dm(Api *api, Snowflake user_id, ApiDone done, void *ctx);
+// creates a group dm with these users. the answer is the channel.
+void api_open_group(Api *api, const Snowflake *user_ids, size_t count,
+                    ApiDone done, void *ctx);
+// creates a guild from discord's default template. the answer is the guild.
+void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx);
+// creates an invite to the channel's guild that lasts a week, or finds the
+// one made before. the answer holds its `code`.
+void api_create_invite(Api *api, Snowflake channel_id, ApiDone done, void *ctx);
 
 #endif

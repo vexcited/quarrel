@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "discord/util.h"
 #include "json.h"
@@ -255,4 +256,119 @@ char *settings_proto_to_json(const char *base64) {
   }
 
   return jw_take(&w);
+}
+
+// from the same classes:
+//   FrecencyUserSettings  emoji_reaction_frecency 13, an EmojiFrecency
+//   EmojiFrecency         emojis 1, a map from a string to a FrecencyItem
+//   FrecencyItem          total_uses 1, recent_uses 2 repeated uint64
+static void read_use(Reader r, FrecencyUse *use) {
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number == 1 && f.wire == WIRE_VARINT) {
+      use->total_uses = (uint32_t)f.value;
+    }
+    else if (f.number == 2 && f.wire == WIRE_VARINT) {
+      if (use->nrecent_uses < FRECENCY_SAMPLES) {
+        use->recent_uses[use->nrecent_uses++] = (int64_t)f.value;
+      }
+    }
+    else if (f.number == 2 && f.wire == WIRE_BYTES) {
+      // packed, as the client writes them.
+      Reader packed = f.bytes;
+
+      while (packed.at < packed.end && !packed.bad) {
+        uint64_t at = read_varint(&packed);
+
+        if (!packed.bad && use->nrecent_uses < FRECENCY_SAMPLES) {
+          use->recent_uses[use->nrecent_uses++] = (int64_t)at;
+        }
+      }
+    }
+  }
+}
+
+static bool read_entry(Reader r, FrecencyUse *use) {
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.wire != WIRE_BYTES) {
+      continue;
+    }
+
+    if (f.number == 1) {
+      size_t len = (size_t)(f.bytes.end - f.bytes.at);
+
+      free(use->key);
+      use->key = malloc(len + 1);
+
+      if (use->key == nullptr) {
+        return false;
+      }
+
+      memcpy(use->key, f.bytes.at, len);
+      use->key[len] = '\0';
+    }
+    else if (f.number == 2) {
+      read_use(f.bytes, use);
+    }
+  }
+
+  return use->key != nullptr && *use->key != '\0';
+}
+
+FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count) {
+  size_t len = 0, cap = 0;
+  uint8_t *bytes = base64_decode(base64, &len);
+  FrecencyUse *uses = nullptr;
+
+  *count = 0;
+
+  if (bytes == nullptr) {
+    return nullptr;
+  }
+
+  Reader r = {.at = bytes, .end = bytes + len};
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number != 13 || f.wire != WIRE_BYTES) {
+      continue;
+    }
+
+    Reader map = f.bytes;
+    Field entry;
+
+    while (next_field(&map, &entry)) {
+      if (entry.number != 1 || entry.wire != WIRE_BYTES) {
+        continue;
+      }
+
+      FrecencyUse use = {};
+
+      if (!read_entry(entry.bytes, &use)) {
+        free(use.key);
+        continue;
+      }
+
+      if (*count == cap) {
+        cap = cap ? cap * 2 : 32;
+
+        FrecencyUse *grown = realloc(uses, cap * sizeof *uses);
+
+        if (grown == nullptr) {
+          free(use.key);
+          break;
+        }
+
+        uses = grown;
+      }
+
+      uses[(*count)++] = use;
+    }
+  }
+
+  free(bytes);
+  return uses;
 }

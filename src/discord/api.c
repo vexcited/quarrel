@@ -955,7 +955,21 @@ void api_send_message(Api *api, Snowflake channel_id,
   jw_key(&w, "tts"), jw_bool(&w, false);
   jw_key(&w, "flags"), jw_u64(&w, 0);
 
-  if (message->reply_to != 0) {
+  if (message->forward_id != 0) {
+    // type 1 is a forward, which carries a snapshot and no text of its own.
+    jw_key(&w, "message_reference");
+    jw_object(&w);
+    jw_key(&w, "type"), jw_u64(&w, 1);
+    jw_key(&w, "channel_id"), jw_id(&w, message->forward_channel_id);
+    jw_key(&w, "message_id"), jw_id(&w, message->forward_id);
+
+    if (message->forward_guild_id != 0) {
+      jw_key(&w, "guild_id"), jw_id(&w, message->forward_guild_id);
+    }
+
+    jw_end(&w);
+  }
+  else if (message->reply_to != 0) {
     jw_key(&w, "message_reference");
     jw_object(&w);
     jw_key(&w, "channel_id"), jw_id(&w, channel_id);
@@ -1053,6 +1067,39 @@ void api_trigger_typing(Api *api, Snowflake channel_id, ApiDone done,
   api_request(api, &req, done, ctx);
 }
 
+void api_ack_manual(Api *api, Snowflake channel_id, Snowflake message_id,
+                    uint32_t mentions, ApiDone done, void *ctx) {
+  char path[128], route[128];
+  JsonWriter w = {};
+
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/messages/%" PRIu64 "/ack",
+           channel_id, message_id);
+  message_route(route, sizeof route, channel_id, "/ack");
+
+  jw_object(&w);
+  jw_key(&w, "manual"), jw_bool(&w, true);
+  jw_key(&w, "mention_count"), jw_u64(&w, mentions);
+  jw_end(&w);
+
+  ApiRequest req = {
+    .method = "POST", .path = path, .route = route, .body = w.data};
+  api_request(api, &req, done, ctx);
+  jw_free(&w);
+}
+
+void api_pin_message(Api *api, Snowflake channel_id, Snowflake message_id,
+                     bool pin, ApiDone done, void *ctx) {
+  char path[128], route[128];
+
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/messages/pins/%" PRIu64,
+           channel_id, message_id);
+  message_route(route, sizeof route, channel_id, "/pins");
+
+  ApiRequest req = {
+    .method = pin ? "PUT" : "DELETE", .path = path, .route = route};
+  api_request(api, &req, done, ctx);
+}
+
 static void reaction_request(Api *api, const char *method, Snowflake channel_id,
                              Snowflake message_id, Snowflake emoji_id,
                              const char *name, const char *query, ApiDone done,
@@ -1107,6 +1154,66 @@ void api_open_dm(Api *api, Snowflake user_id, ApiDone done, void *ctx) {
 
   ApiRequest req = {
     .method = "POST", .path = "/users/@me/channels", .body = w.data};
+  api_request(api, &req, done, ctx);
+  jw_free(&w);
+}
+
+void api_open_group(Api *api, const Snowflake *user_ids, size_t count,
+                    ApiDone done, void *ctx) {
+  JsonWriter w = {};
+
+  jw_object(&w);
+  jw_key(&w, "recipients");
+  jw_array(&w);
+
+  for (size_t i = 0; i < count; i++) {
+    jw_id(&w, user_ids[i]);
+  }
+
+  jw_end(&w);
+  jw_end(&w);
+
+  ApiRequest req = {
+    .method = "POST", .path = "/users/@me/channels", .body = w.data};
+  api_request(api, &req, done, ctx);
+  jw_free(&w);
+}
+
+void api_create_invite(Api *api, Snowflake channel_id, ApiDone done,
+                       void *ctx) {
+  char path[96];
+  JsonWriter w = {};
+
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/invites", channel_id);
+
+  // what the client sends for the link of its invite dialog.
+  jw_object(&w);
+  jw_key(&w, "max_age"), jw_u64(&w, 604800);
+  jw_key(&w, "max_uses"), jw_u64(&w, 0);
+  jw_key(&w, "target_type"), jw_null(&w);
+  jw_key(&w, "temporary"), jw_bool(&w, false);
+  jw_key(&w, "flags"), jw_u64(&w, 0);
+  jw_end(&w);
+
+  ApiRequest req = {.method = "POST", .path = path, .body = w.data};
+  api_request(api, &req, done, ctx);
+  jw_free(&w);
+}
+
+void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx) {
+  JsonWriter w = {};
+
+  // what the client sends for "Create My Own", the code being the template
+  // its new servers start from.
+  jw_object(&w);
+  jw_key(&w, "name"), jw_str(&w, name);
+  jw_key(&w, "icon"), jw_null(&w);
+  jw_key(&w, "channels"), jw_array(&w), jw_end(&w);
+  jw_key(&w, "system_channel_id"), jw_null(&w);
+  jw_key(&w, "guild_template_code"), jw_str(&w, "2TffvPucqHkN");
+  jw_end(&w);
+
+  ApiRequest req = {.method = "POST", .path = "/guilds", .body = w.data};
   api_request(api, &req, done, ctx);
   jw_free(&w);
 }

@@ -4,22 +4,24 @@
 #include "discord/store.h"
 
 /* ========================================================================== */
-/* one account: the api, the gateway and the store, tied together for the     */
-/* ui. everything is called from the main thread, and nothing here blocks:    */
-/* calls return at once and the store or the session's state change later,    */
-/* after which `on_change` is called so the ui can ask for a frame.           */
+/* a session is one account: the api, the gateway and the store, tied         */
+/* together for the ui. the roster holds one for every account logged in on   */
+/* this machine, all connected at once, and the one the ui shows.             */
+/* everything is called from the main thread, and nothing here blocks: calls  */
+/* return at once and the store or the session's state change later, after    */
+/* which `on_change` is called so the ui can ask for a frame.                 */
 /*                                                                            */
-/*   Session *session = session_new(&(SessionOptions){.on_change = wake});    */
-/*   session_start(session);                                                  */
-/*   ... each frame: read session->state and session->store ...               */
-/*   session_free(session);                                                   */
+/*   Roster *roster = roster_new(&(SessionOptions){.on_change = wake});       */
+/*   roster_start(roster);                                                    */
+/*   ... each frame: read roster->current, its state and its store ...        */
+/*   roster_free(roster);                                                     */
 /*                                                                            */
 /* environment:                                                               */
-/*   QUARREL_FIXTURE=path   session_start plays the recorded gateway events   */
+/*   QUARREL_FIXTURE=path   roster_start plays the recorded gateway events    */
 /*                          at `path` instead of connecting, so the ui runs   */
 /*                          without an account. what is sent, edited, read or */
 /*                          reacted to is then applied to the store only.     */
-/*   QUARREL_TOKEN=token    session_start uses this token and leaves the      */
+/*   QUARREL_TOKEN=token    roster_start uses this token and leaves the       */
 /*                          keychain and the saved accounts alone.            */
 /* ========================================================================== */
 
@@ -67,12 +69,25 @@ typedef struct {
   char *session_id, *rqtoken;
 } SessionCaptcha;
 
+typedef struct Session Session;
+typedef struct Roster Roster;
+
 // an account logged in on this machine. the names are null until its first
 // READY.
 typedef struct {
   Snowflake id;
   char *username, *global_name, *discriminator, *avatar;
+  // its own, connected since the launch. null once discord refused its
+  // connection, until a switch to the account tries again.
+  Session *session;
 } SessionAccount;
+
+// a message of the inbox that mentions the current user.
+typedef struct {
+  Snowflake id, channel_id, author_id;
+  // never null.
+  char *content;
+} SessionMention;
 
 typedef struct {
   // called on the main thread after the state or the store changed.
@@ -85,7 +100,7 @@ typedef struct {
 typedef struct Api Api;
 typedef struct Gateway Gateway;
 
-typedef struct Session {
+struct Session {
   SessionState state;
   // never null, and the same store for the session's whole life.
   Store *store;
@@ -98,15 +113,34 @@ typedef struct Session {
   Snowflake selected_channel_id;
   // the store came from a fixture and nothing touches the network.
   bool offline;
-  // the accounts that stay logged in, in the order they were added.
-  SessionAccount *accounts;
-  size_t naccounts;
+  // the recent messages that mention the user, newest first, as the last
+  // session_fetch_mentions found them.
+  SessionMention *mentions;
+  size_t nmentions;
+  bool mentions_loading, mentions_loaded;
+  // the invite session_create_invite asked for: the guild it is to, its
+  // code once discord answered, or why there is none.
+  Snowflake invite_guild_id;
+  char *invite_code, *invite_error;
+  bool invite_loading;
+  // the guild session_create_guild asked for: on its way, why it failed, or
+  // its id once discord made it. the ui takes the id and zeroes it.
+  bool guild_creating;
+  char *guild_error;
+  Snowflake guild_created;
+  // the emojis the user reacts with the most, the most used first: the
+  // first name of an emoji of unicode or the id of a guild's. see
+  // session_fetch_frecency.
+  char **frecent_reactions;
+  size_t nfrecent_reactions;
+  bool frecency_loading, frecency_loaded;
   // the account connected or connecting, 0 on the login form.
   Snowflake account_id;
   // bumped with every change of the fields above.
   uint64_t version;
 
   // the session's own.
+  Roster *roster;
   SessionOptions options;
   Api *api;
   Gateway *gateway;
@@ -125,15 +159,39 @@ typedef struct Session {
   Snowflake list_guild_id, list_channel_id;
   uint32_t list_first, list_last;
   uint64_t nonce_counter;
-} Session;
+};
 
-Session *session_new(const SessionOptions *options);
-// closes the connection and frees the store. no callback runs after this.
-void session_free(Session *s);
+struct Roster {
+  // the accounts that stay logged in, in the order they were added.
+  SessionAccount *accounts;
+  size_t naccounts;
+  // the session the ui shows, never null. it is no account's on the login
+  // form. it changes with roster_switch, roster_add and roster_logout only,
+  // and the one it was stays valid until the next of these calls.
+  Session *current;
+
+  // the roster's own.
+  SessionOptions options;
+  Session **dead;
+  size_t ndead;
+};
+
+Roster *roster_new(const SessionOptions *options);
+// closes every connection and frees every store. no callback runs after
+// this.
+void roster_free(Roster *r);
 
 // what to do at launch: plays QUARREL_FIXTURE when set, else connects with
-// QUARREL_TOKEN or as the account used last, else stays logged out.
-void session_start(Session *s);
+// QUARREL_TOKEN, else connects every saved account and shows the one used
+// last, else stays logged out.
+void roster_start(Roster *r);
+// shows a saved account. the one left stays connected.
+void roster_switch(Roster *r, Snowflake account_id);
+// shows the login form for one more account. the one left stays connected.
+void roster_add(Roster *r);
+// ends the shown session on discord's side too and forgets its account,
+// then shows another saved one when there is one.
+void roster_logout(Roster *r);
 // plays recorded gateway events as if they came from the gateway and goes
 // to SESSION_READY, offline. false when the file cannot be read as json.
 bool session_load_fixture(Session *s, const char *path);
@@ -156,13 +214,6 @@ void session_request_sms(Session *s);
 void session_submit_captcha(Session *s, const char *solution);
 // leaves SESSION_MFA or SESSION_CAPTCHA for SESSION_LOGGED_OUT.
 void session_cancel_login(Session *s);
-// ends the session on discord's side too and forgets the account, then
-// connects as another saved one when there is one.
-void session_logout(Session *s);
-// connects as a saved account. the one left stays logged in.
-void session_switch_account(Session *s, Snowflake account_id);
-// leaves the account for the login form without logging it out.
-void session_add_account(Session *s);
 
 /* ========================================================================== */
 /* channels and messages. each call is a no op when its channel or message    */
@@ -204,8 +255,29 @@ void session_typing(Session *s, Snowflake channel_id);
 // marks the channel read up to its last message. call it while the user
 // looks at the bottom of the channel, it only sends when there is news.
 void session_ack(Session *s, Snowflake channel_id);
+// fetches the 25 latest messages that mention the user, see `mentions`.
+void session_fetch_mentions(Session *s);
 // opens the dm with a user and selects it once it exists.
 void session_open_dm(Session *s, Snowflake user_id);
+// the same with several users: a new group dm, selected once it exists. one
+// user alone opens their dm.
+void session_open_group(Session *s, const Snowflake *user_ids, size_t count);
+// creates a guild named `name`, see `guild_created`.
+void session_create_guild(Session *s, const char *name);
+// asks once for what the user uses the most, see `frecent_reactions`.
+void session_fetch_frecency(Session *s);
+// pins the message or takes its pin away.
+void session_pin(Session *s, Snowflake channel_id, Snowflake message_id,
+                 bool pin);
+// the channel is unread again from `message_id` on.
+void session_mark_unread(Session *s, Snowflake channel_id,
+                         Snowflake message_id);
+// sends the message of `from_channel_id` to `channel_id` as a forward.
+void session_forward(Session *s, Snowflake channel_id,
+                     Snowflake from_channel_id, Snowflake message_id);
+// asks for an invite link to the guild that lasts a week, see `invite_code`.
+// the same guild is not asked twice while its code is known.
+void session_create_invite(Session *s, Snowflake guild_id);
 // the status others see.
 void session_set_status(Session *s, UserStatus status, bool invisible);
 

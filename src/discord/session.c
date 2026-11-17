@@ -5,6 +5,7 @@
 
 #include "discord/api.h"
 #include "discord/gateway.h"
+#include "discord/settings_proto.h"
 #include "http.h"
 #include "platform/platform.h"
 
@@ -309,9 +310,14 @@ void session_member_list_range(Session *s, uint32_t first_row,
 /* the saved accounts.                                                        */
 /* ========================================================================== */
 
+static void end_session(Session *s, const char *error);
+
+static bool keeps(const Roster *r) {
+  return !r->options.no_keychain && getenv("QUARREL_TOKEN") == nullptr;
+}
+
 static bool persists(const Session *s) {
-  return !s->options.no_keychain && !s->offline &&
-         getenv("QUARREL_TOKEN") == nullptr;
+  return keeps(s->roster) && !s->offline;
 }
 
 static char *token_key(Snowflake id, char out[static 32]) {
@@ -342,33 +348,57 @@ static void account_clear(SessionAccount *a) {
   free(a->avatar);
 }
 
-static SessionAccount *account_find(Session *s, Snowflake id) {
-  for (size_t i = 0; i < s->naccounts; i++) {
-    if (s->accounts[i].id == id) {
-      return &s->accounts[i];
+static SessionAccount *account_find(Roster *r, Snowflake id) {
+  for (size_t i = 0; id != 0 && i < r->naccounts; i++) {
+    if (r->accounts[i].id == id) {
+      return &r->accounts[i];
     }
   }
 
   return nullptr;
 }
 
-static SessionAccount *account_add(Session *s, Snowflake id) {
-  SessionAccount *found = account_find(s, id);
+static SessionAccount *account_add(Roster *r, Snowflake id) {
+  SessionAccount *found = account_find(r, id);
 
   if (found != nullptr) {
     return found;
   }
 
-  size_t size = (s->naccounts + 1) * sizeof *s->accounts;
-  SessionAccount *grown = realloc(s->accounts, size);
+  size_t size = (r->naccounts + 1) * sizeof *r->accounts;
+  SessionAccount *grown = realloc(r->accounts, size);
 
   if (grown == nullptr) {
     cilo_oom(size);
   }
 
-  s->accounts = grown;
-  s->accounts[s->naccounts] = (SessionAccount){.id = id};
-  return &s->accounts[s->naccounts++];
+  r->accounts = grown;
+  r->accounts[r->naccounts] = (SessionAccount){.id = id};
+  return &r->accounts[r->naccounts++];
+}
+
+static SessionAccount *account_of(Roster *r, const Session *s) {
+  for (size_t i = 0; i < r->naccounts; i++) {
+    if (r->accounts[i].session == s) {
+      return &r->accounts[i];
+    }
+  }
+
+  return nullptr;
+}
+
+// a session nothing shows anymore is freed later, once what called for it
+// is done with it and its last requests left.
+static void bury(Roster *r, Session *s) {
+  size_t size = (r->ndead + 1) * sizeof *r->dead;
+  Session **grown = realloc(r->dead, size);
+
+  if (grown == nullptr) {
+    cilo_oom(size);
+  }
+
+  r->dead = grown;
+  r->dead[r->ndead++] = s;
 }
 
 static void save_last(Snowflake id) {
@@ -378,13 +408,13 @@ static void save_last(Snowflake id) {
                     id != 0 ? snowflake_format(id, digits) : nullptr);
 }
 
-static void save_accounts(const Session *s) {
+static void save_accounts(const Roster *r) {
   JsonWriter w = {};
 
   jw_array(&w);
 
-  for (size_t i = 0; i < s->naccounts; i++) {
-    const SessionAccount *a = &s->accounts[i];
+  for (size_t i = 0; i < r->naccounts; i++) {
+    const SessionAccount *a = &r->accounts[i];
 
     jw_object(&w);
     jw_key(&w, "id"), jw_id(&w, a->id);
@@ -400,7 +430,7 @@ static void save_accounts(const Session *s) {
   jw_free(&w);
 }
 
-static void load_accounts(Session *s) {
+static void load_accounts(Roster *r) {
   char *text = platform_pref_get(ACCOUNTS_KEY);
 
   if (text == nullptr) {
@@ -417,7 +447,7 @@ static void load_accounts(Session *s) {
       continue;
     }
 
-    SessionAccount *a = account_add(s, id);
+    SessionAccount *a = account_add(r, id);
 
     str_set(&a->username, json_get_str(item, "username"));
     str_set(&a->global_name, json_get_str(item, "global_name"));
@@ -430,8 +460,10 @@ static void load_accounts(Session *s) {
 }
 
 // keeps the account for the next launch: its token, what the switcher shows
-// of it, and that it was the last one used.
+// of it, and that it was the last one used when it is the one shown.
 static void remember(Session *s) {
+  Roster *r = s->roster;
+
   if (!persists(s) || s->token == nullptr || s->account_id == 0) {
     return;
   }
@@ -444,8 +476,18 @@ static void remember(Session *s) {
     platform_secret_delete(LEGACY_TOKEN_KEY);
   }
 
-  SessionAccount *a = account_add(s, s->account_id);
+  SessionAccount *a = account_add(r, s->account_id);
   const User *self = s->store->self;
+
+  // a new login takes over from the session the account had.
+  if (a->session != s) {
+    if (a->session != nullptr) {
+      end_session(a->session, nullptr);
+      bury(r, a->session);
+    }
+
+    a->session = s;
+  }
 
   if (self != nullptr && self->id == a->id) {
     str_set(&a->username, self->username);
@@ -454,14 +496,18 @@ static void remember(Session *s) {
     str_set(&a->avatar, self->avatar);
   }
 
-  save_accounts(s);
-  save_last(s->account_id);
+  save_accounts(r);
+
+  if (s == r->current) {
+    save_last(s->account_id);
+  }
 }
 
-static void forget(Session *s, Snowflake id) {
-  SessionAccount *a = account_find(s, id);
+// the session the account had is left to who asked.
+static void forget(Roster *r, Snowflake id) {
+  SessionAccount *a = account_find(r, id);
 
-  if (!persists(s) || id == 0) {
+  if (!keeps(r) || id == 0) {
     return;
   }
 
@@ -470,18 +516,18 @@ static void forget(Session *s, Snowflake id) {
   platform_secret_delete(token_key(id, key));
 
   if (a != nullptr) {
-    size_t after = s->naccounts - (size_t)(a - s->accounts) - 1;
+    size_t after = r->naccounts - (size_t)(a - r->accounts) - 1;
 
     account_clear(a);
     memmove(a, a + 1, after * sizeof *a);
-    s->naccounts--;
-    save_accounts(s);
+    r->naccounts--;
+    save_accounts(r);
   }
 
   char *last = platform_pref_get(LAST_ACCOUNT_KEY);
 
   if (snowflake_parse(last) == id) {
-    save_last(s->naccounts > 0 ? s->accounts[0].id : 0);
+    save_last(r->naccounts > 0 ? r->accounts[0].id : 0);
   }
 
   free(last);
@@ -587,7 +633,48 @@ static void on_status(void *ctx, GatewayStatus status) {
   }
 }
 
+static void clear_mentions(Session *s) {
+  for (size_t i = 0; i < s->nmentions; i++) {
+    free(s->mentions[i].content);
+  }
+
+  free(s->mentions);
+  s->mentions = nullptr;
+  s->nmentions = 0;
+  s->mentions_loading = false;
+  s->mentions_loaded = false;
+}
+
+static void clear_frecency(Session *s) {
+  for (size_t i = 0; i < s->nfrecent_reactions; i++) {
+    free(s->frecent_reactions[i]);
+  }
+
+  free(s->frecent_reactions);
+  s->frecent_reactions = nullptr;
+  s->nfrecent_reactions = 0;
+  s->frecency_loading = false;
+  s->frecency_loaded = false;
+}
+
+static void clear_invite(Session *s) {
+  free(s->invite_code);
+  free(s->invite_error);
+  s->invite_code = nullptr;
+  s->invite_error = nullptr;
+  s->invite_guild_id = 0;
+  s->invite_loading = false;
+
+  free(s->guild_error);
+  s->guild_error = nullptr;
+  s->guild_creating = false;
+  s->guild_created = 0;
+}
+
 static void end_session(Session *s, const char *error) {
+  clear_mentions(s);
+  clear_frecency(s);
+  clear_invite(s);
   gateway_free(s->gateway);
   s->gateway = nullptr;
 
@@ -618,17 +705,33 @@ static void end_session(Session *s, const char *error) {
 static void on_fatal(void *ctx, GatewayFatal why, int code,
                      const char *reason) {
   Session *s = ctx;
+  Roster *r = s->roster;
+  SessionAccount *a = account_find(r, s->account_id);
+  bool shown = s == r->current;
   char text[160];
 
+  // the session is no longer the account's: a switch to it starts another.
   if (why == GATEWAY_FATAL_AUTH) {
-    forget(s, s->account_id);
-    end_session(s, "Discord no longer accepts this login. Log in again.");
-    return;
+    forget(r, s->account_id);
+    snprintf(text, sizeof text,
+             "Discord no longer accepts this login. Log in again.");
+  }
+  else {
+    if (a != nullptr) {
+      a->session = nullptr;
+    }
+
+    snprintf(text, sizeof text, "Discord refused the connection (%d%s%s).",
+             code, reason[0] != '\0' ? " " : "", reason);
   }
 
-  snprintf(text, sizeof text, "Discord refused the connection (%d%s%s).", code,
-           reason[0] != '\0' ? " " : "", reason);
-  end_session(s, text);
+  end_session(s, shown ? text : nullptr);
+
+  // an account in the background leaves quietly.
+  if (!shown) {
+    bury(r, s);
+    changed(r->current);
+  }
 }
 
 static void connect(Session *s) {
@@ -833,7 +936,131 @@ void session_cancel_login(Session *s) {
   set_state(s, SESSION_LOGGED_OUT);
 }
 
-void session_logout(Session *s) {
+static Session *session_new(Roster *r) {
+  Session *s = calloc(1, sizeof *s);
+
+  if (s == nullptr) {
+    cilo_oom(sizeof *s);
+  }
+
+  s->roster = r;
+  s->options = r->options;
+  s->store = store_new();
+  return s;
+}
+
+static void session_free(Session *s) {
+  if (s == nullptr) {
+    return;
+  }
+
+  s->options.on_change = nullptr;
+
+  gateway_free(s->gateway);
+  api_free(s->api);
+  platform_timer_cancel(s->typing_timer);
+
+  for (Call *call = s->calls; call != nullptr;) {
+    Call *next = call->next;
+    free(call);
+    call = next;
+  }
+
+  clear_login(s);
+  clear_mentions(s);
+  clear_frecency(s);
+  clear_invite(s);
+  wipe(&s->token);
+  store_free(s->store);
+  free(s->error);
+  free(s);
+}
+
+/* ========================================================================== */
+/* the roster.                                                                */
+/* ========================================================================== */
+
+static void reap(Roster *r) {
+  for (size_t i = 0; i < r->ndead; i++) {
+    session_free(r->dead[i]);
+  }
+
+  r->ndead = 0;
+}
+
+// connects the account with the token the keychain holds for it. false when
+// it holds none, the account is then forgotten.
+static bool open_account(Roster *r, Snowflake id) {
+  char key[32];
+  char *token = platform_secret_get(token_key(id, key));
+
+  if (token == nullptr || token[0] == '\0') {
+    wipe(&token);
+    forget(r, id);
+    return false;
+  }
+
+  Session *s = session_new(r);
+
+  account_add(r, id)->session = s;
+  enter(s, token, true);
+  wipe(&token);
+  return true;
+}
+
+// shows `s`. the session left stays connected when it is an account's.
+static void show(Roster *r, Session *s) {
+  Session *left = r->current;
+
+  if (left == s) {
+    return;
+  }
+
+  r->current = s;
+
+  if (left != nullptr && account_of(r, left) == nullptr) {
+    end_session(left, nullptr);
+    bury(r, left);
+  }
+
+  if (keeps(r) && s->account_id != 0) {
+    save_last(s->account_id);
+  }
+
+  changed(s);
+}
+
+void roster_switch(Roster *r, Snowflake account_id) {
+  SessionAccount *a = account_find(r, account_id);
+
+  reap(r);
+
+  if (a == nullptr || !keeps(r)) {
+    return;
+  }
+
+  // discord refused its connection earlier, so it is tried again.
+  if (a->session == nullptr && !open_account(r, account_id)) {
+    changed(r->current);
+    return;
+  }
+
+  show(r, account_find(r, account_id)->session);
+}
+
+void roster_add(Roster *r) {
+  reap(r);
+
+  if (account_of(r, r->current) != nullptr) {
+    show(r, session_new(r));
+  }
+}
+
+void roster_logout(Roster *r) {
+  Session *s = r->current;
+
+  reap(r);
+
   if (s->state == SESSION_LOGGED_OUT) {
     return;
   }
@@ -843,44 +1070,16 @@ void session_logout(Session *s) {
     api_logout(s->api, nullptr, nullptr);
   }
 
-  forget(s, s->account_id);
+  forget(r, s->account_id);
   end_session(s, nullptr);
 
-  if (s->naccounts > 0) {
-    session_switch_account(s, s->accounts[0].id);
+  for (size_t i = 0; i < r->naccounts; i++) {
+    if (r->accounts[i].session != nullptr) {
+      show(r, r->accounts[i].session);
+      return;
+    }
   }
 }
-
-void session_switch_account(Session *s, Snowflake account_id) {
-  if (account_id == 0 || account_id == s->account_id || !persists(s)) {
-    return;
-  }
-
-  char key[32];
-  char *token = platform_secret_get(token_key(account_id, key));
-
-  // the keychain lost it, so the account is no longer logged in.
-  if (token == nullptr || token[0] == '\0') {
-    wipe(&token);
-    forget(s, account_id);
-    changed(s);
-    return;
-  }
-
-  end_session(s, nullptr);
-  enter(s, token, true);
-  wipe(&token);
-}
-
-void session_add_account(Session *s) {
-  if (s->state != SESSION_LOGGED_OUT) {
-    end_session(s, nullptr);
-  }
-}
-
-/* ========================================================================== */
-/* starting.                                                                  */
-/* ========================================================================== */
 
 bool session_load_fixture(Session *s, const char *path) {
   gateway_free(s->gateway);
@@ -904,97 +1103,92 @@ bool session_load_fixture(Session *s, const char *path) {
   return true;
 }
 
-void session_start(Session *s) {
+void roster_start(Roster *r) {
   const char *fixture = getenv("QUARREL_FIXTURE");
   const char *token = getenv("QUARREL_TOKEN");
 
   if (fixture != nullptr && fixture[0] != '\0') {
-    session_load_fixture(s, fixture);
+    session_load_fixture(r->current, fixture);
     return;
   }
 
   if (token != nullptr && token[0] != '\0') {
-    str_set(&s->token, token);
-    connect(s);
+    str_set(&r->current->token, token);
+    connect(r->current);
     return;
   }
 
-  if (!persists(s)) {
+  if (!keeps(r)) {
     return;
   }
 
-  load_accounts(s);
+  load_accounts(r);
+
+  // an account whose token is gone is forgotten, and takes its place away.
+  for (size_t i = 0; i < r->naccounts;) {
+    if (open_account(r, r->accounts[i].id)) {
+      i++;
+    }
+  }
 
   char *last = platform_pref_get(LAST_ACCOUNT_KEY);
-  Snowflake id = snowflake_parse(last);
+  SessionAccount *a = account_find(r, snowflake_parse(last));
 
   free(last);
 
-  if (id == 0 && s->naccounts > 0) {
-    id = s->accounts[0].id;
+  if (a == nullptr && r->naccounts > 0) {
+    a = &r->accounts[0];
   }
 
-  // an account whose token is gone is forgotten, the next one is tried.
-  while (id != 0 && s->token == nullptr) {
-    session_switch_account(s, id);
-    id = s->naccounts > 0 ? s->accounts[0].id : 0;
-  }
-
-  if (s->token != nullptr) {
+  if (a != nullptr) {
+    show(r, a->session);
     return;
   }
 
   char *legacy = platform_secret_get(LEGACY_TOKEN_KEY);
 
   if (legacy != nullptr && legacy[0] != '\0') {
-    enter(s, legacy, false);
+    enter(r->current, legacy, false);
   }
 
   wipe(&legacy);
 }
 
-Session *session_new(const SessionOptions *options) {
-  Session *s = calloc(1, sizeof *s);
+Roster *roster_new(const SessionOptions *options) {
+  Roster *r = calloc(1, sizeof *r);
 
-  if (s == nullptr) {
-    cilo_oom(sizeof *s);
+  if (r == nullptr) {
+    cilo_oom(sizeof *r);
   }
 
   if (options != nullptr) {
-    s->options = *options;
+    r->options = *options;
   }
 
-  s->store = store_new();
-  return s;
+  r->current = session_new(r);
+  return r;
 }
 
-void session_free(Session *s) {
-  if (s == nullptr) {
+void roster_free(Roster *r) {
+  if (r == nullptr) {
     return;
   }
 
-  s->options.on_change = nullptr;
+  r->options.on_change = nullptr;
 
-  gateway_free(s->gateway);
-  api_free(s->api);
-  platform_timer_cancel(s->typing_timer);
-
-  for (Call *call = s->calls; call != nullptr;) {
-    Call *next = call->next;
-    free(call);
-    call = next;
+  if (account_of(r, r->current) == nullptr) {
+    session_free(r->current);
   }
 
-  for (size_t i = 0; i < s->naccounts; i++) {
-    account_clear(&s->accounts[i]);
+  for (size_t i = 0; i < r->naccounts; i++) {
+    session_free(r->accounts[i].session);
+    account_clear(&r->accounts[i]);
   }
 
-  free(s->accounts);
-  clear_login(s);
-  wipe(&s->token);
-  store_free(s->store);
-  free(s->error);
-  free(s);
+  reap(r);
+  free(r->dead);
+  free(r->accounts);
+  free(r);
 }
 
 /* ========================================================================== */
@@ -1320,6 +1514,253 @@ void session_ack(Session *s, Snowflake channel_id) {
   changed(s);
 }
 
+static void on_mentions(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+  clear_mentions(s);
+  s->mentions_loaded = true;
+
+  if (res->ok && json_is(res->json, JSON_ARRAY)) {
+    s->mentions = calloc(res->json->len + 1, sizeof *s->mentions);
+
+    if (s->mentions == nullptr) {
+      cilo_oom(res->json->len * sizeof *s->mentions);
+    }
+
+    json_each(item, res->json) {
+      const Json *author = json_get(item, "author");
+      const char *content = json_get_str(item, "content");
+
+      // the names the message shows and the ones its text mentions.
+      store_put_user(s->store, author);
+
+      json_each(user, json_get(item, "mentions")) {
+        store_put_user(s->store, user);
+      }
+
+      s->mentions[s->nmentions++] = (SessionMention){
+        .id = json_get_u64(item, "id"),
+        .channel_id = json_get_u64(item, "channel_id"),
+        .author_id = json_get_u64(author, "id"),
+        .content = str_dup(content != nullptr ? content : ""),
+      };
+    }
+  }
+
+  changed(s);
+}
+
+void session_fetch_mentions(Session *s) {
+  if (s->mentions_loading || !online(s)) {
+    return;
+  }
+
+  ApiRequest req = {
+    .method = "GET",
+    .path = "/users/@me/mentions?limit=25&roles=true&everyone=true",
+  };
+
+  s->mentions_loading = true;
+  api_request(s->api, &req, on_mentions, call_new(s, 0, 0));
+  changed(s);
+}
+
+// how much a use counts for, from how many days ago it was. the client's.
+static uint32_t use_weight(int64_t days) {
+  return days <= 3    ? 100
+         : days <= 15 ? 70
+         : days <= 30 ? 50
+         : days <= 45 ? 30
+         : days <= 80 ? 10
+                      : 1;
+}
+
+typedef struct {
+  char *key;
+  uint64_t frecency;
+  size_t at;
+} Ranked;
+
+static int by_frecency(const void *a, const void *b) {
+  const Ranked *x = a, *y = b;
+
+  if (x->frecency != y->frecency) {
+    return x->frecency < y->frecency ? 1 : -1;
+  }
+
+  return x->at < y->at ? -1 : x->at > y->at;
+}
+
+// the client keeps this many.
+constexpr size_t FRECENT_MAX = 42;
+
+static void rank_reactions(Session *s, FrecencyUse *uses, size_t count) {
+  // what the client reacts with before the user used any.
+  static const char *const STARTERS[] = {
+    "100",   "thumbsup", "thumbsdown",       "heart", "point_up", "eyes",
+    "weary", "laughing", "white_check_mark", "x",
+  };
+  constexpr size_t NSTARTERS = sizeof STARTERS / sizeof *STARTERS;
+
+  Ranked *ranked = calloc(count + NSTARTERS, sizeof *ranked);
+  size_t n = 0;
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+
+  if (ranked == nullptr) {
+    cilo_oom((count + NSTARTERS) * sizeof *ranked);
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    FrecencyUse *use = &uses[i];
+    uint64_t score = 0;
+
+    for (size_t j = 0; j < use->nrecent_uses; j++) {
+      if (use->recent_uses[j] > 0) {
+        score += use_weight((now - use->recent_uses[j]) / 86400000);
+      }
+    }
+
+    if (score == 0 || use->nrecent_uses == 0) {
+      continue;
+    }
+
+    // the uses times the mean weight of the last ones, rounded up.
+    uint64_t total = (uint64_t)use->total_uses * score;
+    uint64_t frecency = (total + use->nrecent_uses - 1) / use->nrecent_uses;
+
+    ranked[n++] = (Ranked){.key = use->key, .frecency = frecency, .at = i};
+    use->key = nullptr;
+  }
+
+  if (n == 0) {
+    for (size_t i = 0; i < NSTARTERS; i++) {
+      ranked[n++] = (Ranked){.key = strdup(STARTERS[i]), .at = i};
+    }
+  }
+
+  qsort(ranked, n, sizeof *ranked, by_frecency);
+
+  size_t kept = n < FRECENT_MAX ? n : FRECENT_MAX;
+
+  s->frecent_reactions = calloc(kept + 1, sizeof *s->frecent_reactions);
+
+  if (s->frecent_reactions == nullptr) {
+    cilo_oom(kept * sizeof *s->frecent_reactions);
+  }
+
+  for (size_t i = 0; i < n; i++) {
+    if (i < kept) {
+      s->frecent_reactions[s->nfrecent_reactions++] = ranked[i].key;
+    }
+    else {
+      free(ranked[i].key);
+    }
+  }
+
+  free(ranked);
+}
+
+static void on_frecency(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  size_t count = 0;
+  FrecencyUse *uses = nullptr;
+
+  call_end(call);
+  clear_frecency(s);
+  s->frecency_loaded = true;
+
+  if (res->ok) {
+    const char *settings = json_get_str(res->json, "settings");
+
+    if (settings != nullptr) {
+      uses = settings_proto_reaction_uses(settings, &count);
+    }
+  }
+
+  rank_reactions(s, uses, count);
+
+  for (size_t i = 0; i < count; i++) {
+    free(uses[i].key);
+  }
+
+  free(uses);
+  changed(s);
+}
+
+void session_fetch_frecency(Session *s) {
+  if (s->frecency_loading || s->frecency_loaded || !online(s)) {
+    return;
+  }
+
+  // 2 is the FrecencyUserSettings, which the gateway does not send.
+  ApiRequest req = {.method = "GET", .path = "/users/@me/settings-proto/2"};
+
+  s->frecency_loading = true;
+  api_request(s->api, &req, on_frecency, call_new(s, 0, 0));
+}
+
+void session_pin(Session *s, Snowflake channel_id, Snowflake message_id,
+                 bool pin) {
+  if (online(s)) {
+    // the gateway answers with the message, pinned or not.
+    api_pin_message(s->api, channel_id, message_id, pin, nullptr, nullptr);
+  }
+}
+
+void session_mark_unread(Session *s, Snowflake channel_id,
+                         Snowflake message_id) {
+  Channel *c = store_channel(s->store, channel_id);
+
+  if (c == nullptr || message_id == 0) {
+    return;
+  }
+
+  // read up to right before the message, which no message need be.
+  Snowflake before = message_id - 1;
+
+  store_ack(s->store, c->id, before, 0);
+
+  if (online(s)) {
+    api_ack_manual(s->api, c->id, before, 0, nullptr, nullptr);
+  }
+
+  changed(s);
+}
+
+void session_forward(Session *s, Snowflake channel_id,
+                     Snowflake from_channel_id, Snowflake message_id) {
+  const Channel *from = store_channel(s->store, from_channel_id);
+
+  if (from == nullptr || !online(s)) {
+    return;
+  }
+
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+  ApiSendMessage message = {
+    .content = "",
+    .nonce = snowflake_from_time_ms(now) | (++s->nonce_counter & 0xfff),
+    .forward_id = message_id,
+    .forward_channel_id = from_channel_id,
+    .forward_guild_id = from->guild_id,
+  };
+
+  // the forward shows once the gateway sends it.
+  api_send_message(s->api, channel_id, &message, nullptr, nullptr);
+}
+
 static void on_dm_opened(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
 
@@ -1358,6 +1799,142 @@ void session_open_dm(Session *s, Snowflake user_id) {
   if (online(s)) {
     api_open_dm(s->api, user_id, on_dm_opened, call_new(s, 0, user_id));
   }
+}
+
+void session_open_group(Session *s, const Snowflake *user_ids, size_t count) {
+  if (count == 1) {
+    session_open_dm(s, user_ids[0]);
+  }
+  else if (count > 1 && online(s)) {
+    api_open_group(s->api, user_ids, count, on_dm_opened, call_new(s, 0, 0));
+  }
+}
+
+static void on_guild_created(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+  s->guild_creating = false;
+
+  // the guild itself comes through the gateway's GUILD_CREATE.
+  if (res->ok && json_get_u64(res->json, "id") != 0) {
+    s->guild_created = json_get_u64(res->json, "id");
+  }
+  else {
+    str_set(&s->guild_error,
+            res->ok ? "Discord sent no server." : res->error.message);
+  }
+
+  changed(s);
+}
+
+void session_create_guild(Session *s, const char *name) {
+  if (s->guild_creating || name == nullptr || name[0] == '\0') {
+    return;
+  }
+
+  str_set(&s->guild_error, nullptr);
+  s->guild_created = 0;
+
+  if (!online(s)) {
+    str_set(&s->guild_error, "Creating a server needs a connection.");
+  }
+  else {
+    s->guild_creating = true;
+    api_create_guild(s->api, name, on_guild_created, call_new(s, 0, 0));
+  }
+
+  changed(s);
+}
+
+static void on_invite(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  bool wanted = s->invite_loading && s->invite_guild_id == call->id;
+
+  call_end(call);
+
+  // another guild was asked for since.
+  if (!wanted) {
+    return;
+  }
+
+  const char *code = json_get_str(res->json, "code");
+
+  s->invite_loading = false;
+
+  if (res->ok && code != nullptr) {
+    str_set(&s->invite_code, code);
+  }
+  else {
+    str_set(&s->invite_error,
+            res->ok ? "Discord sent no invite." : res->error.message);
+  }
+
+  changed(s);
+}
+
+// the channel an invite lands in: the one shown when it is the guild's,
+// else the first the user may invite to.
+static const Channel *invite_channel(Session *s, const Guild *g) {
+  const Channel *shown = store_channel(s->store, s->selected_channel_id);
+
+  if (shown != nullptr && shown->guild_id == g->id &&
+      !channel_is_thread(shown) &&
+      store_can(s->store, shown, PERM_CREATE_INSTANT_INVITE)) {
+    return shown;
+  }
+
+  for (size_t i = 0; i < g->nchannels; i++) {
+    const Channel *c = g->channels[i];
+
+    if (c->type != CHANNEL_GUILD_CATEGORY && !channel_is_thread(c) &&
+        store_can(s->store, c,
+                  PERM_VIEW_CHANNEL | PERM_CREATE_INSTANT_INVITE)) {
+      return c;
+    }
+  }
+
+  return nullptr;
+}
+
+void session_create_invite(Session *s, Snowflake guild_id) {
+  const Guild *g = store_guild(s->store, guild_id);
+  bool known = s->invite_guild_id == guild_id &&
+               (s->invite_loading || s->invite_code != nullptr);
+
+  if (g == nullptr || known) {
+    return;
+  }
+
+  const Channel *c = invite_channel(s, g);
+
+  clear_invite(s);
+  s->invite_guild_id = guild_id;
+
+  if (c == nullptr) {
+    s->invite_error = str_dup("You cannot invite people to this server.");
+  }
+  else if (!online(s)) {
+    s->invite_error = str_dup("Invites need a connection.");
+  }
+  else {
+    s->invite_loading = true;
+    api_create_invite(s->api, c->id, on_invite, call_new(s, 0, guild_id));
+  }
+
+  changed(s);
 }
 
 void session_set_status(Session *s, UserStatus status, bool invisible) {

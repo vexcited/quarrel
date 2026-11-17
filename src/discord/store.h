@@ -97,6 +97,11 @@ typedef struct {
   // null or "0" for a unique username, four digits for bots and old accounts.
   char *discriminator;
   char *avatar, *banner;
+  // what the profile says. discord sends these for the current user only.
+  char *bio, *pronouns;
+  // 0xrrggbb when `has_accent`, the banner's color when there is no image.
+  uint32_t accent_color;
+  bool has_accent;
   uint64_t public_flags;
   bool bot, system;
 
@@ -466,7 +471,7 @@ typedef struct {
   int64_t timestamp;
   char *author_name, *author_url, *author_icon;
   char *footer_text, *footer_icon;
-  char *provider_name;
+  char *provider_name, *provider_url;
   EmbedMedia image, thumbnail, video;
   EmbedField *fields;
   size_t nfields;

@@ -426,6 +426,8 @@ static void free_user(User *u) {
   free(u->discriminator);
   free(u->avatar);
   free(u->banner);
+  free(u->bio);
+  free(u->pronouns);
   free(u->activity);
   free(u);
 }
@@ -459,7 +461,17 @@ User *store_put_user(Store *s, const Json *user) {
   changed |= put_str(&u->discriminator, user, "discriminator");
   changed |= put_str(&u->avatar, user, "avatar");
   changed |= put_str(&u->banner, user, "banner");
+  changed |= put_str(&u->bio, user, "bio");
+  changed |= put_str(&u->pronouns, user, "pronouns");
   changed |= put_bool(&u->bot, user, "bot");
+
+  const Json *accent = json_get(user, "accent_color");
+
+  if (accent != nullptr) {
+    u->has_accent = json_is(accent, JSON_NUMBER);
+    u->accent_color = (uint32_t)json_get_u64(user, "accent_color");
+  }
+
   changed |= put_bool(&u->system, user, "system");
 
   if (json_get(user, "public_flags") != nullptr) {
@@ -897,6 +909,7 @@ static void free_embeds(Message *m) {
     free(e->footer_text);
     free(e->footer_icon);
     free(e->provider_name);
+    free(e->provider_url);
     free_media(&e->image);
     free_media(&e->thumbnail);
     free_media(&e->video);
@@ -1023,6 +1036,7 @@ static void fill_embeds(Message *m, const Json *embeds) {
     e->footer_icon = str_dup(json_get_str(footer, "proxy_icon_url"));
     e->provider_name =
       str_dup(json_get_str(json_get(item, "provider"), "name"));
+    e->provider_url = str_dup(json_get_str(json_get(item, "provider"), "url"));
 
     fill_media(&e->image, json_get(item, "image"));
     fill_media(&e->thumbnail, json_get(item, "thumbnail"));
