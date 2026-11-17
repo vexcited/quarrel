@@ -9,11 +9,14 @@
 #include "look.h"
 #include "platform/platform.h"
 
-constexpr float GUILD_BAR_WIDTH = 72;
-constexpr float CHANNEL_LIST_WIDTH = 302;
+constexpr float SIDEBAR_WIDTH = 300;
+constexpr float SIDEBAR_MIN = 240;
+constexpr float SIDEBAR_MAX = 440;
 constexpr float MEMBER_LIST_WIDTH = 264;
-constexpr float TOP_BAR_HEIGHT = 32;
+constexpr float TOP_BAR_HEIGHT = 38;
 constexpr float HEADER_HEIGHT = 48;
+// a list takes its scroll once it was laid out, a frame after it opened.
+constexpr uint8_t GUILDS_SETTLE = 3;
 
 // the channel a guild was last left on.
 typedef struct {
@@ -26,15 +29,59 @@ typedef enum : uint8_t {
   FRIENDS_IMPLICIT,
 } FriendsTab;
 
+typedef CIVUE_VEC(Snowflake) Ids;
+
+// what opens under a button, one at a time.
+typedef enum : uint8_t {
+  POPOVER_NONE,
+  POPOVER_ACCOUNTS,
+  POPOVER_GUILDS,
+  POPOVER_INBOX,
+  POPOVER_GUILD_MENU,
+  POPOVER_INVITE,
+  POPOVER_NEW_DM,
+  POPOVER_NEW_GUILD,
+  POPOVER_MESSAGE_MENU,
+  POPOVER_REACT,
+  POPOVER_FORWARD,
+} Popover;
+
+typedef enum : uint8_t {
+  INBOX_UNREADS,
+  INBOX_MENTIONS,
+} InboxTab;
+
 typedef struct {
+  Roster *roster;
+  // the roster's current one, taken at the start of each frame.
   Session *session;
-  ImageCache *images;
+  civue_images *images;
   Look look;
   civue_scrollbar_look bars, thin_bars;
 
-  // the account what is below belongs to, and whether its switcher shows.
+  // the account what is below belongs to, and what is open over the window.
   Snowflake account_id;
-  bool accounts_open;
+  Popover popover;
+  // the guilds' switcher: the frames left to settle it since it opened.
+  uint8_t guilds_fresh;
+  // where the switcher's card starts, and how much of its list the card
+  // is too short to show.
+  float guilds_top, guilds_hidden;
+  // scrolling still makes the card taller.
+  bool guilds_grows;
+  // when the pointer was last over its arrows, down then up, 0 when not.
+  double guilds_arrow[2];
+  // where the pointer was as it opened. its arrows wait for it to move.
+  civue_vec2 guilds_mouse;
+  bool guilds_armed;
+  // something is drawn over the window's buttons, and they are hidden for it.
+  bool covers_buttons, buttons_hidden;
+  // the inbox's tab, and whether its mentions were asked for since it
+  // opened.
+  bool inbox_asked;
+  InboxTab inbox_tab;
+  // how wide the user made the sidebar.
+  float sidebar_width;
 
   // the guild whose channels show, 0 for the direct messages.
   Snowflake guild_id;
@@ -69,12 +116,31 @@ typedef struct {
   // hover while the pointer is over it.
   Snowflake hover_message, hover_next;
   civue_rect toolbar_rect;
+  // the message a menu, an emoji picker or a forward is open for, the
+  // toolbar it opened from and what its search holds.
+  Snowflake menu_message;
+  civue_rect menu_anchor;
+  char *menu_search;
+  // its row that deletes was pressed once, and its search is to be focused.
+  bool menu_armed, menu_focus;
 
   // the friends page: its tab, what its search holds, and the timer that
   // redraws it while a counter of elapsed time shows.
   FriendsTab friends_tab;
   char *friends_search;
+  // what the search over the direct messages holds.
+  char *dm_search;
   PlatformTimer *friends_tick;
+
+  // the guilds whose muted channels are hidden.
+  Ids hide_muted;
+  // the new conversation: what its search holds and the friends picked.
+  char *pick_search;
+  Ids picks;
+  // the name typed for a new guild.
+  char *guild_name;
+  // the invite's link was copied since it opened.
+  bool invite_copied;
 
   // the spoilers the user clicked.
   CIVUE_VEC(civue_id) revealed;
@@ -86,5 +152,12 @@ void app_select_guild(App *app, Snowflake guild_id);
 void app_select_channel(App *app, Snowflake channel_id);
 Channel *app_channel(App *app);
 Guild *app_guild(App *app);
+bool ids_has(const Ids *ids, Snowflake id);
+// adds `id`, or removes it when it is there.
+void ids_toggle(Ids *ids, Snowflake id);
+
+static inline void app_toggle(App *app, Popover popover) {
+  app->popover = app->popover == popover ? POPOVER_NONE : popover;
+}
 
 #endif

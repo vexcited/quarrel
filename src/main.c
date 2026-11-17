@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <civue/dsl.h>
@@ -5,6 +6,8 @@
 #include "http.h"
 #include "ui/components.h"
 #include "ui/widgets.h"
+
+#define SIDEBAR_KEY "sidebar_width"
 
 // the message under the pointer changes once a frame, and stays while the
 // pointer is over its toolbar, which reaches over the message before it.
@@ -24,24 +27,55 @@ static void settle_hover(App *app, civue_ui *ui) {
 }
 
 static void sidebar(App *app) {
-  const Look *k = &app->look;
   Guild *guild = app_guild(app);
 
-  div(relative, flex, flex_shrink_0, h(full)) {
-    guild_bar(app);
+  div(flex, flex_col, flex_shrink_0, w(px(app->sidebar_width)), h(full)) {
+    top_bar(app);
+    place_bar(app);
 
-    div(flex, flex_col, flex_shrink_0, w(px(CHANNEL_LIST_WIDTH)), h(full),
-        border_l(1), border_t(1), border_color(k->frame_border), rounded_tl(xl),
-        overflow_hidden) {
-      if (guild) {
-        channel_list(app, guild);
-      }
-      else {
-        private_list(app);
-      }
+    if (guild) {
+      channel_list(app, guild);
     }
+    else {
+      private_list(app);
+    }
+  }
+}
 
-    user_panel(app);
+// the sidebar's edge is dragged to size it, and pressed twice to bring its
+// width back. the width is kept once the edge is let go.
+static void sidebar_handle(App *app) {
+  civue_ui *ui = civue_ui_current();
+  float edge = app->sidebar_width;
+  civue_response grip = civue_interact(
+    ui, id("sidebar-handle"), xywh(edge - 3, TOP_BAR_HEIGHT, 6, ui->size.y),
+    CIVUE_SENSE_DRAG);
+  float width = edge;
+
+  if (grip.hovered || grip.dragging) {
+    civue_set_cursor(ui, CIVUE_CURSOR_RESIZE_H);
+  }
+
+  if (grip.double_clicked) {
+    width = SIDEBAR_WIDTH;
+  }
+  else if (grip.dragging && ui->input.has_mouse) {
+    width = ui->input.mouse.x;
+  }
+
+  width = width < SIDEBAR_MIN ? SIDEBAR_MIN : width;
+  width = width > SIDEBAR_MAX ? SIDEBAR_MAX : width;
+
+  if (width != app->sidebar_width) {
+    app->sidebar_width = width;
+    civue_window_wake();
+  }
+
+  if (grip.released || grip.double_clicked) {
+    char digits[16];
+
+    snprintf(digits, sizeof digits, "%d", (int)width);
+    platform_pref_set(SIDEBAR_KEY, digits);
   }
 }
 
@@ -49,15 +83,13 @@ static void shell(App *app) {
   const Look *k = &app->look;
   Channel *channel = app_channel(app);
 
-  div(size(full), flex, flex_col, bg(k->frame), text_color(k->text),
-      text_size(px(16)), line_height(px(22))) {
-    top_bar(app);
+  div(size(full), flex, bg(k->frame), text_color(k->text), text_size(px(16)),
+      line_height(px(22))) {
+    sidebar(app);
 
-    div(flex, flex_1, min_h(0)) {
-      sidebar(app);
-
-      div(flex, flex_1, min_w(0), h(full), border_t(1),
-          border_color(k->frame_border)) {
+    div(flex, flex_1, min_w(0), h(full), py(2), pr(2)) {
+      div(flex, flex_1, min_w(0), h(full), rounded(xl), bg(k->chat), border(1),
+          border_color(k->frame_border), overflow_hidden) {
         if (channel) {
           chat(app, channel);
         }
@@ -67,6 +99,8 @@ static void shell(App *app) {
       }
     }
   }
+
+  sidebar_handle(app);
 }
 
 // QUARREL_CHANNEL opens a channel by its id once the store is ready, to land
@@ -88,8 +122,9 @@ static void open_asked(App *app) {
 
 static void frame(void *ctx, civue_ui *ui) {
   App *app = ctx;
-  Session *session = app->session;
+  Session *session = app->roster->current;
 
+  app->session = session;
   ui->appearance = CIVUE_APPEARANCE_DARK;
   ui->scrollbars = nullptr;
   settle_hover(app, ui);
@@ -97,6 +132,8 @@ static void frame(void *ctx, civue_ui *ui) {
   if (app->account_id != session->account_id) {
     app_reset(app);
   }
+
+  app->covers_buttons = false;
 
   switch (session->state) {
     case SESSION_READY:
@@ -111,6 +148,11 @@ static void frame(void *ctx, civue_ui *ui) {
       login_screen(app);
       break;
   }
+
+  if (app->covers_buttons != app->buttons_hidden) {
+    app->buttons_hidden = app->covers_buttons;
+    civue_window_buttons_hidden(app->buttons_hidden);
+  }
 }
 
 static civue_color background(void *ctx) {
@@ -123,15 +165,25 @@ static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
   App *app = arg;
 
   platform_stay_responsive();
-  app->images = images_new(0, nullptr);
-  app->session = session_new(&(SessionOptions){.on_change = civue_window_wake});
-  session_start(app->session);
+  app->images = images_new();
+  app->roster = roster_new(&(SessionOptions){.on_change = civue_window_wake});
+  app->session = app->roster->current;
+  roster_start(app->roster);
+  app->session = app->roster->current;
 
   return (civue_app){app, frame, background};
 }
 
 int main() {
   App app = {.look = look_dark(), .stick = true};
+  char *width = platform_pref_get(SIDEBAR_KEY);
+
+  app.sidebar_width = width ? (float)atof(width) : SIDEBAR_WIDTH;
+  free(width);
+
+  if (app.sidebar_width < SIDEBAR_MIN || app.sidebar_width > SIDEBAR_MAX) {
+    app.sidebar_width = SIDEBAR_WIDTH;
+  }
 
   app.bars = scrollbars_of(&app, 12);
   app.thin_bars = scrollbars_of(&app, 8);
@@ -152,8 +204,8 @@ int main() {
     hcaptcha_free(app.captcha);
   }
 
-  session_free(app.session);
-  images_free(app.images);
+  roster_free(app.roster);
+  civue_images_free(app.images);
   http_shutdown();
 
   free(app.login);
@@ -162,6 +214,12 @@ int main() {
   free(app.draft);
   free(app.kept_draft);
   free(app.friends_search);
+  free(app.dm_search);
+  free(app.pick_search);
+  free(app.guild_name);
+  free(app.menu_search);
+  free(app.hide_muted.v);
+  free(app.picks.v);
   platform_timer_cancel(app.friends_tick);
   free(app.last_channels.v);
   free(app.revealed.v);

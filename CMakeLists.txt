@@ -46,6 +46,8 @@ set(QUARREL_CORE_SOURCES
   src/json.c
   src/discord/api.c
   src/discord/cdn.c
+  src/discord/emoji.c
+  src/discord/emoji_table.c
   src/discord/etf.c
   src/discord/events.c
   src/discord/gateway.c
@@ -57,7 +59,6 @@ set(QUARREL_CORE_SOURCES
   src/discord/util.c)
 
 set(QUARREL_DARWIN_SOURCES
-  src/platform/darwin/image.m
   src/platform/darwin/pending.m
   src/platform/darwin/storage.m
   src/platform/darwin/system.m
@@ -101,6 +102,9 @@ endif()
 add_executable(quarrel
   src/main.c
   src/ui/accounts.c
+  src/ui/inbox.c
+  src/ui/messagemenu.c
+  src/ui/newdm.c
   src/ui/app.c
   src/ui/chat.c
   src/ui/composer.c

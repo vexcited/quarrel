@@ -40,12 +40,40 @@ static void drop(char **text) {
   *text = nullptr;
 }
 
+bool ids_has(const Ids *ids, Snowflake id) {
+  for (uint32_t i = 0; i < ids->len; i++) {
+    if (ids->v[i] == id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void ids_toggle(Ids *ids, Snowflake id) {
+  for (uint32_t i = 0; i < ids->len; i++) {
+    if (ids->v[i] == id) {
+      ids->v[i] = ids->v[--ids->len];
+      return;
+    }
+  }
+
+  if (ids->len == ids->cap) {
+    ids->cap = ids->cap ? ids->cap * 2 : 8;
+    ids->v = realloc(ids->v, ids->cap * sizeof *ids->v);
+  }
+
+  ids->v[ids->len++] = id;
+}
+
 void app_reset(App *app) {
   app->account_id = app->session->account_id;
-  app->accounts_open = false;
+  app->popover = POPOVER_NONE;
   app->guild_id = 0;
   app->last_channels.len = 0;
   app->revealed.len = 0;
+  app->hide_muted.len = 0;
+  app->picks.len = 0;
 
   // the password does not stay around once it served.
   if (app->password) {
@@ -58,6 +86,10 @@ void app_reset(App *app) {
   drop(&app->draft);
   drop(&app->kept_draft);
   drop(&app->friends_search);
+  drop(&app->dm_search);
+  drop(&app->pick_search);
+  drop(&app->guild_name);
+  drop(&app->menu_search);
 
   app->reply_to = 0;
   app->editing = 0;
@@ -66,6 +98,14 @@ void app_reset(App *app) {
   app->hover_message = 0;
   app->hover_next = 0;
   app->friends_tab = FRIENDS_ONLINE;
+
+  // the account comes back where it was left.
+  Channel *channel = app_channel(app);
+
+  if (channel) {
+    app->guild_id = channel->guild_id;
+    last_of(app, app->guild_id)->channel_id = channel->id;
+  }
 }
 
 static void leave_composer(App *app) {
