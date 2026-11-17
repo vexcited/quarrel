@@ -155,21 +155,6 @@ static void tag_chip(App *app, const User *u) {
   }
 }
 
-static civue_icon activity_icon(ActivityType type) {
-  switch (type) {
-    case ACTIVITY_LISTENING:
-      return CIVUE_ICON(lucide, music);
-    case ACTIVITY_WATCHING:
-      return CIVUE_ICON(lucide, tv);
-    case ACTIVITY_STREAMING:
-      return CIVUE_ICON(lucide, radio);
-    case ACTIVITY_COMPETING:
-      return CIVUE_ICON(lucide, trophy);
-    default:
-      return CIVUE_ICON(lucide, gamepad_2);
-  }
-}
-
 static void friend_row(App *app, const Friend *f) {
   const Look *k = &app->look;
   const User *u = f->user;
@@ -633,9 +618,11 @@ static void active_now(App *app) {
 void friends_page(App *app) {
   const Look *k = &app->look;
 
-  div(flex, flex_col, flex_1, min_w(0), h(full), bg(k->chat)) {
+  div(flex, flex_col, flex_1, min_w(0), h(full)) {
     div(flex, items_center, gap(2), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
         border_b(1), border_color(k->border)) {
+      window_handle(id("friends-header"));
+
       icon(lucide, users, size(5), text_color(k->faint));
       text("Friends", mr(2), font_weight(semibold), text_color(k->strong));
 

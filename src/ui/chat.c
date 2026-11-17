@@ -22,6 +22,8 @@ static void chat_header(App *app, Channel *c) {
 
   div(flex, items_center, gap(2), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
       border_b(1), border_color(k->border)) {
+    window_handle(id("chat-header"));
+
     if (c->type == CHANNEL_DM) {
       const User *user =
         c->nrecipients ? store_user(store, c->recipients[0]) : nullptr;
@@ -99,10 +101,9 @@ static void typing_line(App *app, const Channel *c) {
 }
 
 void chat(App *app, Channel *c) {
-  const Look *k = &app->look;
   bool members = has_member_list(c) && !app->members_hidden;
 
-  div(flex, flex_col, flex_1, min_w(0), h(full), bg(k->chat)) {
+  div(flex, flex_col, flex_1, min_w(0), h(full)) {
     chat_header(app, c);
 
     div(flex, flex_1, min_h(0)) {
@@ -110,6 +111,7 @@ void chat(App *app, Channel *c) {
         message_list(app, c);
         composer(app, c);
         typing_line(app, c);
+        message_popovers(app, c);
       }
 
       if (members) {

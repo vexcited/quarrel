@@ -5,6 +5,7 @@
 
 #include <civue/dsl.h>
 
+#include "discord/emoji.h"
 #include "discord/cdn.h"
 
 void glyph(civue_icon icon, float size, civue_color color) {
@@ -24,14 +25,51 @@ bool image_fill(App *app, const char *url, float radius) {
     return false;
   }
 
-  Image image = images_get(app->images, ui, url, (uint32_t)(side * ui->scale));
+  civue_image_info image =
+    civue_images_get(app->images, ui, url, (uint32_t)(side * ui->scale));
 
-  if (image.state != IMAGE_READY) {
+  if (image.state != CIVUE_IMAGE_READY) {
     return false;
   }
 
   civue_image(ui, image.texture, r, (float[4]){0, 0, 1, 1}, 1, radius, false);
   return true;
+}
+
+void emoji_node(App *app, Snowflake emoji_id, const char *name, float size) {
+  const UnicodeEmoji *emoji = emoji_id ? nullptr : emoji_by_utf8(name);
+  char url[CDN_URL_MAX] = "";
+
+  if (emoji_id) {
+    cdn_emoji(url, emoji_id, 48);
+  }
+  else if (emoji) {
+    emoji_url(url, emoji);
+  }
+
+  if (!*url) {
+    text(name ? name : "", flex_shrink_0, text_size(px(size * 0.85f)),
+         line_height(px(size)));
+    return;
+  }
+
+  div(size(px(size)), flex, items_center, justify_center, flex_shrink_0) {
+    civue_ui *ui = civue_ui_current();
+    civue_rect r = here();
+    uint32_t pixels =
+      (uint32_t)(fmax(civue_rect_w(r), civue_rect_h(r)) * ui->scale);
+
+    // an emoji of unicode whose image discord no longer has is the
+    // system's glyph, as one discord never had.
+    if (emoji && pixels &&
+        civue_images_get(app->images, ui, url, pixels).state ==
+          CIVUE_IMAGE_FAILED) {
+      text(name, text_size(px(size * 0.85f)), line_height(px(size)));
+    }
+    else {
+      image_fill(app, url, 0);
+    }
+  }
 }
 
 void status_dot(UserStatus status, civue_rect r, const Look *k,
@@ -118,6 +156,14 @@ void mention_badge(const Look *k, uint32_t count) {
     text(label, text_size(px(12)), line_height(px(16)), font_weight(bold),
          text_color(CIVUE_WHITE));
   }
+}
+
+civue_rect overlay_room(void) {
+  civue_ui *ui = civue_ui_current();
+  civue_rect s = ui->screen;
+
+  ui->overlay_outside = true;
+  return (civue_rect){s.x0 + 8, s.y0 + 8, s.x1 - 8, s.y1 - 8};
 }
 
 void hint(App *app, civue_id id, const civue_response *resp, const char *label,
@@ -262,4 +308,98 @@ void format_day(int64_t ms, char *out, size_t cap) {
 
   snprintf(out, cap, "%d %s %d", tm.tm_mday, months[tm.tm_mon % 12],
            tm.tm_year + 1900);
+}
+
+civue_icon activity_icon(ActivityType type) {
+  switch (type) {
+    case ACTIVITY_LISTENING:
+      return CIVUE_ICON(lucide, music);
+    case ACTIVITY_WATCHING:
+      return CIVUE_ICON(lucide, tv);
+    case ACTIVITY_STREAMING:
+      return CIVUE_ICON(lucide, radio);
+    case ACTIVITY_COMPETING:
+      return CIVUE_ICON(lucide, trophy);
+    default:
+      return CIVUE_ICON(lucide, gamepad_2);
+  }
+}
+
+uint32_t mentions_of(Store *store) {
+  size_t count = 0;
+  const GuildFolder *folders = store_guild_folders(store, &count);
+  uint32_t total = store_private_unread(store).mentions;
+
+  for (size_t i = 0; i < count; i++) {
+    for (size_t j = 0; j < folders[i].nguilds; j++) {
+      total += store_guild_unread(store, folders[i].guilds[j]).mentions;
+    }
+  }
+
+  return total;
+}
+
+bool image_cover(App *app, const char *url, float radius) {
+  civue_ui *ui = civue_ui_current();
+  civue_rect r = here();
+  double side = fmax(civue_rect_w(r), civue_rect_h(r));
+
+  if (side <= 0 || civue_rect_w(r) <= 0) {
+    return false;
+  }
+
+  civue_image_info image =
+    civue_images_get(app->images, ui, url, (uint32_t)(side * ui->scale));
+
+  if (image.state != CIVUE_IMAGE_READY || !image.height) {
+    return false;
+  }
+
+  float shape = (float)(civue_rect_h(r) / civue_rect_w(r));
+  float kept = shape * (float)image.width / (float)image.height;
+  float cut_y = kept < 1 ? (1 - kept) / 2 : 0;
+  float cut_x = kept > 1 ? (1 - 1 / kept) / 2 : 0;
+
+  civue_image(ui, image.texture, r,
+              (float[4]){cut_x, cut_y, 1 - cut_x, 1 - cut_y}, 1, radius, false);
+  return true;
+}
+
+bool menu_row(App *app, civue_id id, civue_icon icon, const char *label,
+              civue_color color) {
+  const Look *k = &app->look;
+  bool pressed = false;
+
+  div(key(id), flex, items_center, gap(3), flex_shrink_0, h(10), px(2),
+      rounded(lg), text_color(color), hover(bg(k->hover)), text_size(px(14)),
+      line_height(px(18)), font_weight(medium), cursor_pointer) {
+    pressed = button().activated;
+
+    div(flex, items_center, justify_center, size(8), flex_shrink_0) {
+      glyph(icon, 18, color);
+    }
+
+    text(label, flex_1, min_w(0), truncate);
+  }
+
+  return pressed;
+}
+
+void window_handle(civue_id id) {
+  civue_ui *ui = civue_ui_current();
+  // a region counts as pressed wherever the pointer is over it, so the one
+  // under the pointer is asked too: a button of the node keeps its press.
+  bool topmost = ui->hovered == id;
+  civue_response handle = civue_interact(ui, id, here(), CIVUE_SENSE_CLICK);
+
+  if (!handle.pressed || !topmost) {
+    return;
+  }
+
+  if (handle.double_clicked) {
+    ui->toggle_maximize = true;
+  }
+  else {
+    ui->drag_window = true;
+  }
 }

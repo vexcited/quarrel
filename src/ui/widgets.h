@@ -8,6 +8,12 @@ void glyph(civue_icon icon, float size, civue_color color);
 // the image at `url` over the open node, nothing while it loads. false until
 // it shows.
 bool image_fill(App *app, const char *url, float radius);
+// the same, the middle of the image cut to the node's shape.
+bool image_cover(App *app, const char *url, float radius);
+// an emoji as discord draws it, `size` points square: one of a guild when
+// `emoji_id`, else the twemoji of `name`, its utf-8, or the system's glyph
+// when discord has none.
+void emoji_node(App *app, Snowflake emoji_id, const char *name, float size);
 // a round avatar node, with the user's status at its corner over `ring` when
 // `status` is set.
 void avatar(App *app, const User *user, Snowflake guild_id, float size,
@@ -16,12 +22,21 @@ void status_dot(UserStatus status, civue_rect r, const Look *k,
                 civue_color ring);
 // the red count of mentions, nothing for 0.
 void mention_badge(const Look *k, uint32_t count);
+// every mention waiting in the store.
+uint32_t mentions_of(Store *store);
 // a label by what answered `resp` after a moment of hover.
 void hint(App *app, civue_id id, const civue_response *resp, const char *label,
           civue_tooltip_side side);
+// the open node moves the window when pressed where nothing of it answers,
+// and zooms it on a double click.
+void window_handle(civue_id id);
 // a square button holding an icon, true when pressed.
 bool icon_button(App *app, civue_id id, civue_icon icon, float size,
                  float icon_size, const char *label);
+// a row of a menu, 40 points high, true when pressed.
+bool menu_row(App *app, civue_id id, civue_icon icon, const char *label,
+              civue_color color);
+civue_icon activity_icon(ActivityType type);
 civue_field_look field_look(const Look *k);
 civue_scrollbar_look scrollbars_of(App *app, float size);
 
@@ -48,5 +63,10 @@ typedef struct {
 
 // discord's markdown as a node as wide as what holds it, known by `key`.
 void markup(App *app, civue_id key, const char *source, const MarkupOptions *o);
+
+// where a card over the rest may go, 8 points in from the screen's edges
+// or from the window's where it cannot leave it. lets this frame's overlays
+// out of the window.
+civue_rect overlay_room(void);
 
 #endif

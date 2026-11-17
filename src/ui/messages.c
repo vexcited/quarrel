@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include <civue/dsl.h>
 
@@ -134,113 +135,516 @@ static void attachments(App *app, const Message *m) {
   }
 }
 
-static bool link_text(const Look *k, civue_id id, const char *label,
-                      const char *url) {
+/* ========================================================================== */
+/* embeds, as discord's client lays them out. what follows comes from its     */
+/* embed component and the stylesheet next to it.                             */
+/* ========================================================================== */
+
+constexpr float EMBED_MAX_WIDTH = 516;
+constexpr float EMBED_THUMBNAIL = 80;
+// the padding left and right of the content, and the borders around it.
+constexpr float EMBED_CHROME = 12 + 16 + 4 + 1;
+
+// an embed as the client reads it: discord's fields are not shown as they
+// come.
+typedef struct {
+  const Embed *e;
+  const EmbedMedia *image, *thumbnail, *video;
+  // more than one when embeds with the same url merged into a gallery.
+  const EmbedMedia *images[4];
+  size_t nimages;
+  bool gifv, rich, fields, describes;
+} EmbedView;
+
+static bool type_is(const Embed *e, const char *type) {
+  return e->type && !strcmp(e->type, type);
+}
+
+static bool media_sized(const EmbedMedia *m) {
+  return m->url && m->width > 0 && m->height > 0;
+}
+
+static bool has_text_in(const char *s, const char *word) {
+  return s && strcasestr(s, word);
+}
+
+static EmbedView embed_view(const Embed *e) {
+  EmbedView v = {
+    .e = e,
+    .gifv = type_is(e, "gifv"),
+    .rich = type_is(e, "rich"),
+  };
+
+  // a thumbnail is the picture itself for an article and an image.
+  if (media_sized(&e->thumbnail)) {
+    if (type_is(e, "article") || type_is(e, "image")) {
+      v.image = &e->thumbnail;
+    }
+    else {
+      v.thumbnail = &e->thumbnail;
+    }
+  }
+
+  if (media_sized(&e->image)) {
+    v.image = &e->image;
+  }
+
+  if (e->video.url) {
+    // a video without a thumbnail shows its own first frame.
+    if (!v.thumbnail && e->video.proxy_url && media_sized(&e->video)) {
+      v.thumbnail = &e->video;
+    }
+
+    bool sketchfab = has_text_in(e->provider_name, "sketchfab") ||
+                     starts_with(e->video.url, "https://sketchfab.com");
+    bool reachable = e->video.proxy_url || starts_with(e->video.url, "https:");
+
+    if (v.thumbnail && media_sized(&e->video) && !sketchfab && reachable) {
+      v.video = &e->video;
+    }
+  }
+
+  if (v.image) {
+    v.images[v.nimages++] = v.image;
+  }
+
+  // only these types keep their fields, and these drop their description.
+  v.fields =
+    e->nfields && (v.rich || type_is(e, "auto_moderation_message") ||
+                   type_is(e, "auto_moderation_notification") ||
+                   type_is(e, "safety_policy_notice") ||
+                   type_is(e, "safety_system_notification") ||
+                   type_is(e, "voice_channel") || type_is(e, "poll_result"));
+  v.describes =
+    e->description && !type_is(e, "image") && !type_is(e, "video") && !v.gifv;
+
+  return v;
+}
+
+// the picture alone, without the card around it.
+static bool embed_inline(const EmbedView *v) {
+  return (v->image || v->video) &&
+         (v->gifv || (!v->rich && !v->e->author_name && !v->e->title));
+}
+
+// tiktok and upright youtube videos get more height.
+static civue_vec2 embed_media_max(const EmbedView *v) {
+  const char *provider = v->e->provider_name;
+  bool tiktok = provider && !strcmp(provider, "TikTok");
+  bool youtube =
+    (provider && !strcmp(provider, "YouTube")) ||
+    (v->video && starts_with(v->video->url, "https://www.youtube.com"));
+  bool upright = v->video && v->video->height > v->video->width;
+
+  return point(400, tiktok || (upright && youtube) ? 450 : 300);
+}
+
+static civue_vec2 embed_video_size(const EmbedView *v) {
+  civue_vec2 max = embed_media_max(v);
+  const EmbedMedia *of = v->video ? v->video : v->thumbnail;
+  civue_vec2 size = fit_media(of->width, of->height, max.x, max.y);
+
+  return point(fmax(size.x, 150), fmax(size.y, 144));
+}
+
+// a video or a gif: its first frame, opened in the browser when pressed.
+static void embed_video(App *app, civue_id id, const EmbedView *v) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  civue_vec2 size = embed_video_size(v);
+  const EmbedMedia *poster = v->thumbnail;
+  const char *target = v->e->url ? v->e->url : v->video->url;
+  char sized[CDN_URL_MAX];
+
+  cdn_media(sized, poster->proxy_url ? poster->proxy_url : poster->url,
+            (uint32_t)(size.x * ui->scale), (uint32_t)(size.y * ui->scale));
+
+  div(key(id), relative, flex, items_center, justify_center, flex_shrink_0,
+      w(px(size.x)), max_w(full), h(px(size.y)), rounded(px(4)), bg(k->surface),
+      overflow_hidden, cursor_pointer) {
+    if (button().activated && target) {
+      civue_open_url(target);
+    }
+
+    image_cover(app, sized, 4);
+
+    if (v->gifv) {
+      div(absolute, right(px(4)), top(px(4)), px(1), rounded(px(4)),
+          bg(rgba(0x000000b8))) {
+        text("GIF", text_size(px(12)), line_height(px(16)), font_weight(bold),
+             text_color(CIVUE_WHITE));
+      }
+    }
+    else {
+      div(flex, items_center, justify_center, size(12), rounded(full),
+          bg(rgba(0x00000099)), text_color(CIVUE_WHITE)) {
+        icon(lucide, play, size(6));
+      }
+    }
+  }
+}
+
+static void gallery_image(App *app, civue_id id, const EmbedMedia *m) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  char sized[CDN_URL_MAX];
+
+  cdn_media(sized, m->proxy_url ? m->proxy_url : m->url,
+            (uint32_t)(400 * ui->scale), (uint32_t)(300 * ui->scale));
+
+  div(key(id), flex_1, min_h(0), bg(k->surface), cursor_pointer) {
+    if (button().activated && m->url) {
+      civue_open_url(m->url);
+    }
+
+    image_cover(app, sized, 0);
+  }
+}
+
+// two to four pictures in two columns, the third under the first when there
+// are four and under the second otherwise.
+static void embed_gallery(App *app, civue_id id, const EmbedView *v) {
+  size_t n = v->nimages;
+
+  div(flex, gap(1), w(full), h(px(embed_media_max(v).y)), rounded(px(4)),
+      overflow_hidden) {
+    div(flex, flex_col, gap(1), flex_1, min_w(0)) {
+      gallery_image(app, id_at(id, 0), v->images[0]);
+
+      if (n == 4) {
+        gallery_image(app, id_at(id, 2), v->images[2]);
+      }
+    }
+
+    div(flex, flex_col, gap(1), flex_1, min_w(0)) {
+      gallery_image(app, id_at(id, 1), v->images[1]);
+
+      if (n == 3) {
+        gallery_image(app, id_at(id, 2), v->images[2]);
+      }
+
+      if (n == 4) {
+        gallery_image(app, id_at(id, 3), v->images[3]);
+      }
+    }
+  }
+}
+
+// what the embed shows as its media, nothing when it has none.
+static bool embed_media(App *app, civue_id id, const EmbedView *v) {
+  civue_vec2 max = embed_media_max(v);
+
+  if (v->gifv) {
+    if (!v->video || !v->thumbnail) {
+      return false;
+    }
+
+    embed_video(app, id, v);
+  }
+  else if (v->video) {
+    embed_video(app, id, v);
+  }
+  else if (v->nimages > 1) {
+    embed_gallery(app, id, v);
+  }
+  else if (v->image) {
+    media(app, id, v->image->proxy_url, v->image->url, v->image->width,
+          v->image->height, max.x, max.y, false);
+  }
+  else {
+    return false;
+  }
+
+  return true;
+}
+
+static bool embed_has_media(const EmbedView *v) {
+  return v->gifv ? v->video && v->thumbnail : v->video || v->image;
+}
+
+// how wide one line of text is, `cap` once it reaches it.
+static float line_width(const char *s, size_t n, float size, float weight,
+                        float cap) {
+  // a line this long is wider than any embed.
+  if (n > 160) {
+    return cap;
+  }
+
+  civue_text_style style = civue_style(size, weight, size * 1.3f, 0);
+  float width = civue_layout_n(civue_ui_current(), s, n, style, 0)->width;
+
+  return width < cap ? width : cap;
+}
+
+// the widest line of a text that may hold several.
+static float text_width(const char *s, float size, float weight, float cap) {
+  float widest = 0;
+
+  while (s && *s && widest < cap) {
+    size_t n = strcspn(s, "\n");
+
+    widest = fmaxf(widest, line_width(s, n, size, weight, cap));
+    s += n + (s[n] == '\n');
+  }
+
+  return widest;
+}
+
+// the fields in rows: the inline ones side by side, three at most.
+static size_t field_row(const Embed *e, size_t first) {
+  size_t n = 1;
+
+  if (!e->fields[first].is_inline) {
+    return 1;
+  }
+
+  while (n < 3 && first + n < e->nfields && e->fields[first + n].is_inline) {
+    n++;
+  }
+
+  return n;
+}
+
+static void embed_footer_text(const Embed *e, char *out, size_t cap) {
+  char stamp[48] = "";
+
+  if (e->timestamp) {
+    format_stamp(e->timestamp, stamp, sizeof stamp);
+  }
+
+  snprintf(out, cap, "%s%s%s", e->footer_text ? e->footer_text : "",
+           e->footer_text && e->timestamp ? " • " : "", stamp);
+}
+
+// the width the card takes: what its widest line and its media ask for, up
+// to the most discord lets it.
+static float embed_width(const EmbedView *v, bool thumbnail) {
+  const Embed *e = v->e;
+  const EmbedMedia *sized = v->image ? v->image : v->video;
+  float cap = EMBED_MAX_WIDTH;
+  float media_width = 0;
+
+  if (v->video) {
+    media_width = embed_video_size(v).x;
+  }
+  else if (v->image) {
+    civue_vec2 max = embed_media_max(v);
+
+    media_width = fit_media(v->image->width, v->image->height, max.x, max.y).x;
+  }
+
+  // a card around media stays close to it.
+  if (sized && (type_is(e, "video") || media_width >= 300)) {
+    cap = media_width;
+  }
+  else if (v->rich && v->nimages > 1) {
+    cap = 520 - EMBED_CHROME;
+  }
+
+  float beside = thumbnail ? EMBED_THUMBNAIL + 16 : 0;
+  float room = cap - beside;
+  float widest = v->nimages > 1 ? cap : media_width;
+  char footer[512];
+
+  widest = fmaxf(widest, text_width(e->provider_name, 12, 400, room) + beside);
+  widest = fmaxf(widest, text_width(e->author_name, 14, 600, room) +
+                           (e->author_icon ? 32 : 0) + beside);
+  widest = fmaxf(widest, text_width(e->title, 16, 600, room) + beside);
+
+  if (v->describes) {
+    widest = fmaxf(widest, text_width(e->description, 14, 400, room) + beside);
+  }
+
+  for (size_t i = 0; v->fields && i < e->nfields;) {
+    size_t n = field_row(e, i);
+    float row = (float)(n - 1) * 8;
+
+    for (size_t j = i; j < i + n; j++) {
+      row += fmaxf(text_width(e->fields[j].name, 14, 600, room),
+                   text_width(e->fields[j].value, 14, 400, room));
+    }
+
+    widest = fmaxf(widest, row + beside);
+    i += n;
+  }
+
+  embed_footer_text(e, footer, sizeof footer);
+  widest =
+    fmaxf(widest, text_width(footer, 12, 500, cap) + (e->footer_icon ? 28 : 0));
+
+  // a hair more than measured, so no line wraps for a fraction of a point.
+  return fminf(widest + 1, cap) + EMBED_CHROME;
+}
+
+static void embed_link(const Look *k, civue_id id, const char *label,
+                       const char *url, civue_color plain) {
   bool pressed = false;
 
-  div(key(id), text_color(url ? k->link : k->strong),
+  div(key(id), min_w(0), text_color(url ? k->link : plain),
       style(.cursor = url ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
             .has_cursor = true)) {
     pressed = button().activated && url;
-    text(label, font_weight(semibold));
+    text(label);
   }
 
   if (pressed) {
     civue_open_url(url);
   }
+}
 
-  return pressed;
+static void embed_author(App *app, civue_id id, const Embed *e) {
+  const Look *k = &app->look;
+
+  div(flex, items_center, mt(2), min_w(0), text_size(px(14)),
+      line_height(px(18)), font_weight(semibold)) {
+    if (e->author_icon) {
+      div(size(6), mr(2), flex_shrink_0, rounded(full), overflow_hidden) {
+        image_fill(app, e->author_icon, 12);
+      }
+    }
+
+    // discord keeps a linked author in the text's color.
+    div(key(id), flex_1, min_w(0), text_color(k->strong),
+        style(.cursor =
+                e->author_url ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
+              .has_cursor = true)) {
+      if (button().activated && e->author_url) {
+        civue_open_url(e->author_url);
+      }
+
+      text(e->author_name);
+    }
+  }
 }
 
 static void embed_fields(App *app, civue_id id, const Embed *e,
-                         Snowflake guild_id) {
+                         Snowflake guild_id, float width) {
   const Look *k = &app->look;
 
-  for (size_t i = 0; i < e->nfields; i++) {
-    const EmbedField *field = &e->fields[i];
+  div(flex, flex_col, gap(2), mt(2), min_w(0)) {
+    for (size_t i = 0; i < e->nfields;) {
+      size_t n = field_row(e, i);
+      float each = (width - (float)(n - 1) * 8) / (float)n;
 
-    div(flex, flex_col, gap(px(2))) {
-      text(field->name ? field->name : "", text_size(px(14)),
-           line_height(px(18)), font_weight(semibold), text_color(k->strong));
-      markup(app, id_at(id, 0x40 + i), field->value ? field->value : "",
-             &(MarkupOptions){.guild_id = guild_id, .size = 14, .hint = 380});
+      div(flex, gap(2), min_w(0)) {
+        for (size_t j = i; j < i + n; j++) {
+          const EmbedField *field = &e->fields[j];
+
+          div(flex, flex_col, flex_1, flex_basis(0), min_w(0)) {
+            text(field->name ? field->name : "", mb(px(2)), text_size(px(14)),
+                 line_height(px(18)), font_weight(semibold),
+                 text_color(k->strong));
+            markup(app, id_at(id, 0x40 + j), field->value ? field->value : "",
+                   &(MarkupOptions){
+                     .guild_id = guild_id,
+                     .size = 14,
+                     .hint = each,
+                   });
+          }
+        }
+      }
+
+      i += n;
     }
   }
 }
 
-static void embed(App *app, civue_id id, const Embed *e, Snowflake guild_id) {
+static void embed_footer(App *app, const Embed *e) {
   const Look *k = &app->look;
-  bool bare = (starts_with(e->type, "image") || starts_with(e->type, "gifv")) &&
-              !e->title && !e->description;
-  const EmbedMedia *picture = e->image.url ? &e->image : &e->thumbnail;
+  char label[512];
 
-  if (bare && picture->url) {
-    media(app, id_at(id, 1), picture->proxy_url, picture->url, picture->width,
-          picture->height, MEDIA_MAX_WIDTH, MEDIA_MAX_HEIGHT, false);
-    return;
-  }
+  embed_footer_text(e, label, sizeof label);
 
-  bool video = starts_with(e->type, "video");
-  bool corner = e->thumbnail.url && !e->image.url && !video &&
-                !starts_with(e->type, "article");
-  char stamp[48];
-
-  div(flex, self_start, max_w(px(432)), rounded(sm), bg(k->surface),
-      border_l(4), border_color(e->has_color ? rgb(e->color) : rgb(0x393a41))) {
-    div(flex, flex_col, flex_1, min_w(0), gap(2), pt(2), pr(4), pb(4), pl(3)) {
-      if (e->provider_name) {
-        text(e->provider_name, text_size(px(12)), line_height(px(16)),
-             text_color(k->muted));
-      }
-
-      if (e->author_name) {
-        div(text_size(px(14)), line_height(px(18))) {
-          link_text(k, id_at(id, 2), e->author_name, e->author_url);
-        }
-      }
-
-      if (e->title) {
-        link_text(k, id_at(id, 3), e->title, e->url);
-      }
-
-      if (e->description) {
-        markup(app, id_at(id, 4), e->description,
-               &(MarkupOptions){.guild_id = guild_id, .size = 14, .hint = 380});
-      }
-
-      embed_fields(app, id, e, guild_id);
-
-      if (!corner && picture->url) {
-        media(app, id_at(id, 5), picture->proxy_url, picture->url,
-              picture->width, picture->height, 400, 300, false);
-      }
-
-      if (e->footer_text || e->timestamp) {
-        if (e->timestamp) {
-          format_stamp(e->timestamp, stamp, sizeof stamp);
-        }
-
-        div(flex, gap(1), text_size(px(12)), line_height(px(16)),
-            text_color(k->muted)) {
-          if (e->footer_text) {
-            text(e->footer_text, min_w(0), truncate);
-          }
-
-          if (e->footer_text && e->timestamp) {
-            text("•");
-          }
-
-          if (e->timestamp) {
-            text(stamp, whitespace_nowrap);
-          }
-        }
+  div(flex, items_center, mt(2), min_w(0)) {
+    if (e->footer_icon && *e->footer_icon && e->footer_text) {
+      div(size(5), mr(2), flex_shrink_0, rounded(full), overflow_hidden) {
+        image_fill(app, e->footer_icon, 10);
       }
     }
 
-    if (corner) {
-      div(pt(2), pr(4)) {
-        media(app, id_at(id, 6), e->thumbnail.proxy_url, e->thumbnail.url,
-              e->thumbnail.width, e->thumbnail.height, 80, 80, false);
+    text(label, flex_1, min_w(0), text_size(px(12)), line_height(px(16)),
+         font_weight(medium), text_color(k->text));
+  }
+}
+
+static void embed(App *app, civue_id id, const EmbedView *v,
+                  Snowflake guild_id) {
+  const Look *k = &app->look;
+  const Embed *e = v->e;
+
+  if (embed_inline(v)) {
+    embed_media(app, id_at(id, 1), v);
+    return;
+  }
+
+  bool has_media = embed_has_media(v);
+  // rich embeds keep their thumbnail next to an image, not next to a video.
+  bool thumbnail =
+    v->thumbnail && (v->rich || type_is(e, "audio") ? !v->video : !has_media);
+  bool plain = !e->has_color || e->color == 0xffffff;
+  float width = embed_width(v, thumbnail);
+  float inner = width - EMBED_CHROME;
+  float beside = thumbnail ? EMBED_THUMBNAIL + 16 : 0;
+
+  // the colored edge is the card's own ground, showing left of its content.
+  div(flex, w(px(width)), max_w(full), pl(1), rounded(px(4)),
+      bg(plain ? rgb(0x4e4f58) : rgb(e->color)), overflow_hidden) {
+    div(flex, flex_col, flex_1, min_w(0), pt(px(2)), pr(4), pb(4), pl(3),
+        bg(k->surface_high), border_y(1), border_r(1),
+        border_color(k->border)) {
+      div(flex, min_w(0)) {
+        div(flex, flex_col, flex_1, min_w(0)) {
+          if (e->provider_name) {
+            div(mt(2), min_w(0), text_size(px(12)), line_height(px(16))) {
+              embed_link(k, id_at(id, 7), e->provider_name, e->provider_url,
+                         k->subtle);
+            }
+          }
+
+          if (e->author_name) {
+            embed_author(app, id_at(id, 2), e);
+          }
+
+          if (e->title) {
+            div(mt(2), min_w(0), text_size(px(16)), line_height(px(22)),
+                font_weight(semibold)) {
+              embed_link(k, id_at(id, 3), e->title, e->url, k->strong);
+            }
+          }
+
+          if (v->describes) {
+            div(mt(2), min_w(0)) {
+              markup(app, id_at(id, 4), e->description,
+                     &(MarkupOptions){
+                       .guild_id = guild_id,
+                       .size = 14,
+                       .hint = inner - beside,
+                     });
+            }
+          }
+
+          if (v->fields) {
+            embed_fields(app, id, e, guild_id, inner - beside);
+          }
+        }
+
+        if (thumbnail) {
+          div(ml(4), mt(2), flex_shrink_0) {
+            media(app, id_at(id, 6), v->thumbnail->proxy_url, v->thumbnail->url,
+                  v->thumbnail->width, v->thumbnail->height, EMBED_THUMBNAIL,
+                  EMBED_THUMBNAIL, false);
+          }
+        }
+      }
+
+      if (has_media) {
+        div(flex, mt(4), min_w(0)) {
+          embed_media(app, id_at(id, 5), v);
+        }
+      }
+
+      if (e->footer_text || e->timestamp) {
+        embed_footer(app, e);
       }
     }
   }
@@ -252,9 +656,33 @@ static void embeds(App *app, const Message *m, Snowflake guild_id) {
   }
 
   for (size_t i = 0; i < m->nembeds; i++) {
-    div(flex, flex_col, mt(1)) {
-      embed(app, id_at(message_key(m), 0x1000 + i * 0x100), &m->embeds[i],
-            guild_id);
+    const Embed *e = &m->embeds[i];
+    EmbedView v = embed_view(e);
+    bool merged = false;
+
+    // embeds sharing a url are one embed: the first, with every picture.
+    for (size_t j = 0; e->url && j < i && !merged; j++) {
+      merged = m->embeds[j].url && !strcmp(m->embeds[j].url, e->url);
+    }
+
+    if (merged) {
+      continue;
+    }
+
+    for (size_t j = i + 1; e->url && j < m->nembeds && v.nimages < 4; j++) {
+      const Embed *next = &m->embeds[j];
+
+      if (next->url && !strcmp(next->url, e->url)) {
+        EmbedView more = embed_view(next);
+
+        if (more.image) {
+          v.images[v.nimages++] = more.image;
+        }
+      }
+    }
+
+    div(flex, flex_col, items_start, mt(1), min_w(0)) {
+      embed(app, id_at(message_key(m), 0x1000 + i * 0x100), &v, guild_id);
     }
   }
 }
@@ -305,17 +733,7 @@ static void reactions(App *app, const Message *m) {
                         r->name, !r->me);
         }
 
-        if (r->emoji_id) {
-          char url[CDN_URL_MAX];
-          cdn_emoji(url, r->emoji_id, 48);
-
-          div(size(4), flex_shrink_0) {
-            image_fill(app, url, 0);
-          }
-        }
-        else {
-          text(r->name ? r->name : "", text_size(px(16)), line_height(px(20)));
-        }
+        emoji_node(app, r->emoji_id, r->name, 16);
 
         text(count, text_size(px(14)), line_height(px(18)),
              font_weight(semibold),
@@ -486,29 +904,7 @@ static bool tool(App *app, civue_id id, civue_icon icon, const char *label,
   return pressed;
 }
 
-static void quick_reaction(App *app, const Message *m, civue_id id,
-                           const char *emoji) {
-  const Look *k = &app->look;
-
-  div(key(id), flex, items_center, justify_center, size(8), rounded(md),
-      hover(bg(k->hover)), cursor_pointer) {
-    if (button().activated) {
-      bool mine = false;
-
-      for (size_t i = 0; i < m->nreactions; i++) {
-        const Reaction *r = &m->reactions[i];
-
-        mine |= !r->emoji_id && r->name && !strcmp(r->name, emoji) && r->me;
-      }
-
-      session_react(app->session, m->channel_id, m->id, 0, emoji, !mine);
-    }
-
-    text(emoji, text_size(px(18)), line_height(px(22)));
-  }
-}
-
-static void start_edit(App *app, const Message *m) {
+void app_edit_message(App *app, const Message *m) {
   if (!app->editing) {
     app->kept_draft = app->draft;
     app->draft = nullptr;
@@ -521,50 +917,73 @@ static void start_edit(App *app, const Message *m) {
   app->focus_composer = true;
 }
 
+// discord's: the reactions the user gives the most, then a way to any
+// other, to answer or edit, to forward, and to the rest.
 static void toolbar(App *app, Channel *c, const Message *m) {
   const Look *k = &app->look;
-  civue_ui *ui = civue_ui_current();
   Store *store = app->session->store;
   civue_id id = id_at(message_key(m), 0x300);
   bool own = m->author_id == store->self_id;
-  bool removable =
-    own || (c->guild_id && store_can(store, c, PERM_MANAGE_MESSAGES));
-  // a first press arms the button, a second one deletes.
-  bool *armed = civue_memory(ui, id, sizeof *armed, nullptr);
+  bool plain = !message_is_system(m);
+  bool reacts = store_can(store, c, PERM_ADD_REACTIONS);
+  ReactionPick picks[3];
+  size_t npicks = reacts ? quick_reactions(app, c, picks, 3) : 0;
+  civue_rect bar = {};
+  Popover opens = POPOVER_NONE;
 
   div(absolute, right(4), top(px(-16)), flex, items_center, p(px(2)),
       rounded(lg), bg(k->surface), border(1), border_color(k->border),
       shadow(sm)) {
-    app->toolbar_rect = civue_rect_inflate(here(), 4, 4);
+    bar = here();
+    app->toolbar_rect = civue_rect_inflate(bar, 4, 4);
 
-    if (store_can(store, c, PERM_ADD_REACTIONS)) {
-      quick_reaction(app, m, id_at(id, 1), "👍");
-      quick_reaction(app, m, id_at(id, 2), "❤️");
-      quick_reaction(app, m, id_at(id, 3), "😂");
+    for (size_t i = 0; i < npicks; i++) {
+      div(key(id_at(id, 0x10 + i)), flex, items_center, justify_center, size(8),
+          rounded(md), hover(bg(k->hover)), cursor_pointer) {
+        if (button().activated) {
+          react_with(app, m, picks[i]);
+        }
+
+        emoji_node(app, picks[i].id, picks[i].name, 20);
+      }
     }
 
-    if (tool(app, id_at(id, 4), CIVUE_ICON(lucide, reply), "Reply",
-             k->subtle)) {
+    if (npicks) {
+      div(flex_shrink_0, w(px(1)), h(5), mx(1), bg(k->border)) {}
+    }
+
+    if (reacts && tool(app, id_at(id, 1), CIVUE_ICON(lucide, smile_plus),
+                       "Add Reaction", k->subtle)) {
+      opens = POPOVER_REACT;
+    }
+
+    if (own && plain) {
+      if (tool(app, id_at(id, 2), CIVUE_ICON(lucide, pencil), "Edit",
+               k->subtle)) {
+        app_edit_message(app, m);
+      }
+    }
+    else if (plain && store_can(store, c, PERM_SEND_MESSAGES) &&
+             tool(app, id_at(id, 3), CIVUE_ICON(lucide, reply), "Reply",
+                  k->subtle)) {
       app->reply_to = m->id;
       app->reply_ping = true;
       app->focus_composer = true;
     }
 
-    if (own && !message_is_system(m) &&
-        tool(app, id_at(id, 5), CIVUE_ICON(lucide, pencil), "Edit",
+    if (plain && tool(app, id_at(id, 4), CIVUE_ICON(lucide, forward), "Forward",
+                      k->subtle)) {
+      opens = POPOVER_FORWARD;
+    }
+
+    if (tool(app, id_at(id, 5), CIVUE_ICON(lucide, ellipsis), "More",
              k->subtle)) {
-      start_edit(app, m);
+      opens = POPOVER_MESSAGE_MENU;
     }
+  }
 
-    if (removable && tool(app, id_at(id, 6), CIVUE_ICON(lucide, trash_2),
-                          *armed ? "Press again to delete" : "Delete",
-                          *armed ? k->critical_text : k->subtle)) {
-      if (*armed) {
-        session_delete(app->session, c->id, m->id);
-      }
-
-      *armed = !*armed;
-    }
+  if (opens != POPOVER_NONE) {
+    message_popover(app, opens, m, bar);
   }
 }
 
@@ -600,7 +1019,8 @@ static void message(App *app, Channel *c, Message *m, bool head, float width) {
   Store *store = app->session->store;
   civue_id id = message_key(m);
   bool reply = m->reference_id && !m->forwarded && !message_is_system(m);
-  bool hot = app->hover_message == (m->id ? m->id : m->nonce);
+  bool hot = app->hover_message == (m->id ? m->id : m->nonce) ||
+             message_popover_open(app, m);
   bool editing = app->editing && app->editing == m->id;
   civue_color ground = m->mentions_me ? k->mentioned
                        : editing      ? civue_alpha(k->brand, .12f)
@@ -872,7 +1292,7 @@ void message_list(App *app, Channel *c) {
           c->version,
           guild ? guild->members_version : 0,
           store->users_version,
-          images_version(app->images),
+          civue_images_version(app->images),
           app->revealed.len,
           app->hover_message == known,
           app->editing == known,
