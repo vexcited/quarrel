@@ -178,6 +178,21 @@ bool platform_ws_send_binary(PlatformWebSocket *ws, const uint8_t *data,
   return true;
 }
 
+bool platform_ws_send_text(PlatformWebSocket *ws, const char *text) {
+  QuarrelSocket *socket = (__bridge QuarrelSocket *)(void *)ws;
+  NSString *string = text != nullptr ? @(text) : nil;
+
+  if (socket == nil || !socket.opened || string == nil) {
+    return false;
+  }
+
+  NSURLSessionWebSocketMessage *message =
+    [[NSURLSessionWebSocketMessage alloc] initWithString:string];
+  [socket.task sendMessage:message
+         completionHandler:^(NSError *error) { (void)error; }];
+  return true;
+}
+
 void platform_ws_close(PlatformWebSocket *ws, int code, const char *reason) {
   QuarrelSocket *socket = (__bridge QuarrelSocket *)(void *)ws;
 

@@ -56,9 +56,14 @@ set(QUARREL_CORE_SOURCES
   src/discord/settings_proto.c
   src/discord/session.c
   src/discord/store.c
-  src/discord/util.c)
+  src/discord/util.c
+  src/voice/dave.c
+  src/voice/devices.c
+  src/voice/rtp.c
+  src/voice/voice.c)
 
 set(QUARREL_DARWIN_SOURCES
+  src/platform/darwin/audio.m
   src/platform/darwin/pending.m
   src/platform/darwin/storage.m
   src/platform/darwin/system.m
@@ -72,7 +77,9 @@ if(APPLE)
     $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
   target_link_libraries(quarrel_core PUBLIC
     "-framework Foundation" "-framework Security" "-framework ImageIO"
-    "-framework CoreGraphics" "-framework CoreFoundation" z)
+    "-framework CoreGraphics" "-framework CoreFoundation"
+    "-framework AudioToolbox" "-framework AVFoundation"
+    "-framework CoreAudio" z)
 else()
   message(FATAL_ERROR "Quarrel only has a macOS backend for now")
 endif()
@@ -91,6 +98,10 @@ if(ZSTD_FOUND)
   target_link_libraries(quarrel_core PUBLIC PkgConfig::ZSTD)
   target_compile_definitions(quarrel_core PRIVATE QUARREL_ZSTD)
 endif()
+
+include(cmake/voice.cmake)
+target_link_libraries(quarrel_core PUBLIC
+  quarrel_dave OpenSSL::Crypto PkgConfig::OPUS)
 
 if(NOT TARGET hcaptcha::civue)
   set(HCAPTCHA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -122,6 +133,15 @@ target_link_libraries(quarrel PRIVATE quarrel_core hcaptcha::civue)
 target_compile_options(quarrel PRIVATE -Wall -Wextra)
 
 civue_icons(quarrel)
+
+# the system asks for the microphone with what this says. it names no
+# bundle, so the preferences stay where they are.
+if(APPLE)
+  set(QUARREL_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist)
+  target_link_options(quarrel PRIVATE
+    "LINKER:-sectcreate,__TEXT,__info_plist,${QUARREL_PLIST}")
+  set_property(TARGET quarrel APPEND PROPERTY LINK_DEPENDS ${QUARREL_PLIST})
+endif()
 
 set(QUARREL_SIGN_IDENTITY "" CACHE STRING
   "The codesign identity Quarrel is signed with, none for the ad hoc one.")

@@ -39,6 +39,7 @@ PlatformWebSocket *platform_ws_connect(const char *url,
 // false when the socket is not open.
 bool platform_ws_send_binary(PlatformWebSocket *ws, const uint8_t *data,
                              size_t len);
+bool platform_ws_send_text(PlatformWebSocket *ws, const char *text);
 // asks for a close, `closed` still runs when it is done.
 void platform_ws_close(PlatformWebSocket *ws, int code, const char *reason);
 // drops the socket at once. no callback runs after this.
