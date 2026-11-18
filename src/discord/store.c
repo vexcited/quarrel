@@ -786,6 +786,10 @@ void store_put_voice_state(Store *s, const Json *state, Snowflake guild_id) {
     .guild_id = guild_id,
     .channel_id = channel_id,
     .streaming = json_get_bool(state, "self_stream", false),
+    .muted = json_get_bool(state, "self_mute", false) ||
+             json_get_bool(state, "mute", false),
+    .deafened = json_get_bool(state, "self_deaf", false) ||
+                json_get_bool(state, "deaf", false),
   };
 
   s->users_version++;

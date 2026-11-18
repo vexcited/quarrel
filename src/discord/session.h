@@ -99,6 +99,7 @@ typedef struct {
 
 typedef struct Api Api;
 typedef struct Gateway Gateway;
+typedef struct Voice Voice;
 
 struct Session {
   SessionState state;
@@ -134,6 +135,15 @@ struct Session {
   char **frecent_reactions;
   size_t nfrecent_reactions;
   bool frecency_loading, frecency_loaded;
+  // the voice channel the account joined or is joining from here, 0 for
+  // none, and its guild. see session_voice_join.
+  Snowflake voice_guild_id, voice_channel_id;
+  // the call itself, see voice/voice.h for its status and who speaks. null
+  // until discord said where to connect.
+  Voice *voice;
+  bool voice_mute, voice_deaf;
+  // why discord did not open the call, null when it did or may still.
+  char *voice_error;
   // the account connected or connecting, 0 on the login form.
   Snowflake account_id;
   // bumped with every change of the fields above.
@@ -159,6 +169,11 @@ struct Session {
   Snowflake list_guild_id, list_channel_id;
   uint32_t list_first, list_last;
   uint64_t nonce_counter;
+  char *voice_token, *voice_endpoint;
+  void *voice_timer;
+  // discord confirmed the channel for this gateway session, the call was
+  // started with what is known, and a new gateway session has to join again.
+  bool voice_stated, voice_live, voice_rejoin;
 };
 
 struct Roster {
@@ -280,5 +295,18 @@ void session_forward(Session *s, Snowflake channel_id,
 void session_create_invite(Session *s, Snowflake guild_id);
 // the status others see.
 void session_set_status(Session *s, UserStatus status, bool invisible);
+
+/* ========================================================================== */
+/* voice.                                                                     */
+/* ========================================================================== */
+
+// joins a voice channel, leaving the one the account was in. see
+// `voice_channel_id`, `voice` and `voice_error` for how it goes.
+void session_voice_join(Session *s, Snowflake channel_id);
+void session_voice_leave(Session *s);
+// a muted microphone sends nothing. deafened, the call plays nothing and
+// sends nothing either, as discord has it.
+void session_voice_mute(Session *s, bool mute);
+void session_voice_deafen(Session *s, bool deaf);
 
 #endif

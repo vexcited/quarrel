@@ -87,6 +87,8 @@ typedef struct {
   Snowflake guild_id, channel_id;
   // sharing their screen.
   bool streaming;
+  // by their own doing or by the guild's.
+  bool muted, deafened;
 } VoiceState;
 
 typedef struct {

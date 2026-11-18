@@ -8,6 +8,7 @@
 #include "discord/settings_proto.h"
 #include "http.h"
 #include "platform/platform.h"
+#include "voice/voice.h"
 
 // the keychain holds one token per account, under "token:" and its id. the
 // bare key is where the only token lived before accounts could be switched.
@@ -577,10 +578,241 @@ static void on_affinities(void *ctx, const ApiResponse *res) {
   changed(s);
 }
 
+/* ========================================================================== */
+/* voice: the gateway is told which channel, and answers with the session's   */
+/* own voice state, then with the server to connect to.                       */
+/* ========================================================================== */
+
+constexpr double VOICE_JOIN_TIMEOUT = 15;
+constexpr double VOICE_SETTLE = 3;
+
+static void voice_tell(Session *s, Snowflake channel_id) {
+  if (gateway_ready(s)) {
+    gateway_voice_state(s->gateway, s->voice_guild_id, channel_id,
+                        s->voice_mute || s->voice_deaf, s->voice_deaf);
+  }
+}
+
+// lets go of the call, the gateway not being told.
+static void voice_reset(Session *s) {
+  platform_timer_cancel(s->voice_timer);
+  s->voice_timer = nullptr;
+
+  if (s->voice != nullptr) {
+    voice_disconnect(s->voice);
+  }
+
+  wipe(&s->voice_token);
+  str_set(&s->voice_endpoint, nullptr);
+  str_set(&s->voice_error, nullptr);
+  s->voice_guild_id = s->voice_channel_id = 0;
+  s->voice_stated = s->voice_live = s->voice_rejoin = false;
+}
+
+static void on_voice_changed(void *ctx) {
+  changed(ctx);
+}
+
+// the gateway may still count the account in the channel of a call that
+// failed, unless the account was only moved to another, which shows a
+// moment later.
+static void on_voice_settled(void *ctx) {
+  Session *s = ctx;
+
+  s->voice_timer = nullptr;
+
+  if (s->voice != nullptr && voice_status(s->voice) == VOICE_FAILED) {
+    voice_tell(s, 0);
+  }
+}
+
+static void on_voice_ended(void *ctx) {
+  Session *s = ctx;
+
+  platform_timer_cancel(s->voice_timer);
+  s->voice_timer = platform_timer(VOICE_SETTLE, on_voice_settled, s);
+}
+
+static void on_voice_timeout(void *ctx) {
+  Session *s = ctx;
+
+  s->voice_timer = nullptr;
+  voice_tell(s, 0);
+  str_set(&s->voice_error, "Discord did not open the call.");
+  changed(s);
+}
+
+static void voice_try(Session *s) {
+  const char *session_id =
+    s->gateway != nullptr ? gateway_session_id(s->gateway) : nullptr;
+
+  if (s->voice_live || !s->voice_stated || s->voice_channel_id == 0 ||
+      s->voice_token == nullptr || s->voice_endpoint == nullptr ||
+      session_id == nullptr) {
+    return;
+  }
+
+  if (s->voice == nullptr) {
+    VoiceEvents events = {s, on_voice_changed, on_voice_ended};
+
+    s->voice = voice_new(s->store->self_id, &events);
+
+    if (s->voice == nullptr) {
+      return;
+    }
+  }
+
+  platform_timer_cancel(s->voice_timer);
+  s->voice_timer = nullptr;
+  s->voice_live = true;
+  voice_set_mute(s->voice, s->voice_mute || s->voice_deaf);
+  voice_set_deaf(s->voice, s->voice_deaf);
+  // a private channel's call is identified with the channel's id.
+  voice_connect(s->voice,
+                s->voice_guild_id != 0 ? s->voice_guild_id
+                                       : s->voice_channel_id,
+                s->voice_channel_id, session_id, s->voice_token,
+                s->voice_endpoint);
+}
+
+// the account's own voice state, as this session of the gateway has it:
+// the account may be in a call from another device too.
+static void on_voice_state(Session *s, const Json *d) {
+  const char *session_id =
+    s->gateway != nullptr ? gateway_session_id(s->gateway) : nullptr;
+  const char *theirs = json_get_str(d, "session_id");
+  Snowflake channel_id = json_get_u64(d, "channel_id");
+
+  if (s->voice_channel_id == 0 || s->voice_error != nullptr ||
+      json_get_u64(d, "user_id") != s->store->self_id ||
+      session_id == nullptr || theirs == nullptr ||
+      strcmp(session_id, theirs) != 0) {
+    return;
+  }
+
+  if (channel_id == 0) {
+    // someone took the account out of the call. one that failed stays
+    // shown with its reason.
+    if (s->voice == nullptr || voice_status(s->voice) != VOICE_FAILED) {
+      voice_reset(s);
+    }
+
+    return;
+  }
+
+  // someone moved the account to another channel.
+  if (channel_id != s->voice_channel_id) {
+    s->voice_channel_id = channel_id;
+    s->voice_live = false;
+  }
+
+  s->voice_stated = true;
+  voice_try(s);
+}
+
+static void on_voice_server(Session *s, const Json *d) {
+  const char *token = json_get_str(d, "token");
+  const char *endpoint = json_get_str(d, "endpoint");
+  Snowflake channel_id = json_get_u64(d, "channel_id");
+
+  if (s->voice_channel_id == 0 ||
+      json_get_u64(d, "guild_id") != s->voice_guild_id ||
+      (s->voice_guild_id == 0 && channel_id != s->voice_channel_id)) {
+    return;
+  }
+
+  // no endpoint: the server went away and discord is finding another,
+  // which a next update names.
+  if (token == nullptr || endpoint == nullptr) {
+    str_set(&s->voice_endpoint, nullptr);
+    s->voice_live = false;
+    return;
+  }
+
+  bool same = s->voice_token != nullptr && s->voice_endpoint != nullptr &&
+              strcmp(s->voice_token, token) == 0 &&
+              strcmp(s->voice_endpoint, endpoint) == 0;
+
+  if (same && s->voice_live && s->voice != nullptr &&
+      voice_status(s->voice) != VOICE_FAILED) {
+    return;
+  }
+
+  wipe(&s->voice_token);
+  str_set(&s->voice_token, token);
+  str_set(&s->voice_endpoint, endpoint);
+  s->voice_live = false;
+  voice_try(s);
+}
+
+void session_voice_join(Session *s, Snowflake channel_id) {
+  const Channel *c = store_channel(s->store, channel_id);
+  bool failed = s->voice_error != nullptr ||
+                (s->voice != nullptr && voice_status(s->voice) == VOICE_FAILED);
+
+  if (c == nullptr || s->offline || !gateway_ready(s) ||
+      (s->voice_channel_id == channel_id && !failed)) {
+    return;
+  }
+
+  voice_reset(s);
+  s->voice_guild_id = c->guild_id;
+  s->voice_channel_id = channel_id;
+  voice_tell(s, channel_id);
+  s->voice_timer = platform_timer(VOICE_JOIN_TIMEOUT, on_voice_timeout, s);
+  changed(s);
+}
+
+void session_voice_leave(Session *s) {
+  if (s->voice_channel_id == 0) {
+    return;
+  }
+
+  voice_tell(s, 0);
+  voice_reset(s);
+  changed(s);
+}
+
+static void voice_apply(Session *s) {
+  if (s->voice != nullptr) {
+    voice_set_mute(s->voice, s->voice_mute || s->voice_deaf);
+    voice_set_deaf(s->voice, s->voice_deaf);
+  }
+
+  if (s->voice_channel_id != 0 && s->voice_error == nullptr) {
+    voice_tell(s, s->voice_channel_id);
+  }
+
+  changed(s);
+}
+
+void session_voice_mute(Session *s, bool mute) {
+  s->voice_mute = mute;
+
+  // speaking again means hearing again.
+  if (!mute) {
+    s->voice_deaf = false;
+  }
+
+  voice_apply(s);
+}
+
+void session_voice_deafen(Session *s, bool deaf) {
+  s->voice_deaf = deaf;
+  voice_apply(s);
+}
+
 static void on_dispatch(void *ctx, const char *type, const Json *data) {
   Session *s = ctx;
 
   events_dispatch(s->store, type, data);
+
+  if (strcmp(type, "VOICE_STATE_UPDATE") == 0) {
+    on_voice_state(s, data);
+  }
+  else if (strcmp(type, "VOICE_SERVER_UPDATE") == 0) {
+    on_voice_server(s, data);
+  }
 
   if (strcmp(type, "READY") == 0) {
     // the client asks who the user is close to once it is ready. a new
@@ -605,6 +837,9 @@ static void on_dispatch(void *ctx, const char *type, const Json *data) {
 
     s->account_id = s->store->self_id;
     remember(s);
+
+    // a new session of the gateway is in no call: it joins again.
+    s->voice_rejoin = s->voice_channel_id != 0 && s->voice_error == nullptr;
   }
   else if (strcmp(type, "TYPING_START") == 0) {
     schedule_typing(s);
@@ -622,6 +857,14 @@ static void on_status(void *ctx, GatewayStatus status) {
 
       // a new session knows nothing of what was shown, a resumed one does.
       activate(s);
+
+      if (s->voice_rejoin) {
+        s->voice_rejoin = s->voice_stated = s->voice_live = false;
+        wipe(&s->voice_token);
+        str_set(&s->voice_endpoint, nullptr);
+        voice_tell(s, s->voice_channel_id);
+      }
+
       break;
     case GATEWAY_CONNECTING:
     case GATEWAY_HANDSHAKING:
@@ -680,6 +923,7 @@ static void end_session(Session *s, const char *error) {
 
   platform_timer_cancel(s->typing_timer);
   s->typing_timer = nullptr;
+  voice_reset(s);
 
   if (s->api != nullptr) {
     api_set_token(s->api, nullptr);
@@ -956,6 +1200,8 @@ static void session_free(Session *s) {
 
   s->options.on_change = nullptr;
 
+  voice_reset(s);
+  voice_free(s->voice);
   gateway_free(s->gateway);
   api_free(s->api);
   platform_timer_cancel(s->typing_timer);

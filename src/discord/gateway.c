@@ -44,6 +44,7 @@ enum {
   OP_HEARTBEAT = 1,
   OP_IDENTIFY = 2,
   OP_PRESENCE_UPDATE = 3,
+  OP_VOICE_STATE_UPDATE = 4,
   OP_RESUME = 6,
   OP_RECONNECT = 7,
   OP_REQUEST_GUILD_MEMBERS = 8,
@@ -700,6 +701,46 @@ bool gateway_update_presence(Gateway *g, const char *status, bool afk) {
   jw_end(&w);
   jw_end(&w);
   return send_payload(g, &w);
+}
+
+bool gateway_voice_state(Gateway *g, Snowflake guild_id, Snowflake channel_id,
+                         bool mute, bool deaf) {
+  if (g->status != GATEWAY_READY) {
+    return false;
+  }
+
+  JsonWriter w = {};
+
+  begin_payload(&w, OP_VOICE_STATE_UPDATE);
+  jw_object(&w);
+  jw_key(&w, "guild_id");
+
+  if (guild_id != 0) {
+    jw_id(&w, guild_id);
+  }
+  else {
+    jw_null(&w);
+  }
+
+  jw_key(&w, "channel_id");
+
+  if (channel_id != 0) {
+    jw_id(&w, channel_id);
+  }
+  else {
+    jw_null(&w);
+  }
+
+  jw_key(&w, "self_mute"), jw_bool(&w, mute);
+  jw_key(&w, "self_deaf"), jw_bool(&w, deaf);
+  jw_key(&w, "self_video"), jw_bool(&w, false);
+  jw_end(&w);
+  jw_end(&w);
+  return send_payload(g, &w);
+}
+
+const char *gateway_session_id(const Gateway *g) {
+  return g->session_id;
 }
 
 // learned from the web client: op 14 is deprecated, its replacement is op 37

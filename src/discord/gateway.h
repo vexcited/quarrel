@@ -68,6 +68,15 @@ void gateway_set_token(Gateway *g, const char *token);
 // `status` is "online", "idle", "dnd" or "invisible".
 bool gateway_update_presence(Gateway *g, const char *status, bool afk);
 
+// joins the voice channel, moves to it, or leaves voice with a
+// `channel_id` of 0. `guild_id` is 0 for a call in a private channel.
+// discord answers a join with VOICE_STATE_UPDATE, which names the session,
+// and VOICE_SERVER_UPDATE, which tells where to connect.
+bool gateway_voice_state(Gateway *g, Snowflake guild_id, Snowflake channel_id,
+                         bool mute, bool deaf);
+// the session's id, null before the first READY.
+const char *gateway_session_id(const Gateway *g);
+
 typedef struct {
   uint32_t first, last;
 } GatewayRange;
