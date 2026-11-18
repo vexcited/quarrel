@@ -59,7 +59,15 @@ static void chat_header(App *app, Channel *c) {
       div(flex_1) {}
     }
 
-    if (has_member_list(c) &&
+    if (channel_is_voice(c) &&
+        icon_button(app, id("call-toggle"),
+                    app->voice_chat ? CIVUE_ICON(lucide, volume_2)
+                                    : CIVUE_ICON(lucide, message_circle),
+                    32, 20, app->voice_chat ? "Show Call" : "Show Chat")) {
+      app->voice_chat = !app->voice_chat;
+    }
+
+    if (has_member_list(c) && (!channel_is_voice(c) || app->voice_chat) &&
         icon_button(
           app, id("members-toggle"), CIVUE_ICON(lucide, users), 32, 20,
           app->members_hidden ? "Show Member List" : "Hide Member List")) {
@@ -101,21 +109,27 @@ static void typing_line(App *app, const Channel *c) {
 }
 
 void chat(App *app, Channel *c) {
+  bool call = channel_is_voice(c) && !app->voice_chat;
   bool members = has_member_list(c) && !app->members_hidden;
 
   div(flex, flex_col, flex_1, min_w(0), h(full)) {
     chat_header(app, c);
 
-    div(flex, flex_1, min_h(0)) {
-      div(flex, flex_col, flex_1, min_w(0), h(full)) {
-        message_list(app, c);
-        composer(app, c);
-        typing_line(app, c);
-        message_popovers(app, c);
-      }
+    if (call) {
+      voice_stage(app, c);
+    }
+    else {
+      div(flex, flex_1, min_h(0)) {
+        div(flex, flex_col, flex_1, min_w(0), h(full)) {
+          message_list(app, c);
+          composer(app, c);
+          typing_line(app, c);
+          message_popovers(app, c);
+        }
 
-      if (members) {
-        member_list(app, c);
+        if (members) {
+          member_list(app, c);
+        }
       }
     }
   }

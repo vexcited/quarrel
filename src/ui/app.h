@@ -8,6 +8,7 @@
 #include "images.h"
 #include "look.h"
 #include "platform/platform.h"
+#include "voice/audio.h"
 
 constexpr float SIDEBAR_WIDTH = 300;
 constexpr float SIDEBAR_MIN = 240;
@@ -44,6 +45,8 @@ typedef enum : uint8_t {
   POPOVER_MESSAGE_MENU,
   POPOVER_REACT,
   POPOVER_FORWARD,
+  POPOVER_VOICE_SOUND,
+  POPOVER_VOICE_CAMERA,
 } Popover;
 
 typedef enum : uint8_t {
@@ -141,6 +144,19 @@ typedef struct {
   char *guild_name;
   // the invite's link was copied since it opened.
   bool invite_copied;
+
+  // the open voice channel shows its chat rather than its call.
+  bool voice_chat;
+  // what a menu of the call lists, by AudioKind, as the machine had them
+  // when it opened, with the name of the system's own of each.
+  AudioDevice *devices[3];
+  size_t ndevices[3];
+  char default_names[3][96];
+  // the list open beside the menu, an AudioKind, -1 for none, and the row
+  // it opened from.
+  int8_t voice_side;
+  civue_rect voice_side_row;
+
 
   // the spoilers the user clicked.
   CIVUE_VEC(civue_id) revealed;

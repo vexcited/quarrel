@@ -128,6 +128,8 @@ add_executable(quarrel
   src/ui/messages.c
   src/ui/shell.c
   src/ui/sidebar.c
+  src/ui/stage.c
+  src/ui/voice.c
   src/ui/widgets.c)
 target_link_libraries(quarrel PRIVATE quarrel_core hcaptcha::civue)
 target_compile_options(quarrel PRIVATE -Wall -Wextra)

@@ -31,6 +31,24 @@ void invite_card(App *app, civue_rect anchor);
 // shows POPOVER_NEW_DM.
 void new_dm(App *app, civue_rect anchor);
 void channel_list(App *app, Guild *guild);
+// who is in the voice channel, under its row. nothing for an empty one.
+void voice_members(App *app, const Channel *c);
+// the call the account is in, at the foot of the sidebar: how it goes and
+// the microphone, the sound and the way out. nothing outside a call.
+void voice_panel(App *app);
+// the call of a voice channel in place of its chat: who is in it, and the
+// microphone, the camera and the way out under them.
+void voice_stage(App *app, Channel *c);
+// takes the machine's devices into `app->devices`, as a menu of them opens.
+void devices_list(App *app);
+// the device in use of a kind in `app->devices`, -1 for the system's own.
+int device_picked(const App *app, AudioKind kind);
+// a slider from 0 to `most` over a node of its own, its new value when it
+// moved. `let_go` once the drag ended.
+float volume_slider(App *app, civue_id id, float value, float most,
+                    bool *let_go);
+// how loud `level` is, 0 to 1, as `bars` bars over the open node.
+void level_bars(App *app, float level, int bars);
 void private_list(App *app);
 // the saved accounts, the status and the way out under `anchor`, while
 // the app shows POPOVER_ACCOUNTS. a press on `anchor` is left to what opened

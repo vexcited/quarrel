@@ -76,8 +76,19 @@ static void channel_row(App *app, Channel *c, bool thread) {
       hover(bg(selected ? k->selected : k->hover),
             text_color(selected || lit ? k->strong : k->text)),
       cursor_pointer) {
-    if (button().activated && channel_has_text(c)) {
-      app_select_channel(app, c->id);
+    if (button().activated) {
+      // a voice channel is joined and shows its call.
+      if (channel_is_voice(c)) {
+        if (store_can(store, c, PERM_CONNECT)) {
+          session_voice_join(app->session, c->id);
+        }
+
+        app->voice_chat = false;
+        app_select_channel(app, c->id);
+      }
+      else if (channel_has_text(c)) {
+        app_select_channel(app, c->id);
+      }
     }
 
     if (lit && !selected) {
@@ -133,6 +144,10 @@ void channel_list(App *app, Guild *guild) {
       }
 
       channel_row(app, c, rows[i].kind == CHANNEL_ROW_THREAD);
+
+      if (channel_is_voice(c)) {
+        voice_members(app, c);
+      }
     }
   }
 }

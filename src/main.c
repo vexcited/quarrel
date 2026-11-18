@@ -39,6 +39,8 @@ static void sidebar(App *app) {
     else {
       private_list(app);
     }
+
+    voice_panel(app);
   }
 }
 
