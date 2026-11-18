@@ -49,6 +49,8 @@ float volume_slider(App *app, civue_id id, float value, float most,
                     bool *let_go);
 // how loud `level` is, 0 to 1, as `bars` bars over the open node.
 void level_bars(App *app, float level, int bars);
+// the settings over the whole window, while `app->settings_open`.
+void settings_dialog(App *app);
 void private_list(App *app);
 // the saved accounts, the status and the way out under `anchor`, while
 // the app shows POPOVER_ACCOUNTS. a press on `anchor` is left to what opened

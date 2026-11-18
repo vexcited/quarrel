@@ -157,6 +157,12 @@ typedef struct {
   int8_t voice_side;
   civue_rect voice_side_row;
 
+  // the settings: the part of their page the sidebar points at, the kind
+  // whose list of devices is open under its box, -1 for none, and that box.
+  bool settings_open;
+  uint8_t settings_part;
+  int8_t settings_select;
+  civue_rect settings_select_rect;
 
   // the spoilers the user clicked.
   CIVUE_VEC(civue_id) revealed;

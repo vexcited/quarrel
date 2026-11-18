@@ -159,6 +159,28 @@ static void inbox_button(App *app) {
   inbox(app, anchor);
 }
 
+static void settings_button(App *app) {
+  const Look *k = &app->look;
+  civue_id id = id("settings-button");
+
+  div(key(id), flex, items_center, justify_center, size(7), flex_shrink_0,
+      rounded(lg), text_color(k->subtle),
+      hover(bg(k->hover), text_color(k->strong)), cursor_pointer) {
+    civue_button_state state = button();
+
+    if (state.activated) {
+      app->popover = POPOVER_NONE;
+      app->settings_open = true;
+      app->settings_part = 0;
+      app->settings_select = -1;
+      devices_list(app);
+    }
+
+    icon(lucide, settings, size(px(18)));
+    hint(app, id, &state.response, "Settings", CIVUE_TOOLTIP_BELOW);
+  }
+}
+
 static size_t friends_online(const Store *store) {
   size_t online = 0;
 
@@ -269,5 +291,6 @@ void top_bar(App *app) {
     account_switch(app);
     div(flex_1) {}
     inbox_button(app);
+    settings_button(app);
   }
 }

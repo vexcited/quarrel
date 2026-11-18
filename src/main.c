@@ -142,6 +142,7 @@ static void frame(void *ctx, civue_ui *ui) {
     case SESSION_RECONNECTING:
       open_asked(app);
       shell(app);
+      settings_dialog(app);
       break;
     case SESSION_CONNECTING:
       connecting_screen(app);

@@ -59,6 +59,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/util.c
   src/voice/dave.c
   src/voice/devices.c
+  src/voice/mictest.c
   src/voice/rtp.c
   src/voice/voice.c)
 
@@ -127,6 +128,7 @@ add_executable(quarrel
   src/ui/members.c
   src/ui/messages.c
   src/ui/shell.c
+  src/ui/settings.c
   src/ui/sidebar.c
   src/ui/stage.c
   src/ui/voice.c
