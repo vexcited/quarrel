@@ -1,7 +1,3 @@
-# what voice needs that is not Quarrel's own: opus for the audio, and
-# discord's libdave for the end to end encryption every call has, which is
-# c++ over cisco's mlspp and openssl.
-
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,7 +21,6 @@ FetchContent_Declare(nlohmann_json
     SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
   OVERRIDE_FIND_PACKAGE)
 
-# the commit libdave's own build pins.
 set(DISABLE_GREASE ON CACHE BOOL "" FORCE)
 set(MLS_CXX_NAMESPACE mlspp CACHE STRING "" FORCE)
 set(TESTING OFF CACHE BOOL "" FORCE)
@@ -34,13 +29,36 @@ FetchContent_Declare(mlspp
   GIT_TAG 1cc50a124a3bc4e143a787ec934280dc70c1034d
   EXCLUDE_FROM_ALL)
 
-# only its sources are taken: its own build wants vcpkg.
 FetchContent_Declare(libdave
   GIT_REPOSITORY https://github.com/discord/libdave.git
   GIT_TAG b5463c443df74db75a713c775b09a847621e6d62
   SOURCE_SUBDIR none)
 
-FetchContent_MakeAvailable(nlohmann_json mlspp libdave)
+FetchContent_Declare(rnnoise
+  URL https://github.com/xiph/rnnoise/releases/download/v0.2/rnnoise-0.2.tar.gz
+  URL_HASH
+    SHA256=90fce4b00b9ff24c08dbfe31b82ffd43bae383d85c5535676d28b0a2b11c0d37
+  SOURCE_SUBDIR none)
+
+FetchContent_MakeAvailable(nlohmann_json mlspp libdave rnnoise)
+
+set(rnnoise ${rnnoise_SOURCE_DIR})
+add_library(quarrel_rnnoise STATIC
+  ${rnnoise}/src/celt_lpc.c
+  ${rnnoise}/src/denoise.c
+  ${rnnoise}/src/kiss_fft.c
+  ${rnnoise}/src/nnet.c
+  ${rnnoise}/src/nnet_default.c
+  ${rnnoise}/src/parse_lpcnet_weights.c
+  ${rnnoise}/src/pitch.c
+  ${rnnoise}/src/rnn.c
+  ${rnnoise}/src/rnnoise_data.c
+  ${rnnoise}/src/rnnoise_tables.c)
+set_target_properties(quarrel_rnnoise PROPERTIES C_STANDARD 11)
+target_include_directories(quarrel_rnnoise
+  PUBLIC ${rnnoise}/include
+  PRIVATE ${rnnoise}/src ${CMAKE_CURRENT_LIST_DIR}/rnnoise)
+target_compile_options(quarrel_rnnoise PRIVATE -w)
 
 set(dave ${libdave_SOURCE_DIR}/cpp)
 file(GLOB_RECURSE dave_sources CONFIGURE_DEPENDS ${dave}/src/*.cpp)

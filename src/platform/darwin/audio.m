@@ -2,6 +2,9 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/CoreAudio.h>
 
+#include <sched.h>
+#include <stdatomic.h>
+
 #include "voice/audio.h"
 
 constexpr AudioUnitElement SPEAKER = 0;
@@ -12,7 +15,42 @@ struct Audio {
   AudioEvents e;
   AudioUnit unit;
   float heard[FRAMES_MAX];
+  // audio_stop was called: the callbacks touch nothing of their owner's
+  // anymore, and `busy` counts the ones that still do.
+  atomic_bool stopped;
+  atomic_int busy;
+  atomic_bool live;
+  char *input, *output;
+  bool raw;
 };
+
+// the unit takes long to start and to stop, a tenth of a second and more:
+// both happen here, in the order they were asked, never on the main thread.
+static dispatch_queue_t units(void) {
+  static dispatch_queue_t queue;
+  static dispatch_once_t once;
+
+  dispatch_once(&once, ^{
+    queue = dispatch_queue_create("quarrel.audio", DISPATCH_QUEUE_SERIAL);
+  });
+
+  return queue;
+}
+
+static bool enter(Audio *a) {
+  atomic_fetch_add(&a->busy, 1);
+
+  if (atomic_load(&a->stopped)) {
+    atomic_fetch_sub(&a->busy, 1);
+    return false;
+  }
+
+  return true;
+}
+
+static void leave(Audio *a) {
+  atomic_fetch_sub(&a->busy, 1);
+}
 
 void audio_ask(void (*done)(void *ctx, bool allowed), void *ctx) {
   AVAuthorizationStatus status =
@@ -46,8 +84,11 @@ static OSStatus on_microphone(void *ctx, AudioUnitRenderActionFlags *flags,
   };
 
   if (AudioUnitRender(a->unit, flags, when, MICROPHONE, frames, &list) ==
-      noErr) {
+        noErr &&
+      enter(a)) {
+    atomic_store_explicit(&a->live, true, memory_order_relaxed);
     a->e.captured(a->e.ctx, a->heard, frames);
+    leave(a);
   }
 
   return noErr;
@@ -58,7 +99,14 @@ static OSStatus on_speaker(void *ctx, AudioUnitRenderActionFlags *,
                            AudioBufferList *list) {
   Audio *a = ctx;
 
-  a->e.render(a->e.ctx, list->mBuffers[0].mData, frames);
+  if (enter(a)) {
+    a->e.render(a->e.ctx, list->mBuffers[0].mData, frames);
+    leave(a);
+  }
+  else {
+    memset(list->mBuffers[0].mData, 0, frames * sizeof(float));
+  }
+
   return noErr;
 }
 
@@ -338,16 +386,8 @@ static AudioDeviceID device_of(const char *id) {
   return device;
 }
 
-Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
-                   AudioResult *why) {
-  *why = AUDIO_FAILED;
-
-  if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] !=
-      AVAuthorizationStatusAuthorized) {
-    *why = AUDIO_DENIED;
-    return nullptr;
-  }
-
+// on the queue of the units.
+static bool open_unit(Audio *a) {
   // the unit that cancels the echo of what it plays out of what it hears.
   AudioComponentDescription description = {
     .componentType = kAudioUnitType_Output,
@@ -355,15 +395,12 @@ Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
     .componentManufacturer = kAudioUnitManufacturer_Apple,
   };
   AudioComponent component = AudioComponentFindNext(nullptr, &description);
-  Audio *a = calloc(1, sizeof *a);
 
-  if (component == nullptr || a == nullptr ||
+  if (component == nullptr ||
       AudioComponentInstanceNew(component, &a->unit) != noErr) {
-    free(a);
-    return nullptr;
+    a->unit = nullptr;
+    return false;
   }
-
-  a->e = *e;
 
   AudioStreamBasicDescription format = {
     .mSampleRate = AUDIO_RATE,
@@ -394,7 +431,7 @@ Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
 
   // learned from chromium: the unit takes a device for each of its sides,
   // on the element of that side. it keeps the system's when not told.
-  AudioDeviceID heard = device_of(input), played = device_of(output);
+  AudioDeviceID heard = device_of(a->input), played = device_of(a->output);
 
   if (heard != kAudioObjectUnknown) {
     set(a->unit, kAudioOutputUnitProperty_CurrentDevice,
@@ -415,6 +452,14 @@ Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
   set(a->unit, kAUVoiceIOProperty_OtherAudioDuckingConfiguration,
       kAudioUnitScope_Global, 0, &ducking, sizeof ducking);
 
+  // the unit stays, for its devices, and hands the microphone through.
+  UInt32 bypass = a->raw, gain = !a->raw;
+
+  set(a->unit, kAUVoiceIOProperty_BypassVoiceProcessing,
+      kAudioUnitScope_Global, 0, &bypass, sizeof bypass);
+  set(a->unit, kAUVoiceIOProperty_VoiceProcessingEnableAGC,
+      kAudioUnitScope_Global, 0, &gain, sizeof gain);
+
   ok = ok && AudioUnitInitialize(a->unit) == noErr;
 
   if (ok && AudioOutputUnitStart(a->unit) != noErr) {
@@ -424,12 +469,52 @@ Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
 
   if (!ok) {
     AudioComponentInstanceDispose(a->unit);
-    free(a);
+    a->unit = nullptr;
+  }
+
+  return ok;
+}
+
+Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
+                   bool raw, AudioResult *why) {
+  *why = AUDIO_FAILED;
+
+  if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] !=
+      AVAuthorizationStatusAuthorized) {
+    *why = AUDIO_DENIED;
     return nullptr;
   }
 
+  Audio *a = calloc(1, sizeof *a);
+
+  if (a == nullptr) {
+    return nullptr;
+  }
+
+  a->e = *e;
+  a->input = input != nullptr ? strdup(input) : nullptr;
+  a->output = output != nullptr ? strdup(output) : nullptr;
+  a->raw = raw;
+
+  dispatch_async(units(), ^{
+    if (open_unit(a)) {
+      return;
+    }
+
+    // queued before what audio_stop queues to free it.
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (!atomic_load(&a->stopped) && a->e.failed != nullptr) {
+        a->e.failed(a->e.ctx);
+      }
+    });
+  });
+
   *why = AUDIO_OK;
   return a;
+}
+
+bool audio_live(const Audio *a) {
+  return atomic_load_explicit(&a->live, memory_order_relaxed);
 }
 
 void audio_stop(Audio *a) {
@@ -437,8 +522,29 @@ void audio_stop(Audio *a) {
     return;
   }
 
-  AudioOutputUnitStop(a->unit);
-  AudioUnitUninitialize(a->unit);
-  AudioComponentInstanceDispose(a->unit);
-  free(a);
+  atomic_store(&a->stopped, true);
+
+  // a callback that already started ends within a few milliseconds.
+  while (atomic_load(&a->busy) != 0) {
+    sched_yield();
+  }
+
+  dispatch_async(units(), ^{
+    if (a->unit != nullptr) {
+      AudioOutputUnitStop(a->unit);
+      AudioUnitUninitialize(a->unit);
+      AudioComponentInstanceDispose(a->unit);
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+      free(a->input);
+      free(a->output);
+      free(a);
+    });
+  });
+}
+
+void audio_show_modes(void) {
+  [AVCaptureDevice
+    showSystemUserInterface:AVCaptureSystemUserInterfaceMicrophoneModes];
 }

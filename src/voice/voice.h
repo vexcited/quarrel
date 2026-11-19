@@ -61,6 +61,8 @@ void voice_set_deaf(Voice *v, bool deaf);
 float voice_input_level(const Voice *v);
 // the microphone could not be used, the call only listens.
 bool voice_no_microphone(const Voice *v);
+// the microphone was started and is not heard yet.
+bool voice_microphone_starting(const Voice *v);
 
 // whether sound of `user_id` came in the last moments, the account's own
 // microphone for its own id.

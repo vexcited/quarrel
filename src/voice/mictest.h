@@ -11,6 +11,8 @@
 void mictest_start(void (*changed)(void));
 void mictest_stop(void);
 bool mictest_running(void);
+// running, and the microphone is not heard yet.
+bool mictest_starting(void);
 // the microphone may not be used, as the last start found.
 bool mictest_denied(void);
 // how loud the microphone is, 0 to 1, 0 when not running.

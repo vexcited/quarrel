@@ -160,6 +160,10 @@ void voice_panel(App *app) {
            px(1), text_size(px(12)), line_height(px(16)),
            text_color(k->critical_text));
     }
+    else if (live && voice_microphone_starting(s->voice)) {
+      text("Starting the microphone...", px(1), text_size(px(12)),
+           line_height(px(16)), text_color(k->faint));
+    }
 
     div(flex, items_center, gap(1)) {
       bool muted = s->voice_mute || s->voice_deaf;

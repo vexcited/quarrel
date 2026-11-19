@@ -20,6 +20,7 @@
 #include "platform/platform.h"
 #include "voice/audio.h"
 #include "voice/dave.h"
+#include "voice/denoise.h"
 #include "voice/devices.h"
 #include "voice/rtp.h"
 
@@ -151,6 +152,10 @@ struct Voice {
   bool no_microphone;
   // the devices the sound runs through, as devices_version had them.
   uint32_t devices;
+  // the packets carry the mark of VOICE_QOS.
+  bool marked;
+  // audio_live as the last pulse found it.
+  bool heard;
   // how loud the microphone was at its last frame, 0 to 1.
   _Atomic float level;
   float capture[CAPTURE_RING];
@@ -306,6 +311,8 @@ typedef struct {
   int open, silences;
   bool speaking;
   float pcm[FRAME_MAX];
+  // null when it could not be made: the noise then stays.
+  Denoise *denoise;
 } Media;
 
 static void on_discovered(Voice *v, uint64_t address, uint64_t port);
@@ -495,13 +502,21 @@ static void capture(Media *m, float *pcm) {
   Voice *v = m->v;
   float energy = 0, volume = devices_input_volume();
 
+  VoiceInput input = devices_input();
+
+  if (m->denoise != nullptr && input.noise != NOISE_OFF) {
+    denoise_run(m->denoise, pcm, FRAME, input.noise == NOISE_VOICE);
+  }
+
   for (int i = 0; i < FRAME; i++) {
     pcm[i] *= volume;
     energy += pcm[i] * pcm[i];
   }
 
   float heard = sqrtf(energy / FRAME);
-  bool loud = heard > GATE;
+  bool loud = heard > (input.auto_sensitivity
+                         ? GATE
+                         : powf(10, input.sensitivity / 20));
 
   atomic_store_explicit(&v->level, heard, memory_order_relaxed);
   bool muted = atomic_load_explicit(&v->mute, memory_order_relaxed);
@@ -617,6 +632,7 @@ static void *media_thread(void *arg) {
     drain_capture(m);
   }
 
+  denoise_free(m->denoise);
   free(m);
   return nullptr;
 }
@@ -957,6 +973,18 @@ static void unassign(Voice *v, Snowflake user_id) {
   }
 }
 
+// learned from webrtc, which discord's calls are built on: sound is marked
+// for expedited forwarding, 46, in the six high bits of the byte.
+static void mark_packets(Voice *v) {
+  int service = devices_option(VOICE_QOS) ? 46 << 2 : 0;
+
+  v->marked = service != 0;
+
+  if (v->udp >= 0) {
+    setsockopt(v->udp, IPPROTO_IP, IP_TOS, &service, sizeof service);
+  }
+}
+
 static bool start_media(Voice *v, const char *ip, uint16_t port) {
   v->server = (struct sockaddr_in){
     .sin_family = AF_INET,
@@ -974,6 +1002,7 @@ static bool start_media(Voice *v, const char *ip, uint16_t port) {
   }
 
   fcntl(v->udp, F_SETFL, fcntl(v->udp, F_GETFL) | O_NONBLOCK);
+  mark_packets(v);
   fcntl(v->wake[0], F_SETFL, fcntl(v->wake[0], F_GETFL) | O_NONBLOCK);
   fcntl(v->wake[1], F_SETFL, fcntl(v->wake[1], F_GETFL) | O_NONBLOCK);
 
@@ -989,11 +1018,13 @@ static bool start_media(Voice *v, const char *ip, uint16_t port) {
 
   m->v = v;
   m->generation = v->generation;
+  m->denoise = denoise_new();
   platform_random(&m->sequence, sizeof m->sequence);
   platform_random(&m->timestamp, sizeof m->timestamp);
   atomic_store(&v->stop, false);
 
   if (pthread_create(&v->thread, nullptr, media_thread, m) != 0) {
+    denoise_free(m->denoise);
     free(m);
     return false;
   }
@@ -1065,14 +1096,34 @@ static void on_pulse(void *ctx) {
     restart_audio(v);
   }
 
+  if (v->marked != devices_option(VOICE_QOS)) {
+    mark_packets(v);
+  }
+
+  bool heard = v->audio != nullptr && audio_live(v->audio);
+
+  if (heard != v->heard) {
+    v->heard = heard;
+    changed(v);
+  }
+
   if (spoke != v->spoke) {
     v->spoke = spoke;
     changed(v);
   }
 }
 
+static void on_audio_failed(void *ctx) {
+  Voice *v = ctx;
+
+  audio_stop(v->audio);
+  v->audio = nullptr;
+  v->no_microphone = true;
+  changed(v);
+}
+
 static void start_audio(Voice *v) {
-  AudioEvents events = {v, on_captured, on_render};
+  AudioEvents events = {v, on_captured, on_render, on_audio_failed};
   AudioResult why = AUDIO_OK;
 
   if (v->audio != nullptr || v->status != VOICE_CONNECTED) {
@@ -1081,8 +1132,10 @@ static void start_audio(Voice *v) {
 
   v->devices = devices_version();
   v->audio = audio_start(&events, devices_get(AUDIO_INPUTS),
-                         devices_get(AUDIO_OUTPUTS), &why);
+                         devices_get(AUDIO_OUTPUTS), !devices_input().echo,
+                         &why);
   v->no_microphone = v->audio == nullptr;
+  v->heard = false;
   changed(v);
 }
 
@@ -1489,6 +1542,10 @@ float voice_input_level(const Voice *v) {
   return v->audio != nullptr && !atomic_load(&v->mute)
            ? atomic_load_explicit(&v->level, memory_order_relaxed)
            : 0;
+}
+
+bool voice_microphone_starting(const Voice *v) {
+  return v->audio != nullptr && !v->heard;
 }
 
 bool voice_no_microphone(const Voice *v) {

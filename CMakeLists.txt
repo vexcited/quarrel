@@ -72,6 +72,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/store.c
   src/discord/util.c
   src/voice/dave.c
+  src/voice/denoise.c
   src/voice/devices.c
   src/voice/mictest.c
   src/voice/rtp.c
@@ -116,7 +117,7 @@ endif()
 
 include(cmake/voice.cmake)
 target_link_libraries(quarrel_core PUBLIC
-  quarrel_dave OpenSSL::Crypto PkgConfig::OPUS)
+  quarrel_dave quarrel_rnnoise OpenSSL::Crypto PkgConfig::OPUS)
 
 if(NOT TARGET hcaptcha::civue)
   set(HCAPTCHA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

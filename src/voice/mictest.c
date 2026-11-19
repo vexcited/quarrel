@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "voice/audio.h"
+#include "voice/denoise.h"
 #include "voice/devices.h"
 
 // a second of sound, a power of two.
@@ -23,10 +24,29 @@ static float ring[RING];
 static atomic_uint head, tail;
 static _Atomic float level;
 static bool primed;
+// made before the sound starts, freed after it stopped.
+static Denoise *denoise;
+// the most the system hands at a time, see audio.m.
+constexpr size_t HEARD_MAX = 4096;
 
-static void on_captured(void *, const float *samples, size_t count) {
+static void on_captured(void *, const float *heard, size_t count) {
   uint32_t at = atomic_load_explicit(&head, memory_order_relaxed);
   float volume = devices_input_volume(), energy = 0;
+  float samples[HEARD_MAX];
+
+  if (count > HEARD_MAX) {
+    return;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    samples[i] = heard[i];
+  }
+
+  VoiceNoise noise = devices_input().noise;
+
+  if (denoise != nullptr && noise != NOISE_OFF) {
+    denoise_run(denoise, samples, count, noise == NOISE_VOICE);
+  }
 
   for (size_t i = 0; i < count; i++) {
     float sample = samples[i] * volume;
@@ -71,16 +91,27 @@ static void on_render(void *, float *samples, size_t count) {
                         memory_order_release);
 }
 
+static void on_failed(void *) {
+  mictest_stop();
+
+  if (on_changed != nullptr) {
+    on_changed();
+  }
+}
+
 static void open(void) {
-  AudioEvents events = {nullptr, on_captured, on_render};
+  AudioEvents events = {nullptr, on_captured, on_render, on_failed};
   AudioResult why = AUDIO_OK;
 
   atomic_store(&head, 0);
   atomic_store(&tail, 0);
   primed = false;
   devices = devices_version();
+  denoise_free(denoise);
+  denoise = denoise_new();
   audio = audio_start(&events, devices_get(AUDIO_INPUTS),
-                      devices_get(AUDIO_OUTPUTS), &why);
+                      devices_get(AUDIO_OUTPUTS), !devices_input().echo,
+                      &why);
   denied = audio == nullptr && why == AUDIO_DENIED;
   wanted = audio != nullptr;
 }
@@ -112,11 +143,17 @@ void mictest_stop(void) {
   wanted = false;
   audio_stop(audio);
   audio = nullptr;
+  denoise_free(denoise);
+  denoise = nullptr;
   atomic_store(&level, 0);
 }
 
 bool mictest_running(void) {
   return wanted;
+}
+
+bool mictest_starting(void) {
+  return wanted && (audio == nullptr || !audio_live(audio));
 }
 
 bool mictest_denied(void) {

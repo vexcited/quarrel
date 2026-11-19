@@ -21,6 +21,8 @@ typedef struct {
   void (*captured)(void *ctx, const float *samples, size_t count);
   // asks for the next `count` samples to play.
   void (*render)(void *ctx, float *samples, size_t count);
+  // the sound could not start after all. main thread, may be null.
+  void (*failed)(void *ctx);
 } AudioEvents;
 
 typedef enum : unsigned char {
@@ -35,11 +37,22 @@ typedef enum : unsigned char {
 void audio_ask(void (*done)(void *ctx, bool allowed), void *ctx);
 
 // starts capturing and playing, through the devices of these ids or the
-// system's own for a null one or one that is gone. null when it cannot,
-// `why` then says so.
+// system's own for a null one or one that is gone. `raw` leaves the
+// microphone alone: no echo taken out, nothing of the system's voice
+// processing. null when it may not, `why` then says so. neither this nor
+// audio_stop waits for the system: the sound starts a moment later, and
+// `failed` says when it does not.
 Audio *audio_start(const AudioEvents *e, const char *input, const char *output,
-                   AudioResult *why);
+                   bool raw, AudioResult *why);
+// the microphone was heard: the system takes a moment, seconds with some
+// devices, between the start and the first sound. any thread.
+bool audio_live(const Audio *a);
+// no callback runs once it returned.
 void audio_stop(Audio *a);
+
+// how the system shapes the microphone is its user's choice alone, made in
+// the system's own menu, which no app may make for them. opens that menu.
+void audio_show_modes(void);
 
 /* ========================================================================== */
 /* what the machine has to hear, play and film with. main thread.             */
