@@ -86,6 +86,26 @@ static bool put_str(char **dst, const Json *obj, const char *key) {
   return true;
 }
 
+// `avatar_decoration_data` of a user or a member, null when they wear
+// none. true when it changed.
+static bool put_decoration(char **dst, const Json *owner) {
+  const Json *data = json_get(owner, "avatar_decoration_data");
+
+  if (data == nullptr) {
+    return false;
+  }
+
+  if (json_is(data, JSON_OBJECT)) {
+    return put_str(dst, data, "asset");
+  }
+
+  bool worn = *dst != nullptr;
+
+  free(*dst);
+  *dst = nullptr;
+  return worn;
+}
+
 static bool put_bool(bool *dst, const Json *obj, const char *key) {
   const Json *v = json_get(obj, key);
 
@@ -429,6 +449,7 @@ static void free_user(User *u) {
   free(u->bio);
   free(u->pronouns);
   free(u->activity);
+  free(u->decoration);
   free(u->status_text);
   free(u->status_emoji);
   free(u);
@@ -463,6 +484,8 @@ User *store_put_user(Store *s, const Json *user) {
   changed |= put_str(&u->discriminator, user, "discriminator");
   changed |= put_str(&u->avatar, user, "avatar");
   changed |= put_str(&u->banner, user, "banner");
+
+  changed |= put_decoration(&u->decoration, user);
   changed |= put_str(&u->bio, user, "bio");
   changed |= put_str(&u->pronouns, user, "pronouns");
   changed |= put_bool(&u->bot, user, "bot");
@@ -1776,6 +1799,7 @@ static void free_role(Role *r) {
 static void free_member(Member *m) {
   free(m->nick);
   free(m->avatar);
+  free(m->decoration);
   free(m->roles);
   free(m);
 }
@@ -1934,6 +1958,7 @@ Member *store_put_member(Store *s, Guild *g, const Json *member,
 
   put_str(&m->nick, member, "nick");
   put_str(&m->avatar, member, "avatar");
+  put_decoration(&m->decoration, member);
   put_bool(&m->pending, member, "pending");
 
   if ((v = json_get(member, "roles")) != nullptr) {

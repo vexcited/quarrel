@@ -136,25 +136,6 @@ static const char *status_label(UserStatus status) {
   }
 }
 
-static void tag_chip(App *app, const User *u) {
-  const Look *k = &app->look;
-  char url[CDN_URL_MAX];
-
-  cdn_tag_badge(url, u->tag_guild_id, u->tag_badge, 32);
-
-  div(flex, items_center, gap(1), flex_shrink_0, h(px(18)), px(1), rounded(sm),
-      bg(k->hover)) {
-    if (*url) {
-      div(size(px(12)), flex_shrink_0) {
-        image_fill(app, url, 0);
-      }
-    }
-
-    text(u->tag, text_size(px(12)), line_height(px(16)), font_weight(semibold),
-         text_color(k->text), whitespace_nowrap);
-  }
-}
-
 static void friend_row(App *app, const Friend *f) {
   const Look *k = &app->look;
   const User *u = f->user;
@@ -178,9 +159,7 @@ static void friend_row(App *app, const Friend *f) {
         text(f->name, min_w(0), truncate, font_weight(semibold),
              text_color(k->strong));
 
-        if (u->tag && *u->tag) {
-          tag_chip(app, u);
-        }
+        tag_chip(app, u);
       }
 
       // what the friend is doing comes before the status they wrote, which
@@ -307,8 +286,9 @@ static void format_elapsed(int64_t since_ms, char *out, size_t cap) {
   }
 }
 
+// `badge` is the url of a small picture at the end, empty for none.
 static void card_header(App *app, const User *u, const char *title,
-                        const char *subtitle) {
+                        const char *subtitle, const char *badge) {
   const Look *k = &app->look;
 
   div(flex, items_center, gap(3), min_w(0)) {
@@ -319,6 +299,12 @@ static void card_header(App *app, const User *u, const char *title,
            text_color(k->strong));
       text(subtitle, truncate, text_size(px(14)), line_height(px(18)),
            text_color(k->subtle));
+    }
+
+    if (*badge) {
+      div(size(px(24)), flex_shrink_0, rounded(md), overflow_hidden) {
+        image_fill(app, badge, 6);
+      }
     }
   }
 }
@@ -392,7 +378,7 @@ static void voice_card(App *app, const VoiceGroup *g) {
 
   div(key(id_at(id("now-voice"), g->channel_id)), flex, flex_col, gap(4), p(4),
       mb(4), rounded(xl), bg(k->surface), border(1), border_color(k->border)) {
-    card_header(app, g->first, g->title, "In a Voice Channel");
+    card_header(app, g->first, g->title, "In a Voice Channel", "");
 
     div(flex, items_center, gap(3), min_w(0)) {
       section_icon(app, url, CIVUE_ICON(lucide, volume_2));
@@ -448,7 +434,8 @@ static bool activity_card(App *app, const Relationship *r, const User *u) {
 
   const Look *k = &app->look;
   const Activity *a = &u->activities[0];
-  char subtitle[200], span[16], elapsed[32], url[CDN_URL_MAX];
+  char subtitle[200], span[16], elapsed[32];
+  char url[CDN_URL_MAX], badge[CDN_URL_MAX];
   bool rich = a->details || a->state || a->large_image || a->started_ms;
 
   format_span(a->started_ms ? a->started_ms : a->created_ms, span, sizeof span);
@@ -463,11 +450,20 @@ static bool activity_card(App *app, const Relationship *r, const User *u) {
     snprintf(subtitle, sizeof subtitle, "%s", a->name);
   }
 
+  cdn_application_icon(
+    badge, a->application_id,
+    session_application_icon(app->session, a->application_id), 64);
   cdn_activity_image(url, a->application_id, a->large_image, 64);
+
+  // discord shows the application's own icon when the activity has no
+  // picture.
+  if (!*url) {
+    snprintf(url, sizeof url, "%s", badge);
+  }
 
   div(key(id_at(id("now-activity"), u->id)), flex, flex_col, gap(4), p(4),
       mb(4), rounded(xl), bg(k->surface), border(1), border_color(k->border)) {
-    card_header(app, u, friend_name(r, u), subtitle);
+    card_header(app, u, friend_name(r, u), subtitle, badge);
 
     if (rich) {
       div(flex, items_center, gap(3), min_w(0)) {

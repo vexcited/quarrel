@@ -50,6 +50,14 @@ char *cdn_emoji(char out[static CDN_URL_MAX], Snowflake emoji_id,
 // the badge of a guild's tag.
 char *cdn_tag_badge(char out[static CDN_URL_MAX], Snowflake guild_id,
                     const char *hash, uint32_t size);
+// what frames an avatar, still: `asset` is the user's `decoration`.
+char *cdn_avatar_decoration(char out[static CDN_URL_MAX], const char *asset,
+                            uint32_t size);
+// a badge of a profile.
+char *cdn_badge_icon(char out[static CDN_URL_MAX], const char *hash);
+char *cdn_application_icon(char out[static CDN_URL_MAX],
+                           Snowflake application_id, const char *hash,
+                           uint32_t size);
 // an activity's `assets.large_image`: an asset of the application, or a
 // "mp:" path the media proxy serves.
 char *cdn_activity_image(char out[static CDN_URL_MAX], Snowflake application_id,

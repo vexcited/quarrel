@@ -99,6 +99,8 @@ typedef struct {
   // null or "0" for a unique username, four digits for bots and old accounts.
   char *discriminator;
   char *avatar, *banner;
+  // the asset of what frames the avatar, null for nothing.
+  char *decoration;
   // what the profile says. discord sends these for the current user only.
   char *bio, *pronouns;
   // 0xrrggbb when `has_accent`, the banner's color when there is no image.
@@ -167,6 +169,8 @@ typedef struct {
   char *nick;
   // the avatar set for this guild, null for the user's own.
   char *avatar;
+  // the same for what frames it.
+  char *decoration;
   Snowflake *roles;
   size_t nroles;
   // unix milliseconds, 0 when unknown.

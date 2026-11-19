@@ -172,6 +172,42 @@ static bool path_ok(const char *path) {
   return strstr(path, "..") == nullptr;
 }
 
+char *cdn_avatar_decoration(char out[static CDN_URL_MAX], const char *asset,
+                            uint32_t size) {
+  if (!hash_ok(asset)) {
+    return empty(out);
+  }
+
+  // an animated one is an apng, which the proxy stills when asked.
+  snprintf(out, CDN_URL_MAX,
+           CDN_BASE "/avatar-decoration-presets/%s.png?size=%u"
+                    "&passthrough=false",
+           asset, cdn_size(size));
+  return out;
+}
+
+char *cdn_badge_icon(char out[static CDN_URL_MAX], const char *hash) {
+  if (!hash_ok(hash)) {
+    return empty(out);
+  }
+
+  snprintf(out, CDN_URL_MAX, CDN_BASE "/badge-icons/%s.png", hash);
+  return out;
+}
+
+char *cdn_application_icon(char out[static CDN_URL_MAX],
+                           Snowflake application_id, const char *hash,
+                           uint32_t size) {
+  if (application_id == 0 || !hash_ok(hash)) {
+    return empty(out);
+  }
+
+  int len =
+    snprintf(out, CDN_URL_MAX, CDN_BASE "/app-icons/%" PRIu64 "/%s.png",
+             application_id, hash);
+  return sized(out, (size_t)len, size);
+}
+
 char *cdn_activity_image(char out[static CDN_URL_MAX], Snowflake application_id,
                          const char *image, uint32_t size) {
   if (image == nullptr) {

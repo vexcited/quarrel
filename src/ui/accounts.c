@@ -182,6 +182,38 @@ static void status_bubble(App *app, const User *self) {
   }
 }
 
+// what the profile wears, each with its name when pointed at.
+static void badges(App *app) {
+  const Look *k = &app->look;
+  const Session *session = app->session;
+  char url[CDN_URL_MAX];
+
+  if (session->nbadges == 0) {
+    return;
+  }
+
+  div(flex, items_center, flex_wrap, gap(1), self_start, mt(2), px(1p5),
+      py(1), rounded(lg), border(1), border_color(k->border)) {
+    for (size_t i = 0; i < session->nbadges; i++) {
+      const SessionBadge *badge = &session->badges[i];
+      civue_id id = id_at(id("profile-badge"), i);
+
+      cdn_badge_icon(url, badge->icon);
+
+      div(key(id), size(px(20)), flex_shrink_0) {
+        civue_button_state state = button();
+
+        image_fill(app, url, 0);
+
+        if (badge->description) {
+          hint(app, id, &state.response, badge->description,
+               CIVUE_TOOLTIP_ABOVE);
+        }
+      }
+    }
+  }
+}
+
 static void separator(const Look *k) {
   div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
 }
@@ -236,7 +268,10 @@ static void profile(App *app) {
         text(self->pronouns, flex_shrink_0);
       }
 
+      tag_chip(app, self);
     }
+
+    badges(app);
 
     if (self->bio && *self->bio) {
       div(mt(2), max_h(px(132)), overflow_hidden) {
@@ -280,6 +315,7 @@ void account_switcher(App *app, civue_rect anchor) {
   bool add = false, leave = false;
 
   overlay_room();
+  session_fetch_profile(session);
 
   overlay() {
     div(key(id("accounts")), flex, flex_col, left(px(anchor.x0)),

@@ -103,6 +103,11 @@ typedef struct Api Api;
 typedef struct Gateway Gateway;
 typedef struct Voice Voice;
 
+// a badge of a profile: `icon` is a hash for cdn_badge_icon.
+typedef struct {
+  char *icon, *description;
+} SessionBadge;
+
 struct Session {
   SessionState state;
   // never null, and the same store for the session's whole life.
@@ -137,6 +142,9 @@ struct Session {
   char **frecent_reactions;
   size_t nfrecent_reactions;
   bool frecency_loading, frecency_loaded;
+  // the applications asked about, see session_application_icon.
+  struct SessionApplication *applications;
+  size_t napplications;
   // the voice channel the account joined or is joining from here, 0 for
   // none, and its guild. see session_voice_join.
   Snowflake voice_guild_id, voice_channel_id;
@@ -174,6 +182,10 @@ struct Session {
   // ends a status picked for a while, see session_set_status.
   void *status_timer;
   int64_t status_timed;
+  // what the account's profile wears, see session_fetch_profile.
+  SessionBadge *badges;
+  size_t nbadges;
+  bool profile_loading, profile_loaded;
   Snowflake typing_channel_id;
   double typing_sent_at;
   Snowflake list_guild_id, list_channel_id;
@@ -289,6 +301,9 @@ void session_open_dm(Session *s, Snowflake user_id);
 void session_open_group(Session *s, const Snowflake *user_ids, size_t count);
 // creates a guild named `name`, see `guild_created`.
 void session_create_guild(Session *s, const char *name);
+// the hash of an application's icon, for cdn_application_icon. null when it
+// has none or while discord is asked, which happens once.
+const char *session_application_icon(Session *s, Snowflake application_id);
 // asks once for what the user uses the most, see `frecent_reactions`.
 void session_fetch_frecency(Session *s);
 // pins the message or takes its pin away.
@@ -308,6 +323,8 @@ void session_create_invite(Session *s, Snowflake guild_id);
 // client of the account follows.
 void session_set_status(Session *s, UserStatus status, bool invisible,
                         int64_t seconds);
+// asks once for the account's own profile, see `badges`.
+void session_fetch_profile(Session *s);
 
 typedef enum : uint8_t {
   SESSION_LINK_UP,

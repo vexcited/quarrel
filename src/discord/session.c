@@ -1010,6 +1010,42 @@ static void clear_frecency(Session *s) {
   s->frecency_loaded = false;
 }
 
+typedef struct SessionApplication {
+  Snowflake id;
+  char *icon;
+} SessionApplication;
+
+static void clear_applications(Session *s) {
+  for (size_t i = 0; i < s->napplications; i++) {
+    free(s->applications[i].icon);
+  }
+
+  free(s->applications);
+  s->applications = nullptr;
+  s->napplications = 0;
+}
+
+static void clear_profile_badges(Session *s) {
+  for (size_t i = 0; i < s->nbadges; i++) {
+    free(s->badges[i].icon);
+    free(s->badges[i].description);
+  }
+
+  free(s->badges);
+  s->badges = nullptr;
+  s->nbadges = 0;
+}
+
+static void clear_profile(Session *s) {
+  clear_profile_badges(s);
+  s->profile_loading = false;
+  s->profile_loaded = false;
+
+  platform_timer_cancel(s->status_timer);
+  s->status_timer = nullptr;
+  s->status_timed = 0;
+}
+
 static void clear_invite(Session *s) {
   free(s->invite_code);
   free(s->invite_error);
@@ -1027,6 +1063,8 @@ static void clear_invite(Session *s) {
 static void end_session(Session *s, const char *error) {
   clear_mentions(s);
   clear_frecency(s);
+  clear_applications(s);
+  clear_profile(s);
   clear_invite(s);
   gateway_free(s->gateway);
   s->gateway = nullptr;
@@ -1346,6 +1384,8 @@ static void session_free(Session *s) {
   clear_login(s);
   clear_mentions(s);
   clear_frecency(s);
+  clear_applications(s);
+  clear_profile(s);
   clear_invite(s);
   wipe(&s->token);
   store_free(s->store);
@@ -2100,6 +2140,77 @@ static void on_frecency(void *ctx, const ApiResponse *res) {
   changed(s);
 }
 
+static void on_application(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake id = call->id;
+
+  call_end(call);
+
+  if (!res->ok) {
+    return;
+  }
+
+  json_each(application, res->json) {
+    if (json_get_u64(application, "id") != id) {
+      continue;
+    }
+
+    for (size_t i = 0; i < s->napplications; i++) {
+      if (s->applications[i].id == id && s->applications[i].icon == nullptr) {
+        s->applications[i].icon =
+          str_dup(json_get_str(application, "icon"));
+      }
+    }
+  }
+
+  changed(s);
+}
+
+const char *session_application_icon(Session *s, Snowflake application_id) {
+  if (application_id == 0) {
+    return nullptr;
+  }
+
+  for (size_t i = 0; i < s->napplications; i++) {
+    if (s->applications[i].id == application_id) {
+      return s->applications[i].icon;
+    }
+  }
+
+  if (!online(s)) {
+    return nullptr;
+  }
+
+  char path[96];
+
+  // the route discord's client reads the applications of activities from.
+  snprintf(path, sizeof path, "/applications/public?application_ids=%llu",
+           (unsigned long long)application_id);
+
+  ApiRequest req = {.method = "GET",
+                    .path = path,
+                    .route = "/applications/public"};
+
+  SessionApplication *grown = realloc(
+    s->applications, (s->napplications + 1) * sizeof *s->applications);
+
+  if (grown == nullptr) {
+    cilo_oom(sizeof *grown);
+  }
+
+  s->applications = grown;
+  s->applications[s->napplications++] =
+    (SessionApplication){.id = application_id};
+  api_request(s->api, &req, on_application, call_new(s, 0, application_id));
+  return nullptr;
+}
+
 void session_fetch_frecency(Session *s) {
   if (s->frecency_loading || s->frecency_loaded || !online(s)) {
     return;
@@ -2414,3 +2525,59 @@ static void watch_status(Session *s) {
   }
 }
 
+static void on_profile(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  const Json *badges = json_get(res->json, "badges");
+
+  call_end(call);
+  s->profile_loading = false;
+
+  if (!res->ok) {
+    return;
+  }
+
+  clear_profile_badges(s);
+  s->profile_loaded = true;
+  s->badges = calloc(json_len(badges) + 1, sizeof *s->badges);
+
+  if (s->badges == nullptr) {
+    cilo_oom(sizeof *s->badges);
+  }
+
+  json_each(badge, badges) {
+    s->badges[s->nbadges++] = (SessionBadge){
+      .icon = str_dup(json_get_str(badge, "icon")),
+      .description = str_dup(json_get_str(badge, "description")),
+    };
+  }
+
+  changed(s);
+}
+
+void session_fetch_profile(Session *s) {
+  if (s->profile_loading || s->profile_loaded || !online(s) ||
+      s->store->self_id == 0) {
+    return;
+  }
+
+  char path[160];
+
+  // what the client asks its own profile with.
+  snprintf(path, sizeof path,
+           "/users/%llu/profile?type=popout&with_mutual_guilds=false"
+           "&with_mutual_friends=false&with_mutual_friends_count=false",
+           (unsigned long long)s->store->self_id);
+
+  ApiRequest req = {.method = "GET",
+                    .path = path,
+                    .route = "/users/:id/profile"};
+
+  s->profile_loading = true;
+  api_request(s->api, &req, on_profile, call_new(s, 0, 0));
+}

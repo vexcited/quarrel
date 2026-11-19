@@ -109,13 +109,18 @@ void status_dot(UserStatus status, civue_rect r, const Look *k,
 
 void avatar(App *app, const User *user, Snowflake guild_id, float size,
             bool status, civue_color ring) {
-  char url[CDN_URL_MAX] = "";
+  char url[CDN_URL_MAX] = "", frame[CDN_URL_MAX] = "";
   uint32_t pixels = (uint32_t)(size * 2);
 
   if (user) {
     const Guild *guild =
       guild_id ? store_guild(app->session->store, guild_id) : nullptr;
     const Member *member = guild ? store_member(guild, user->id) : nullptr;
+    const char *worn =
+      member && member->decoration ? member->decoration : user->decoration;
+
+    // discord draws it a fifth wider than the avatar it frames.
+    cdn_avatar_decoration(frame, worn, (uint32_t)(size * 1.2f * 2));
 
     if (member && member->avatar) {
       cdn_member_avatar(url, guild_id, user->id, member->avatar, pixels);
@@ -129,6 +134,13 @@ void avatar(App *app, const User *user, Snowflake guild_id, float size,
       bg(app->look.surface_high)) {
     image_fill(app, url, size / 2);
 
+    if (*frame) {
+      div(absolute, left(px(-size * .1f)), top(px(-size * .1f)),
+          size(px(size * 1.2f))) {
+        image_fill(app, frame, 0);
+      }
+    }
+
     if (status && user) {
       civue_rect r = here();
       double dot = size >= 40 ? 12 : 10;
@@ -140,6 +152,29 @@ void avatar(App *app, const User *user, Snowflake guild_id, float size,
       status_dot(shown, xywh(r.x1 - dot, r.y1 - dot, dot, dot), &app->look,
                  ring);
     }
+  }
+}
+
+void tag_chip(App *app, const User *u) {
+  const Look *k = &app->look;
+  char url[CDN_URL_MAX];
+
+  if (!u->tag || !*u->tag) {
+    return;
+  }
+
+  cdn_tag_badge(url, u->tag_guild_id, u->tag_badge, 32);
+
+  div(flex, items_center, gap(1), flex_shrink_0, h(px(18)), px(1), rounded(sm),
+      bg(k->hover)) {
+    if (*url) {
+      div(size(px(12)), flex_shrink_0) {
+        image_fill(app, url, 0);
+      }
+    }
+
+    text(u->tag, text_size(px(12)), line_height(px(16)), font_weight(semibold),
+         text_color(k->text), whitespace_nowrap);
   }
 }
 
