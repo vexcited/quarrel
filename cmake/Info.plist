@@ -26,5 +26,7 @@
   <string>NSApplication</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Quarrel sends your voice to the calls you join.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Quarrel shows you what your camera sees.</string>
 </dict>
 </plist>

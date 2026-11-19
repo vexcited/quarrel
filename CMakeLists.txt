@@ -80,6 +80,7 @@ set(QUARREL_CORE_SOURCES
 
 set(QUARREL_DARWIN_SOURCES
   src/platform/darwin/audio.m
+  src/platform/darwin/camera.m
   src/platform/darwin/pending.m
   src/platform/darwin/storage.m
   src/platform/darwin/system.m
@@ -95,7 +96,8 @@ if(APPLE)
     "-framework Foundation" "-framework Security" "-framework ImageIO"
     "-framework CoreGraphics" "-framework CoreFoundation"
     "-framework AudioToolbox" "-framework AVFoundation"
-    "-framework CoreAudio" "-framework AppKit" "-framework Network" z)
+    "-framework CoreAudio" "-framework CoreMedia" "-framework CoreVideo"
+    "-framework Metal" "-framework AppKit" "-framework Network" z)
 else()
   message(FATAL_ERROR "Quarrel only has a macOS backend for now")
 endif()
