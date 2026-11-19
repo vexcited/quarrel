@@ -101,6 +101,7 @@ static bool secret_field(App *app, civue_id id, char **value) {
 
     if (focused) {
       civue_claim_focus(ui);
+      civue_claim_secure_input(ui);
 
       for (uint32_t i = 0; i < ui->input.keys.len; i++) {
         civue_key_press press = ui->input.keys.v[i];
