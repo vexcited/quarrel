@@ -80,7 +80,7 @@ static void channel_row(App *app, Channel *c, bool thread) {
       // a voice channel is joined and shows its call.
       if (channel_is_voice(c)) {
         if (store_can(store, c, PERM_CONNECT)) {
-          session_voice_join(app->session, c->id);
+          voice_join(app, c->id);
         }
 
         app->voice_chat = false;

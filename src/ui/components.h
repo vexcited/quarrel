@@ -36,6 +36,11 @@ void voice_members(App *app, const Channel *c);
 // the call the account is in, at the foot of the sidebar: how it goes and
 // the microphone, the sound and the way out. nothing outside a call.
 void voice_panel(App *app);
+// joins a voice channel, after asking when that leaves a call and the
+// user wants to be asked.
+void voice_join(App *app, Snowflake channel_id);
+// asks whether to leave the call for `app->voice_switch`, while it is set.
+void voice_switch_dialog(App *app);
 // the call of a voice channel in place of its chat: who is in it, and the
 // microphone, the camera and the way out under them.
 void voice_stage(App *app, Channel *c);

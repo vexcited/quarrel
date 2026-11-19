@@ -513,7 +513,7 @@ static void controls(App *app, const Channel *c) {
             active(bg(k->brand_active)), text_color(CIVUE_WHITE),
             cursor_pointer) {
           if (button().activated) {
-            session_voice_join(s, c->id);
+            voice_join(app, c->id);
           }
 
           icon(lucide, phone, size(px(18)));

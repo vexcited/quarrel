@@ -4,6 +4,7 @@
 
 #include <civue/dsl.h>
 
+#include "voice/devices.h"
 #include "voice/voice.h"
 #include "widgets.h"
 
@@ -188,5 +189,93 @@ void voice_panel(App *app) {
         session_voice_leave(s);
       }
     }
+  }
+}
+
+void voice_join(App *app, Snowflake channel_id) {
+  Session *s = app->session;
+
+  if (s->voice_channel_id != 0 && s->voice_channel_id != channel_id &&
+      devices_option(VOICE_SWITCH_WARNING)) {
+    app->voice_switch = channel_id;
+    return;
+  }
+
+  session_voice_join(s, channel_id);
+}
+
+static bool dialog_button(const Look *k, civue_id id, const char *label,
+                          bool primary) {
+  bool pressed = false;
+
+  div(key(id), flex, items_center, justify_center, flex_1, h(10), px(4),
+      rounded(lg), style(.bg = primary ? k->brand : k->surface_high),
+      hover(bg(primary ? k->brand_hover : k->hover)),
+      text_color(primary ? CIVUE_WHITE : k->strong), cursor_pointer) {
+    pressed = button().activated;
+    text(label, font_weight(medium));
+  }
+
+  return pressed;
+}
+
+void voice_switch_dialog(App *app) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  Session *s = app->session;
+  const Channel *to = store_channel(s->store, app->voice_switch);
+  const Channel *from = store_channel(s->store, s->voice_channel_id);
+  bool close = false, join = false;
+  char line[256];
+
+  if (app->voice_switch == 0) {
+    return;
+  }
+
+  // the call ended, or the channel went, while it asked.
+  if (to == nullptr || from == nullptr) {
+    app->voice_switch = 0;
+    return;
+  }
+
+  snprintf(line, sizeof line,
+           "You are in a call in %s. Joining %s leaves it.",
+           from->name != nullptr ? from->name : "another channel",
+           to->name != nullptr ? to->name : "this one");
+
+  overlay() {
+    div(key(id("voice-switch-backdrop")), left(0), top(0),
+        w(px(ui->size.x)), h(px(ui->size.y)), flex, items_center,
+        justify_center, bg(rgba(0x000000b3))) {
+      close = button().activated;
+
+      div(key(id("voice-switch")), flex, flex_col, gap(2), w(px(400)), p(6),
+          rounded(xl), bg(k->surface), border(1), border_color(k->border),
+          shadow(lg), text_color(k->text)) {
+        // a press on the dialog is not one on what is behind it.
+        button();
+
+        text("Switch voice channel?", text_size(px(20)), line_height(px(24)),
+             font_weight(semibold), text_color(k->strong));
+        text(line, text_color(k->subtle));
+
+        div(flex, gap(2), flex_shrink_0, mt(4)) {
+          close |= dialog_button(k, id("voice-switch-cancel"), "Cancel", false);
+          join = dialog_button(k, id("voice-switch-join"), "Switch", true);
+        }
+      }
+    }
+  }
+
+  if (civue_key_pressed(ui, CIVUE_KEY_ESCAPE)) {
+    close = true;
+  }
+
+  if (join) {
+    session_voice_join(s, app->voice_switch);
+  }
+
+  if (join || close) {
+    app->voice_switch = 0;
   }
 }

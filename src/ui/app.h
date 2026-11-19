@@ -164,6 +164,9 @@ typedef struct {
   int8_t voice_side;
   civue_rect voice_side_row;
 
+  // the voice channel asked for while in a call in another, 0 for none.
+  Snowflake voice_switch;
+
   // the settings: the part of their page the sidebar points at, the kind
   // whose list of devices is open under its box, -1 for none, and that box.
   bool settings_open;
