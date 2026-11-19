@@ -5,6 +5,7 @@
 
 #include <civue/dsl.h>
 
+#include "voice/camera.h"
 #include "voice/devices.h"
 #include "voice/mictest.h"
 #include "voice/voice.h"
@@ -27,15 +28,17 @@ constexpr float STACK_UNDER = 800;
 constexpr float SIDEBAR = 240;
 constexpr float PAGE_MAX = 696;
 constexpr float ROW = 40;
-constexpr int METER_BARS = 56;
+// what the camera shows before it films.
+constexpr float PREVIEW = 220;
 
 typedef enum : uint8_t {
   PART_VOICE,
   PART_CAMERA,
+  PART_ADVANCED,
   PARTS,
 } Part;
 
-static const char *const PART_NAMES[PARTS] = {"Voice", "Camera"};
+static const char *const PART_NAMES[PARTS] = {"Voice", "Camera", "Advanced"};
 
 /* ========================================================================== */
 /* the sidebar.                                                               */
@@ -186,13 +189,26 @@ static void select_box(App *app, AudioKind kind) {
       app->settings_select_rect = here();
     }
 
+    if (kind == AUDIO_CAMERAS) {
+      icon(lucide, camera, size(px(18)), flex_shrink_0,
+           text_color(k->subtle));
+    }
+
     text(name, flex_1, min_w(0), truncate, font_weight(medium),
          text_color(k->strong));
-    icon(lucide, chevron_down, size(4), flex_shrink_0, text_color(k->subtle));
+
+    if (open) {
+      icon(lucide, chevron_up, size(4), flex_shrink_0, text_color(k->subtle));
+    }
+    else {
+      icon(lucide, chevron_down, size(4), flex_shrink_0,
+           text_color(k->subtle));
+    }
   }
 }
 
-static bool option(App *app, civue_id id, const char *name, bool on) {
+static bool option(App *app, civue_id id, const char *name, bool camera,
+                   bool on) {
   const Look *k = &app->look;
   bool pressed = false;
 
@@ -200,11 +216,20 @@ static bool option(App *app, civue_id id, const char *name, bool on) {
       rounded(lg), style(.bg = on ? k->selected : CIVUE_CLEAR),
       hover(bg(k->hover)), cursor_pointer) {
     pressed = button().activated;
+
+    if (camera) {
+      icon(lucide, camera, size(px(18)), flex_shrink_0,
+           text_color(k->subtle));
+    }
+
     text(name, flex_1, min_w(0), truncate, font_weight(medium),
          text_color(k->strong));
 
     if (on) {
-      icon(lucide, check, size(4), flex_shrink_0, text_color(k->brand));
+      div(flex, items_center, justify_center, size(5), flex_shrink_0,
+          rounded(full), bg(k->brand), text_color(CIVUE_WHITE)) {
+        icon(lucide, check, size(px(14)));
+      }
     }
   }
 
@@ -248,7 +273,8 @@ static void select_list(App *app) {
                  app->default_names[kind],
                  app->default_names[kind][0] ? ")" : "");
 
-        if (option(app, id("settings-option-default"), name, current < 0)) {
+        if (option(app, id("settings-option-default"), name, false,
+                   current < 0)) {
           devices_set(kind, nullptr);
           chosen = true;
         }
@@ -257,7 +283,7 @@ static void select_list(App *app) {
       for (size_t i = 0; i < count; i++) {
         const AudioDevice *d = &app->devices[kind][i];
 
-        if (option(app, id_at(id("settings-option"), i), d->name,
+        if (option(app, id_at(id("settings-option"), i), d->name, !standard,
                    current == (int)i)) {
           devices_set(kind, d->id);
           chosen = true;
@@ -314,14 +340,43 @@ static void volume_field(App *app, bool input, bool *let_go) {
     }                                                  \
   }
 
-static void mic_test(App *app) {
+// the microphone's loudness as thin bars, the lit ones going from orange
+// to green along the row.
+static void test_meter(App *app, float level) {
+  const Look *k = &app->look;
+  civue_rect r = here();
+  int bars = (int)((r.x1 - r.x0 + 4) / 8);
+  // on a scale of decibels: 60 of them.
+  float decibels = level > 0 ? 20 * log10f(level) : -100;
+  int lit = (int)((decibels + 60) / 60 * (float)bars);
+  civue_color low = rgba(0xf2a640ff), high = rgba(0x86d17bff);
+
+  for (int i = 0; i < bars; i++) {
+    double x = r.x0 + i * 8;
+    float along = bars > 1 ? (float)i / (float)(bars - 1) : 0;
+    civue_color warm = {
+      low.r + (high.r - low.r) * along,
+      low.g + (high.g - low.g) * along,
+      low.b + (high.b - low.b) * along,
+      1,
+    };
+
+    fill(civue_rect_from(x, r.y0, x + 4, r.y1),
+         i < lit ? warm : k->border_strong, 2);
+  }
+}
+
+// how loud the microphone is, as a call or the test hears it.
+static float mic_test(App *app) {
   const Look *k = &app->look;
   const Session *s = app->session;
   bool calling = s->voice && voice_status(s->voice) == VOICE_CONNECTED;
   bool running = mictest_running();
+  bool starting = calling ? voice_microphone_starting(s->voice)
+                          : mictest_starting();
   float level = calling ? voice_input_level(s->voice) : mictest_level();
 
-  div(flex, items_center, gap(4), flex_shrink_0) {
+  div(flex, items_start, gap(4), flex_shrink_0, mb(6)) {
     // a call has the microphone, and shows how loud it is by itself.
     if (!calling) {
       div(key(id("mic-test")), flex, items_center, justify_center, h(px(ROW)),
@@ -337,29 +392,301 @@ static void mic_test(App *app) {
           }
         }
 
-        text(running ? "Stop Testing" : "Mic Test", font_weight(medium));
+        text(!running ? "Mic Test" : starting ? "Starting..." : "Stop Testing",
+             font_weight(medium));
       }
     }
 
-    div(flex_1, min_w(0), h(8)) {
-      level_bars(app, level, METER_BARS);
-    }
-  }
+    div(flex, flex_col, flex_1, min_w(0)) {
+      div(flex_shrink_0, h(6), my(2)) {
+        test_meter(app, level);
+      }
 
-  if (mictest_denied()) {
-    text("Quarrel may not use the microphone, see the system's settings.",
-         flex_shrink_0, mt(3), text_size(px(14)), line_height(px(18)),
-         text_color(k->critical_text));
-  }
-  else if (running) {
-    text("Speak, you hear yourself back.", flex_shrink_0, mt(3),
-         text_size(px(14)), line_height(px(18)), text_color(k->subtle));
+      if (mictest_denied()) {
+        text("Quarrel may not use the microphone, see the system's settings.",
+             flex_shrink_0, text_size(px(14)), line_height(px(18)),
+             text_color(k->critical_text));
+      }
+      else if (starting) {
+        text("Starting the microphone...", flex_shrink_0, text_size(px(14)),
+             line_height(px(18)), text_color(k->subtle));
+      }
+      else if (running) {
+        text("Playing your voice back to you.", flex_shrink_0,
+             text_size(px(14)), line_height(px(18)), text_color(k->subtle));
+      }
+    }
   }
 
   if (running || calling) {
     mictest_follow();
     // the bars move without anything else changing.
     civue_window_wake();
+  }
+
+  return level;
+}
+
+static bool profile(App *app, civue_id id, const char *name, const char *about,
+                    bool on) {
+  const Look *k = &app->look;
+  bool pressed = false;
+
+  div(key(id), flex, gap(3), flex_shrink_0, cursor_pointer) {
+    pressed = button().activated;
+
+    div(flex, items_center, justify_center, size(6), flex_shrink_0,
+        rounded(full), border(2), style(.bg = on ? k->brand : CIVUE_CLEAR),
+        border_color(on ? k->brand : k->border_strong)) {
+      if (on) {
+        div(size(px(8)), rounded(full), bg(k->chat)) {}
+      }
+    }
+
+    div(flex, flex_col, gap(1), flex_1, min_w(0), pt(px(2))) {
+      text(name, font_weight(medium), text_color(k->strong));
+      text(about, text_size(px(14)), line_height(px(18)),
+           text_color(k->subtle));
+    }
+  }
+
+  return pressed;
+}
+
+static void input_profile(App *app) {
+  const Look *k = &app->look;
+  static const char *const NAMES[PROFILES] = {
+    [PROFILE_ISOLATION] = "Voice Isolation",
+    [PROFILE_STUDIO] = "Studio",
+    [PROFILE_CUSTOM] = "Custom",
+  };
+  static const char *const ABOUT[PROFILES] = {
+    [PROFILE_ISOLATION] = "Just your voice: Quarrel cuts through the noise",
+    [PROFILE_STUDIO] = "Open mic: Quarrel leaves it to the Mic Mode of macOS",
+    [PROFILE_CUSTOM] = "Advanced mode: set each part yourself",
+  };
+  VoiceProfile now = devices_profile();
+
+  field_label(k, "Input Profile");
+
+  div(flex, flex_col, gap(3), flex_shrink_0, mt(1)) {
+    for (int i = 0; i < PROFILES; i++) {
+      if (profile(app, id_at(id("profile"), i), NAMES[i], ABOUT[i],
+                  now == i) &&
+          now != i) {
+        devices_set_profile((VoiceProfile)i);
+      }
+    }
+  }
+
+  if (now == PROFILE_STUDIO) {
+    div(key(id("mic-modes")), flex, items_center, justify_center, self_start,
+        h(8), px(3), ml(9), mt(3), flex_shrink_0, rounded(lg),
+        bg(k->surface_high), hover(bg(k->hover)), text_color(k->strong),
+        cursor_pointer) {
+      if (button().activated) {
+        audio_show_modes();
+      }
+
+      text("Open Mic Mode", text_size(px(14)), font_weight(medium));
+    }
+  }
+}
+
+static void switch_row(App *app, VoiceOption option, const char *name,
+                       const char *about) {
+  const Look *k = &app->look;
+  bool on = devices_option(option);
+
+  div(flex, items_center, gap(4), flex_shrink_0) {
+    div(flex, flex_col, gap(1), flex_1, min_w(0)) {
+      text(name, font_weight(medium), text_color(k->strong));
+      text(about, text_size(px(14)), line_height(px(18)),
+           text_color(k->subtle));
+    }
+
+    div(key(id_at(id("settings-switch"), option)), relative, w(10), h(6),
+        flex_shrink_0, rounded(full),
+        style(.bg = on ? k->brand : k->border_strong), cursor_pointer) {
+      if (button().activated) {
+        devices_set_option(option, !on);
+      }
+
+      div(absolute, top(px(3)), left(px(on ? 19 : 3)), size(px(18)),
+          rounded(full), bg(CIVUE_WHITE)) {}
+    }
+  }
+}
+
+// where the microphone starts to be sent, over how loud it is now: what is
+// under the thumb stays here, what is over it goes.
+static void sensitivity_slider(App *app, float level) {
+  const Look *k = &app->look;
+  float value = devices_sensitivity();
+  float decibels = level > 0 ? fmaxf(20 * log10f(level), -100) : -100;
+  civue_color quiet = rgba(0xf2a640ff), sent = k->positive;
+  char line[64];
+
+  div(key(id("settings-sensitivity")), flex_shrink_0, h(6), mx(2), px(2)) {
+    civue_slider_state state = slider(value, -100, 0, -100, 1);
+
+    if (state.changed) {
+      value = (float)state.value;
+      devices_set_sensitivity(value);
+    }
+
+    if (state.ended) {
+      devices_save_sensitivity();
+    }
+
+    civue_rect track = content();
+    double mid = (track.y0 + track.y1) / 2, wide = track.x1 - track.x0;
+    double x = track.x0 + (value + 100) / 100 * wide;
+    double heard = track.x0 + (decibels + 100) / 100 * wide;
+
+    quiet.a = sent.a = 0.3f;
+    fill(civue_rect_from(track.x0, mid - 3, x, mid + 3), quiet, 3);
+    fill(civue_rect_from(x, mid - 3, track.x1, mid + 3), sent, 3);
+    quiet.a = sent.a = 1;
+    fill(civue_rect_from(track.x0, mid - 3, fmin(heard, x), mid + 3), quiet, 3);
+
+    if (heard > x) {
+      fill(civue_rect_from(x, mid - 3, heard, mid + 3), sent, 3);
+    }
+
+    fill(civue_rect_from(x - 8, mid - 8, x + 8, mid + 8), CIVUE_WHITE, 8);
+  }
+
+  snprintf(line, sizeof line, "Sends what is louder than %.0f dB.",
+           (double)value);
+  text(line, flex_shrink_0, mt(1), text_size(px(14)), line_height(px(18)),
+       text_color(k->subtle));
+}
+
+static void noise_row(App *app) {
+  const Look *k = &app->look;
+  static const char *const NAMES[NOISES] = {
+    [NOISE_OFF] = "Off",
+    [NOISE_STANDARD] = "Standard",
+    [NOISE_VOICE] = "Voice only",
+  };
+  static const char *const ABOUT[NOISES] = {
+    [NOISE_OFF] = "Nothing is taken out of your microphone.",
+    [NOISE_STANDARD] = "Takes the background noise out of your microphone.",
+    [NOISE_VOICE] = ("Takes the noise out, and mutes everything while you "
+                     "do not speak, like keys and clicks."),
+  };
+  VoiceNoise now = devices_noise();
+
+  div(flex, items_center, gap(4), flex_shrink_0) {
+    div(flex, flex_col, gap(1), flex_1, min_w(0)) {
+      text("Noise Suppression", font_weight(medium), text_color(k->strong));
+      text(ABOUT[now], text_size(px(14)), line_height(px(18)),
+           text_color(k->subtle));
+    }
+
+    div(flex, gap(1), flex_shrink_0, p(1), rounded(lg), bg(k->input),
+        border(1), border_color(k->border_strong)) {
+      for (int i = 0; i < NOISES; i++) {
+        bool on = now == i;
+
+        div(key(id_at(id("settings-noise"), i)), flex, items_center,
+            justify_center, h(8), px(3), rounded(md),
+            style(.bg = on ? k->brand : CIVUE_CLEAR),
+            text_color(on ? CIVUE_WHITE : k->subtle),
+            hover(text_color(on ? CIVUE_WHITE : k->strong)), cursor_pointer) {
+          if (button().activated && !on) {
+            devices_set_noise((VoiceNoise)i);
+          }
+
+          text(NAMES[i], text_size(px(14)), font_weight(medium));
+        }
+      }
+    }
+  }
+}
+
+// what the custom profile lets its user set.
+static void custom_input(App *app, float level) {
+  if (devices_profile() != PROFILE_CUSTOM) {
+    return;
+  }
+
+  div(flex, flex_col, gap(6), flex_shrink_0, mt(6)) {
+    div(flex, flex_col, flex_shrink_0) {
+      switch_row(app, VOICE_AUTO_SENSITIVITY, "Automatic Input Sensitivity",
+                 "Quarrel decides when your microphone is loud enough to "
+                 "send.");
+
+      if (!devices_option(VOICE_AUTO_SENSITIVITY)) {
+        div(flex, flex_col, flex_shrink_0, mt(3)) {
+          sensitivity_slider(app, level);
+        }
+      }
+    }
+
+    noise_row(app);
+    switch_row(app, VOICE_ECHO, "Echo Cancellation",
+               "macOS takes what your speakers play out of your microphone. "
+               "Its Mic Mode only applies with this on.");
+  }
+}
+
+static bool video_button(App *app, civue_id id, const char *label) {
+  const Look *k = &app->look;
+  bool pressed = false;
+
+  div(key(id), flex, items_center, justify_center, h(px(ROW)), px(4),
+      flex_shrink_0, rounded(lg), bg(k->brand), hover(bg(k->brand_hover)),
+      active(bg(k->brand_active)), text_color(CIVUE_WHITE), cursor_pointer) {
+    pressed = button().activated;
+    text(label, font_weight(medium));
+  }
+
+  return pressed;
+}
+
+// what the camera picked sees, in a box as wide as the page, `wide`.
+static void camera_preview(App *app, float wide) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  bool running = camera_running();
+  uint32_t width = 0, height = 0;
+  civue_texture picture = running ? camera_picture(&width, &height) : 0;
+  // the shape of the picture once there is one.
+  float tall = picture != 0 && width != 0
+                 ? wide * (float)height / (float)width
+                 : PREVIEW;
+
+  div(relative, flex, items_center, justify_center, flex_shrink_0, mb(6),
+      rounded(lg), bg(k->frame), border(1), border_color(k->border),
+      style(.h = civue_px(tall))) {
+    if (picture != 0) {
+      civue_image(ui, picture, here(), (float[4]){0, 0, 1, 1}, 1, 8, false);
+
+      div(absolute, left(0), top(px(tall - ROW - 12)), w(full), flex,
+          justify_center) {
+        if (video_button(app, id("video-stop"), "Stop Video")) {
+          camera_stop();
+        }
+      }
+    }
+    else if (running) {
+      text("Starting the camera...", text_color(k->subtle));
+    }
+    else if (video_button(app, id("video-test"), "Test Video")) {
+      camera_start(ui->gfx, devices_get(AUDIO_CAMERAS), civue_window_wake);
+    }
+  }
+
+  if (camera_denied()) {
+    text("Quarrel may not use the camera, see the system's settings.",
+         flex_shrink_0, mb(6), text_size(px(14)), line_height(px(18)),
+         text_color(k->critical_text));
+  }
+
+  if (running) {
+    camera_follow(devices_get(AUDIO_CAMERAS));
   }
 }
 
@@ -372,7 +699,8 @@ static void page(App *app, bool narrow, bool stacked, float tops[PARTS]) {
       style(.padding[0] = civue_px(narrow ? 80 : 64),
             .padding[2] = civue_px(narrow ? 80 : 64))) {
     div(flex, flex_col, flex_1, min_w(0), max_w(px(PAGE_MAX))) {
-      float start = (float)here().y0;
+      civue_rect column = here();
+      float start = (float)column.y0;
 
       div(flex, flex_col, flex_shrink_0) {
         tops[PART_VOICE] = (float)here().y0 - start;
@@ -381,7 +709,10 @@ static void page(App *app, bool narrow, bool stacked, float tops[PARTS]) {
              device_field(app, AUDIO_OUTPUTS, "Speaker"));
         PAIR(stacked, volume_field(app, true, &let_go),
              volume_field(app, false, &let_go));
-        mic_test(app);
+        float level = mic_test(app);
+
+        input_profile(app);
+        custom_input(app, level);
       }
 
       div(flex_shrink_0, h(px(1)), my(9), bg(k->border)) {}
@@ -389,10 +720,26 @@ static void page(App *app, bool narrow, bool stacked, float tops[PARTS]) {
       div(flex, flex_col, flex_shrink_0) {
         tops[PART_CAMERA] = (float)here().y0 - start;
         heading(k, "Camera");
-        PAIR(stacked, device_field(app, AUDIO_CAMERAS, "Camera"),
-             div(flex_1) {});
-        text("The camera's picture is not sent to calls yet.", flex_shrink_0,
-             text_size(px(14)), line_height(px(18)), text_color(k->subtle));
+        camera_preview(app, (float)(column.x1 - column.x0));
+        switch_row(app, VOICE_ALWAYS_PREVIEW, "Always preview video",
+                   "Shows your picture before it goes to a call");
+        div(flex, flex_col, flex_shrink_0, mt(6)) {
+          field_label(k, "Camera");
+          select_box(app, AUDIO_CAMERAS);
+        }
+      }
+
+      div(flex_shrink_0, h(px(1)), my(9), bg(k->border)) {}
+
+      div(flex, flex_col, gap(6), flex_shrink_0) {
+        tops[PART_ADVANCED] = (float)here().y0 - start;
+        text("Advanced", flex_shrink_0, text_size(px(24)), line_height(px(30)),
+             font_weight(semibold), text_color(k->strong));
+        switch_row(app, VOICE_SWITCH_WARNING, "Switch Voice Channel Warning",
+                   "Asks before a call is left for another voice channel.");
+        switch_row(app, VOICE_QOS, "Quality Of Service",
+                   "Tells your router that the packets of a call are urgent. "
+                   "Some routers and internet providers misbehave with it.");
       }
     }
   }
@@ -406,6 +753,7 @@ static void close_settings(App *app) {
   app->settings_open = false;
   app->settings_select = -1;
   mictest_stop();
+  camera_stop();
 }
 
 void settings_dialog(App *app) {
@@ -415,6 +763,8 @@ void settings_dialog(App *app) {
   if (!app->settings_open) {
     return;
   }
+
+  devices_follow(app);
 
   float width = ui->size.x, height = ui->size.y;
   bool full = width <= FULL_UNDER;
