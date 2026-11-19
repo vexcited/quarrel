@@ -542,6 +542,7 @@ static void forget(Roster *r, Snowflake id) {
 /* ========================================================================== */
 
 static void on_typing_timer(void *ctx);
+static void watch_status(Session *s);
 
 static void schedule_typing(Session *s) {
   if (s->typing_timer != nullptr) {
@@ -903,6 +904,7 @@ static void on_dispatch(void *ctx, const char *type, const Json *data) {
   Session *s = ctx;
 
   events_dispatch(s->store, type, data);
+  watch_status(s);
 
   if (strcmp(type, "VOICE_STATE_UPDATE") == 0) {
     on_voice_state(s, data);
@@ -2335,18 +2337,80 @@ void session_create_invite(Session *s, Snowflake guild_id) {
   changed(s);
 }
 
-void session_set_status(Session *s, UserStatus status, bool invisible) {
+void session_set_status(Session *s, UserStatus status, bool invisible,
+                        int64_t seconds) {
   const char *name = invisible               ? "invisible"
                      : status == STATUS_IDLE ? "idle"
                      : status == STATUS_DND  ? "dnd"
                                              : "online";
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+  int64_t until = seconds > 0 ? now + seconds * 1000 : 0;
 
   s->store->self_status = invisible ? STATUS_OFFLINE : status;
+  s->store->self_status_until = until;
   s->store->version++;
 
   if (gateway_ready(s)) {
     gateway_update_presence(s->gateway, name, false);
   }
 
+  // the settings are where discord's clients read the status from: saved
+  // there, the others of the account follow and it survives a restart.
+  // without them known the save would wipe the rest of the status.
+  if (online(s) && s->store->status_proto != nullptr) {
+    char *settings =
+      settings_proto_with_status(s->store->status_proto, name, until, now);
+    JsonWriter w = {};
+
+    jw_object(&w);
+    jw_key(&w, "settings"), jw_str(&w, settings);
+    jw_end(&w);
+
+    ApiRequest req = {.method = "PATCH",
+                      .path = "/users/@me/settings-proto/1",
+                      .body = w.data};
+
+    api_request(s->api, &req, nullptr, nullptr);
+    jw_free(&w);
+    free(settings);
+  }
+
+  watch_status(s);
   changed(s);
 }
+
+static void on_status_timer(void *ctx) {
+  Session *s = ctx;
+
+  s->status_timer = nullptr;
+  s->status_timed = 0;
+  watch_status(s);
+}
+
+// a status picked for a while ends here, as discord's client ends it: by
+// picking online again.
+static void watch_status(Session *s) {
+  int64_t until = s->store->self_status_until;
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+
+  if (until != 0 && until <= now && s->store->ready && gateway_ready(s)) {
+    session_set_status(s, STATUS_ONLINE, false, 0);
+    return;
+  }
+
+  if (until == s->status_timed) {
+    return;
+  }
+
+  platform_timer_cancel(s->status_timer);
+  s->status_timer = nullptr;
+  s->status_timed = until;
+
+  if (until != 0) {
+    double delay = (double)(until - now) / 1000 + 0.5;
+
+    s->status_timer =
+      platform_timer(delay > 1 ? delay : 1, on_status_timer, s);
+  }
+}
+

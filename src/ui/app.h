@@ -65,6 +65,11 @@ typedef struct {
   // the account what is below belongs to, and what is open over the window.
   Snowflake account_id;
   Popover popover;
+  // the status whose durations are listed beside the accounts' card, with
+  // the row they hang from. `status_menu_open` is false for none.
+  UserStatus status_menu;
+  bool status_menu_open;
+  civue_rect status_menu_row;
   // the guilds' switcher: the frames left to settle it since it opened.
   uint8_t guilds_fresh;
   // where the switcher's card starts, and how much of its list the card

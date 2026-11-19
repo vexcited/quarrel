@@ -429,6 +429,8 @@ static void free_user(User *u) {
   free(u->bio);
   free(u->pronouns);
   free(u->activity);
+  free(u->status_text);
+  free(u->status_emoji);
   free(u);
 }
 
@@ -517,6 +519,31 @@ static UserStatus parse_status(const char *status) {
 }
 
 // what an activity reads as under a name, from malloc or null.
+static void set_custom_status(User *u, const char *words, const char *emoji,
+                              Snowflake emoji_id) {
+  bool none = (words == nullptr || *words == '\0') &&
+              (emoji == nullptr || *emoji == '\0');
+
+  str_set(&u->status_text, words != nullptr && *words ? words : nullptr);
+  str_set(&u->status_emoji, emoji != nullptr && *emoji ? emoji : nullptr);
+  u->status_emoji_id = none ? 0 : emoji_id;
+}
+
+static void put_custom_status(User *u, const Json *activities) {
+  json_each(activity, activities) {
+    if (json_get_i64(activity, "type", -1) == ACTIVITY_CUSTOM) {
+      const Json *emoji = json_get(activity, "emoji");
+
+      set_custom_status(u, json_get_str(activity, "state"),
+                        json_get_str(emoji, "name"),
+                        json_get_u64(emoji, "id"));
+      return;
+    }
+  }
+
+  set_custom_status(u, nullptr, nullptr, 0);
+}
+
 static char *activity_text(const Json *activities) {
   static const char *const verbs[] = {
     "Playing", "Streaming", "Listening to", "Watching", nullptr, "Competing in",
@@ -713,6 +740,11 @@ static void put_presence(Store *s, const Json *presence, Snowflake user_id) {
     }
 
     put_activities(u, json_get(presence, "activities"));
+
+    // the account's own comes with its settings once those are known.
+    if (u->id != s->self_id || s->status_proto == nullptr) {
+      put_custom_status(u, json_get(presence, "activities"));
+    }
   }
 
   s->users_version++;
@@ -2780,6 +2812,31 @@ void store_put_user_settings(Store *s, const Json *settings) {
     s->self_status = hidden ? STATUS_OFFLINE : parse_status(status);
   }
 
+  if (json_get(settings, "status_expires_at_ms") != nullptr) {
+    s->self_status_until =
+      (int64_t)json_get_u64(settings, "status_expires_at_ms");
+  }
+
+  put_str(&s->status_proto, settings, "status_proto");
+
+  // the status the account wrote, which its presence leaves out while it
+  // is invisible.
+  const Json *custom = json_get(settings, "custom_status");
+
+  if (custom != nullptr && s->self != nullptr) {
+    User *self = s->self;
+    int64_t until = (int64_t)json_get_u64(custom, "expires_at_ms");
+    bool gone = !json_is(custom, JSON_OBJECT) ||
+                (until != 0 && until <= now_ms(s));
+    const char *words = gone ? nullptr : json_get_str(custom, "text");
+    const char *emoji = gone ? nullptr : json_get_str(custom, "emoji_name");
+
+    set_custom_status(self, words, emoji,
+                      gone ? 0 : json_get_u64(custom, "emoji_id"));
+    s->users_version++;
+    s->version++;
+  }
+
   if (json_is(folders, JSON_ARRAY) && json_len(folders) > 0) {
     free_stored_folders(s);
     s->stored_folders = xcalloc(json_len(folders), sizeof *s->stored_folders);
@@ -3837,6 +3894,7 @@ void store_reset(Store *s) {
   free(s->session_id);
   free(s->resume_gateway_url);
   free(s->refreshed_token);
+  free(s->status_proto);
 
   // the counters go on, so nothing memoized on them is mistaken for fresh.
   Store fresh = {

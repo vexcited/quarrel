@@ -114,6 +114,11 @@ typedef struct {
   char *activity;
   // whether `activity` is the status the user wrote themselves.
   bool custom_status;
+  // the status the user wrote, in its parts: the words, and the emoji
+  // before them by its name, with its id when it is a guild's. null and 0
+  // for what is missing.
+  char *status_text, *status_emoji;
+  Snowflake status_emoji_id;
   // what the user is doing, their custom status left out.
   Activity *activities;
   size_t nactivities;
@@ -609,6 +614,11 @@ struct Store {
   // the status the user picked in their settings: what to show for them and
   // what to tell the gateway.
   UserStatus self_status;
+  // unix milliseconds `self_status` lasts until, 0 for no end.
+  int64_t self_status_until;
+  // the StatusSettings of the account in base64 as discord last sent it,
+  // null before. see settings_proto_with_status.
+  char *status_proto;
   // NOTIFY_FLAG_, the account's notification_settings flags.
   uint32_t notify_flags;
   // true once READY was applied.

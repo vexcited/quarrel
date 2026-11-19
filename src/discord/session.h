@@ -171,6 +171,9 @@ struct Session {
   char *ready_text;
   void *calls;
   void *typing_timer;
+  // ends a status picked for a while, see session_set_status.
+  void *status_timer;
+  int64_t status_timed;
   Snowflake typing_channel_id;
   double typing_sent_at;
   Snowflake list_guild_id, list_channel_id;
@@ -300,8 +303,11 @@ void session_forward(Session *s, Snowflake channel_id,
 // asks for an invite link to the guild that lasts a week, see `invite_code`.
 // the same guild is not asked twice while its code is known.
 void session_create_invite(Session *s, Snowflake guild_id);
-// the status others see.
-void session_set_status(Session *s, UserStatus status, bool invisible);
+// the status others see, kept for `seconds` before it goes back to online,
+// or for good with 0. it is saved in the account's settings, so that every
+// client of the account follows.
+void session_set_status(Session *s, UserStatus status, bool invisible,
+                        int64_t seconds);
 
 typedef enum : uint8_t {
   SESSION_LINK_UP,

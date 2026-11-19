@@ -9,7 +9,17 @@
 // reads: `status`, `guild_folders` and `guild_positions`. a field the
 // message does not carry is left out, as in a partial update. from malloc,
 // null when `base64` is no such message.
+// the status comes with `status_expires_at_ms`, `custom_status` as an
+// object of `text`, `emoji_id`, `emoji_name` and `expires_at_ms` or null,
+// and `status_proto`, the StatusSettings itself in base64.
 char *settings_proto_to_json(const char *base64);
+
+// the PreloadedUserSettings to save for a new status, in base64 from
+// malloc. `section` is the `status_proto` last read or null: discord
+// replaces the whole StatusSettings, so everything else it holds is
+// written back. `expires_ms` is unix milliseconds, 0 for never.
+char *settings_proto_with_status(const char *section, const char *status,
+                                 int64_t expires_ms, int64_t now_ms);
 
 constexpr size_t FRECENCY_SAMPLES = 10;
 

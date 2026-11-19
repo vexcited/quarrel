@@ -76,16 +76,24 @@ static bool account_row(App *app, const SessionAccount *a, bool current) {
   return pressed;
 }
 
-static bool status_row(App *app, UserStatus status, const char *label) {
+// `lasts` for a status picked for a while: its row opens the durations.
+static bool status_row(App *app, UserStatus status, const char *label,
+                       bool lasts) {
   const Look *k = &app->look;
   bool current = app->session->store->self_status == status;
+  bool listed = app->status_menu_open && app->status_menu == status;
   bool pressed = false;
 
   div(key(id_at(id("status"), status)), flex, items_center, gap(3),
       flex_shrink_0, h(px(STATUS_HEIGHT)), px(2), rounded(lg),
-      text_color(k->text), hover(bg(k->hover)), text_size(px(14)),
-      line_height(px(18)), font_weight(medium), cursor_pointer) {
+      text_color(k->text), style(.bg = listed ? k->hover : CIVUE_CLEAR),
+      hover(bg(k->hover)), text_size(px(14)), line_height(px(18)),
+      font_weight(medium), cursor_pointer) {
     pressed = button().activated;
+
+    if (listed) {
+      app->status_menu_row = here();
+    }
 
     div(flex, items_center, justify_center, size(8), flex_shrink_0) {
       div(size(3)) {
@@ -98,9 +106,80 @@ static bool status_row(App *app, UserStatus status, const char *label) {
     if (current) {
       icon(lucide, check, size(4), flex_shrink_0, text_color(k->positive));
     }
+
+    if (lasts) {
+      icon(lucide, chevron_right, size(4), flex_shrink_0,
+           text_color(k->subtle));
+    }
   }
 
   return pressed;
+}
+
+// how long the status of the open row is kept, beside the card. answers
+// the seconds picked with 0 for good, negative while nothing is. `box` is
+// where the list was drawn.
+static int64_t status_durations(App *app, civue_rect card, civue_rect *box) {
+  static const struct {
+    const char *label;
+    int64_t seconds;
+  } spans[] = {
+    {"For 15 Minutes", 900},  {"For 1 Hour", 3600},  {"For 8 Hours", 28800},
+    {"For 24 Hours", 86400},  {"For 3 Days", 259200}, {"Forever", 0},
+  };
+
+  const Look *k = &app->look;
+  int64_t picked = -1;
+
+  overlay() {
+    div(key(id("status-durations")), flex, flex_col, left(px(card.x1 + 4)),
+        top(px(app->status_menu_row.y0 - 8)), w(px(184)), p(2), rounded(xl),
+        bg(k->surface_high), border(1), border_color(k->border_strong),
+        shadow(lg)) {
+      *box = here();
+
+      for (size_t i = 0; i < sizeof spans / sizeof *spans; i++) {
+        div(key(id_at(id("status-span"), i)), flex, items_center,
+            flex_shrink_0, h(px(STATUS_HEIGHT)), px(3), rounded(lg),
+            text_color(k->text), hover(bg(k->hover)), text_size(px(14)),
+            line_height(px(18)), font_weight(medium), cursor_pointer) {
+          if (button().activated) {
+            picked = spans[i].seconds;
+          }
+
+          text(spans[i].label);
+        }
+      }
+    }
+  }
+
+  return picked;
+}
+
+// what the account wrote as its status, in the bubble discord draws
+// beside the avatar.
+static void status_bubble(App *app, const User *self) {
+  const Look *k = &app->look;
+
+  if (!self->status_text && !self->status_emoji) {
+    return;
+  }
+
+  div(absolute, left(px(PROFILE_AVATAR + 28)), top(px(-14)),
+      max_w(px(SWITCHER_WIDTH - PROFILE_AVATAR - 80)), flex, items_start,
+      gap(1p5), px(3), py(2), rounded(xl), bg(k->surface), border(1),
+      border_color(k->border_strong)) {
+    if (self->status_emoji) {
+      emoji_node(app, self->status_emoji_id, self->status_emoji, 18);
+    }
+
+    if (self->status_text) {
+      div(min_w(0), max_h(px(36)), overflow_hidden) {
+        text(self->status_text, text_size(px(14)), line_height(px(18)),
+             text_color(k->text));
+      }
+    }
+  }
 }
 
 static void separator(const Look *k) {
@@ -138,6 +217,8 @@ static void profile(App *app) {
       avatar(app, self, 0, PROFILE_AVATAR, true, k->surface_high);
     }
 
+    status_bubble(app, self);
+
     copy = icon_button(app, id("copy-id"), CIVUE_ICON(lucide, copy), 28, 16,
                        "Copy User ID");
   }
@@ -154,11 +235,7 @@ static void profile(App *app) {
         text("\u00b7", flex_shrink_0, text_color(k->faint));
         text(self->pronouns, flex_shrink_0);
       }
-    }
 
-    if (self->custom_status && self->activity) {
-      text(self->activity, mt(2), text_size(px(14)), line_height(px(18)),
-           text_color(k->text));
     }
 
     if (self->bio && *self->bio) {
@@ -177,6 +254,8 @@ static void profile(App *app) {
 
 void account_switcher(App *app, civue_rect anchor) {
   if (app->popover != POPOVER_ACCOUNTS) {
+    app->status_menu_open = false;
+    app->status_menu_row = (civue_rect){};
     return;
   }
 
@@ -196,7 +275,7 @@ void account_switcher(App *app, civue_rect anchor) {
   Roster *roster = app->roster;
   size_t count = roster->naccounts;
   bool can_add = count > 0;
-  civue_rect card = {};
+  civue_rect card = {}, spans = {};
   Snowflake chosen = 0;
   bool add = false, leave = false;
 
@@ -230,8 +309,22 @@ void account_switcher(App *app, civue_rect anchor) {
         for (size_t i = 0; i < 4; i++) {
           UserStatus status = statuses[i].status;
 
-          if (status_row(app, status, statuses[i].label)) {
-            session_set_status(session, status, status == STATUS_OFFLINE);
+          bool lasts = status != STATUS_ONLINE;
+
+          if (!status_row(app, status, statuses[i].label, lasts)) {
+            continue;
+          }
+
+          if (lasts) {
+            bool same = app->status_menu_open && app->status_menu == status;
+
+            app->status_menu = status;
+            app->status_menu_open = !same;
+            civue_request_repaint(ui);
+          }
+          else {
+            app->status_menu_open = false;
+            session_set_status(session, status, false, 0);
           }
         }
 
@@ -243,12 +336,29 @@ void account_switcher(App *app, civue_rect anchor) {
     }
   }
 
+  // the row is known a frame after it opens its list.
+  if (app->status_menu_open && civue_rect_h(app->status_menu_row) > 0) {
+    int64_t seconds = status_durations(app, card, &spans);
+
+    if (seconds >= 0) {
+      session_set_status(session, app->status_menu,
+                         app->status_menu == STATUS_OFFLINE, seconds);
+      app->status_menu_open = false;
+    }
+  }
+
   bool outside = ui->input.pressed[0] && ui->input.has_mouse &&
                  !civue_rect_contains(card, ui->input.mouse) &&
+                 !civue_rect_contains(spans, ui->input.mouse) &&
                  !civue_rect_contains(anchor, ui->input.mouse);
 
   if (outside || civue_key_pressed(ui, CIVUE_KEY_ESCAPE)) {
     app->popover = POPOVER_NONE;
+  }
+
+  if (app->popover != POPOVER_ACCOUNTS) {
+    app->status_menu_open = false;
+    app->status_menu_row = (civue_rect){};
   }
 
   // the roster changes last: the rows were read from it. the frame ends with
