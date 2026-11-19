@@ -33,6 +33,9 @@ typedef struct {
   // a dispatch, `data` only valid during the call. READY and RESUMED come
   // through here like any other, after the gateway took what it needs.
   void (*dispatch)(void *ctx, const char *type, const Json *data);
+  // the whole payload of a READY or a READY_SUPPLEMENTAL as discord wrote
+  // it, before its dispatch, for who keeps it. may be null.
+  void (*snapshot)(void *ctx, const char *type, const char *text, size_t len);
   void (*status)(void *ctx, GatewayStatus status);
   // the gateway gave up and stopped. `reason` is discord's, may be empty.
   void (*fatal)(void *ctx, GatewayFatal why, int code, const char *reason);

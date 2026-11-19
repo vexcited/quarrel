@@ -411,9 +411,18 @@ static void on_payload(Gateway *g, const char *text, size_t len) {
   }
 
   switch (json_get_i64(payload, "op", -1)) {
-    case OP_DISPATCH:
-      on_dispatch(g, json_get_str(payload, "t"), d);
+    case OP_DISPATCH: {
+      const char *type = json_get_str(payload, "t");
+
+      if (type != nullptr && g->events.snapshot != nullptr &&
+          (strcmp(type, "READY") == 0 ||
+           strcmp(type, "READY_SUPPLEMENTAL") == 0)) {
+        g->events.snapshot(g->events.ctx, type, text, len);
+      }
+
+      on_dispatch(g, type, d);
       break;
+    }
     case OP_HEARTBEAT:
       send_heartbeat(g);
       break;

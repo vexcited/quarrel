@@ -107,6 +107,32 @@ void platform_network_watch(void (*changed)(void *ctx, bool online,
   watch_network();
 }
 
+bool platform_cache_path(const char *name, char *out, size_t cap) {
+  @autoreleasepool {
+    NSURL *caches = [NSFileManager.defaultManager
+        URLForDirectory:NSCachesDirectory
+               inDomain:NSUserDomainMask
+      appropriateForURL:nil
+                 create:YES
+                  error:nil];
+    NSURL *ours = [caches URLByAppendingPathComponent:@"quarrel"
+                                          isDirectory:YES];
+
+    if (ours == nil ||
+        ![NSFileManager.defaultManager createDirectoryAtURL:ours
+                                withIntermediateDirectories:YES
+                                                 attributes:nil
+                                                      error:nil]) {
+      return false;
+    }
+
+    const char *path = [ours URLByAppendingPathComponent:@(name)].path
+                         .fileSystemRepresentation;
+
+    return path != nullptr && (size_t)snprintf(out, cap, "%s", path) < cap;
+  }
+}
+
 void platform_post(void (*fn)(void *ctx), void *ctx) {
   dispatch_async_f(dispatch_get_main_queue(), ctx, fn);
 }

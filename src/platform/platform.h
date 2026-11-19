@@ -101,6 +101,10 @@ void platform_network_watch(void (*changed)(void *ctx, bool online,
                                             bool returned),
                             void *ctx);
 
+// the path of a file of this name in the user's caches, which the system
+// may empty when it wants the room. false when there is nowhere to put it.
+bool platform_cache_path(const char *name, char *out, size_t cap);
+
 // calls `fn` soon on the main thread, from any thread.
 void platform_post(void (*fn)(void *ctx), void *ctx);
 

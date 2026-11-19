@@ -1,6 +1,7 @@
 #include "discord/session.h"
 
 #include <stdio.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include "discord/api.h"
@@ -312,6 +313,7 @@ void session_member_list_range(Session *s, uint32_t first_row,
 /* ========================================================================== */
 
 static void end_session(Session *s, const char *error);
+static void snapshot_forget(Snowflake id);
 
 static bool keeps(const Roster *r) {
   return !r->options.no_keychain && getenv("QUARREL_TOKEN") == nullptr;
@@ -515,6 +517,7 @@ static void forget(Roster *r, Snowflake id) {
   char key[32];
 
   platform_secret_delete(token_key(id, key));
+  snapshot_forget(id);
 
   if (a != nullptr) {
     size_t after = r->naccounts - (size_t)(a - r->accounts) - 1;
@@ -802,6 +805,100 @@ void session_voice_deafen(Session *s, bool deaf) {
   voice_apply(s);
 }
 
+/* ========================================================================== */
+/* the last READY of an account, kept in the user's caches as discord wrote   */
+/* it, and played back into the store at the next launch so that the ui has   */
+/* something to show while the gateway connects.                              */
+/* ========================================================================== */
+
+static bool snapshot_path(Snowflake id, char out[static 1024]) {
+  char name[48];
+
+  snprintf(name, sizeof name, "ready-%llu.json", (unsigned long long)id);
+  return id != 0 && platform_cache_path(name, out, 1024);
+}
+
+static void snapshot_forget(Snowflake id) {
+  char path[1024];
+
+  if (snapshot_path(id, path)) {
+    remove(path);
+  }
+}
+
+// writes the READY held, with what came with it when given, as the array
+// events_feed takes. the file is whole or not there: it is renamed into
+// place.
+static void snapshot_save(Session *s, const char *with, size_t with_len) {
+  char path[1024], writing[1040];
+
+  if (s->ready_text == nullptr || !persists(s) ||
+      !snapshot_path(s->account_id, path)) {
+    return;
+  }
+
+  snprintf(writing, sizeof writing, "%s.new", path);
+
+  FILE *file = fopen(writing, "wb");
+
+  if (file == nullptr) {
+    return;
+  }
+
+  // it holds what the account can see: for its owner alone.
+  chmod(writing, 0600);
+
+  bool ok = fputc('[', file) != EOF && fputs(s->ready_text, file) != EOF;
+
+  if (with != nullptr) {
+    ok = ok && fputc(',', file) != EOF &&
+         fwrite(with, 1, with_len, file) == with_len;
+  }
+
+  ok = ok && fputc(']', file) != EOF;
+  ok = fclose(file) == 0 && ok;
+
+  if (!ok || rename(writing, path) != 0) {
+    remove(writing);
+  }
+}
+
+// whether the store now holds what the account last had.
+static bool snapshot_load(Session *s) {
+  char path[1024];
+
+  if (!persists(s) || !snapshot_path(s->account_id, path) ||
+      !events_feed_file(s->store, path)) {
+    return false;
+  }
+
+  // a token discord handed out then is not one to take up now.
+  str_set(&s->store->refreshed_token, nullptr);
+
+  if (s->store->self_id != s->account_id) {
+    store_reset(s->store);
+    remove(path);
+    return false;
+  }
+
+  return true;
+}
+
+static void on_snapshot(void *ctx, const char *type, const char *text,
+                        size_t len) {
+  Session *s = ctx;
+
+  if (strcmp(type, "READY") == 0) {
+    free(s->ready_text);
+    s->ready_text = strndup(text, len);
+    return;
+  }
+
+  snapshot_save(s, text, len);
+  free(s->ready_text);
+  s->ready_text = nullptr;
+}
+
 static void on_dispatch(void *ctx, const char *type, const Json *data) {
   Session *s = ctx;
 
@@ -836,7 +933,17 @@ static void on_dispatch(void *ctx, const char *type, const Json *data) {
     }
 
     s->account_id = s->store->self_id;
+    s->cached = false;
     remember(s);
+
+    // a READY that carries a token stays off the disk.
+    if (s->store->refreshed_token != nullptr) {
+      free(s->ready_text);
+      s->ready_text = nullptr;
+    }
+
+    // what comes with it may not come: the READY alone is kept meanwhile.
+    snapshot_save(s, nullptr, 0);
 
     // a new session of the gateway is in no call: it joins again.
     s->voice_rejoin = s->voice_channel_id != 0 && s->voice_error == nullptr;
@@ -869,7 +976,8 @@ static void on_status(void *ctx, GatewayStatus status) {
     case GATEWAY_CONNECTING:
     case GATEWAY_HANDSHAKING:
     case GATEWAY_WAITING:
-      set_state(s, s->was_ready ? SESSION_RECONNECTING : SESSION_CONNECTING);
+      set_state(s, s->was_ready || s->cached ? SESSION_RECONNECTING
+                                             : SESSION_CONNECTING);
       break;
     case GATEWAY_STOPPED:
       break;
@@ -937,6 +1045,9 @@ static void end_session(Session *s, const char *error) {
   s->account_id = 0;
   s->token_saved = false;
   s->was_ready = false;
+  s->cached = false;
+  free(s->ready_text);
+  s->ready_text = nullptr;
   s->offline = false;
   s->selected_channel_id = 0;
   s->list_guild_id = 0;
@@ -982,6 +1093,7 @@ static void connect(Session *s) {
   GatewayEvents events = {
     .ctx = s,
     .dispatch = on_dispatch,
+    .snapshot = on_snapshot,
     .status = on_status,
     .fatal = on_fatal,
   };
@@ -995,8 +1107,9 @@ static void connect(Session *s) {
   gateway_free(s->gateway);
   s->gateway = gateway_new(s->token, &events);
   s->was_ready = false;
+  s->cached = snapshot_load(s);
 
-  set_state(s, SESSION_CONNECTING);
+  set_state(s, s->cached ? SESSION_RECONNECTING : SESSION_CONNECTING);
   gateway_start(s->gateway);
 }
 

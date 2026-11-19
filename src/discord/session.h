@@ -34,12 +34,14 @@ typedef enum : uint8_t {
   SESSION_MFA,
   // discord asks for a captcha, see `captcha`.
   SESSION_CAPTCHA,
-  // logged in, the gateway is connecting for the first time.
+  // logged in, the gateway is connecting for the first time and nothing
+  // was kept of the account to show meanwhile.
   SESSION_CONNECTING,
   // the store is filled and live.
   SESSION_READY,
-  // the connection dropped. the store still holds what it had and catches
-  // up once the gateway is back.
+  // the connection dropped, or was not made yet since the launch. the store
+  // holds what it had, from the disk in the second case, and catches up
+  // once the gateway is there.
   SESSION_RECONNECTING,
 } SessionState;
 
@@ -162,6 +164,11 @@ struct Session {
   char *login, *password;
   char *mfa_ticket, *mfa_instance_id;
   bool was_ready;
+  // the store came from the account's last READY, kept on disk, and waits
+  // for the gateway to say how things are now.
+  bool cached;
+  // the READY being received, held until what comes with it did.
+  char *ready_text;
   void *calls;
   void *typing_timer;
   Snowflake typing_channel_id;
