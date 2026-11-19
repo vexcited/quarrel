@@ -157,6 +157,8 @@ typedef struct {
   AudioDevice *devices[3];
   size_t ndevices[3];
   char default_names[3][96];
+  // audio_devices_version as they were taken.
+  uint32_t devices_seen;
   // the list open beside the menu, an AudioKind, -1 for none, and the row
   // it opened from.
   int8_t voice_side;

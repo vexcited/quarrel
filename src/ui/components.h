@@ -41,6 +41,8 @@ void voice_panel(App *app);
 void voice_stage(App *app, Channel *c);
 // takes the machine's devices into `app->devices`, as a menu of them opens.
 void devices_list(App *app);
+// takes them again once one came or went. for every frame that shows them.
+void devices_follow(App *app);
 // the device in use of a kind in `app->devices`, -1 for the system's own.
 int device_picked(const App *app, AudioKind kind);
 // a slider from 0 to `most` over a node of its own, its new value when it

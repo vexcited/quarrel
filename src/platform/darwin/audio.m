@@ -226,6 +226,61 @@ void audio_devices_free(AudioDevice *devices, size_t count) {
   free(devices);
 }
 
+static uint32_t devices_version;
+static void (*devices_changed)(void);
+
+static void devices_moved(void) {
+  devices_version++;
+
+  if (devices_changed != nullptr) {
+    devices_changed();
+  }
+}
+
+uint32_t audio_devices_version(void (*changed)(void)) {
+  static bool watching;
+
+  if (watching) {
+    return devices_version;
+  }
+
+  watching = true;
+  devices_changed = changed;
+
+  const AudioObjectPropertySelector watched[] = {
+    kAudioHardwarePropertyDevices,
+    kAudioHardwarePropertyDefaultInputDevice,
+    kAudioHardwarePropertyDefaultOutputDevice,
+  };
+
+  for (size_t i = 0; i < sizeof watched / sizeof *watched; i++) {
+    AudioObjectPropertyAddress address = {watched[i],
+                                          kAudioObjectPropertyScopeGlobal,
+                                          kAudioObjectPropertyElementMain};
+
+    AudioObjectAddPropertyListenerBlock(
+      kAudioObjectSystemObject, &address, dispatch_get_main_queue(),
+      ^(UInt32, const AudioObjectPropertyAddress *) {
+        devices_moved();
+      });
+  }
+
+  for (NSNotificationName name in @[
+         AVCaptureDeviceWasConnectedNotification,
+         AVCaptureDeviceWasDisconnectedNotification,
+       ]) {
+    [NSNotificationCenter.defaultCenter
+      addObserverForName:name
+                  object:nil
+                   queue:NSOperationQueue.mainQueue
+              usingBlock:^(NSNotification *) {
+                devices_moved();
+              }];
+  }
+
+  return devices_version;
+}
+
 void audio_default_name(AudioKind kind, char *out, size_t cap) {
   out[0] = '\0';
 

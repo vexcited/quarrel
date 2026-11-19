@@ -2,6 +2,7 @@
 #define QUARREL_VOICE_AUDIO_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* ========================================================================== */
 /* the microphone and the speakers of a call, through the system's voice      */
@@ -60,6 +61,10 @@ typedef enum : unsigned char {
 // asks the user for nothing.
 size_t audio_devices(AudioKind kind, AudioDevice **out);
 void audio_devices_free(AudioDevice *devices, size_t count);
+// bumped when a device comes or goes, or the system picks another as its
+// own. the first call starts watching, `changed` then runs on the main
+// thread at each bump.
+uint32_t audio_devices_version(void (*changed)(void));
 // the name of the device the system uses when none is picked, empty when
 // it has none.
 void audio_default_name(AudioKind kind, char *out, size_t cap);

@@ -117,7 +117,9 @@ static void tiles(App *app, const Channel *c, civue_rect room) {
 /* the menus: which microphone, which speakers, which camera.                 */
 /* ========================================================================== */
 
-void devices_list(App *app) {
+static void take_devices(App *app) {
+  app->devices_seen = audio_devices_version(civue_window_wake);
+
   for (int kind = 0; kind < 3; kind++) {
     audio_devices_free(app->devices[kind], app->ndevices[kind]);
     app->ndevices[kind] =
@@ -125,8 +127,17 @@ void devices_list(App *app) {
     audio_default_name((AudioKind)kind, app->default_names[kind],
                        sizeof app->default_names[kind]);
   }
+}
 
+void devices_list(App *app) {
+  take_devices(app);
   app->voice_side = -1;
+}
+
+void devices_follow(App *app) {
+  if (app->devices_seen != audio_devices_version(civue_window_wake)) {
+    take_devices(app);
+  }
 }
 
 int device_picked(const App *app, AudioKind kind) {
@@ -346,6 +357,8 @@ static void sound_menu(App *app, civue_rect anchor) {
     return;
   }
 
+  devices_follow(app);
+
   overlay_room();
 
   overlay() {
@@ -409,6 +422,8 @@ static void camera_menu(App *app, civue_rect anchor) {
   if (app->popover != POPOVER_VOICE_CAMERA) {
     return;
   }
+
+  devices_follow(app);
 
   overlay_room();
 
