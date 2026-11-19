@@ -87,6 +87,8 @@ static void on_ready(Store *s, const Json *d) {
   }
 
   put_settings_proto(s, json_get_str(d, "user_settings_proto"));
+  s->notify_flags =
+    (uint32_t)json_get_u64(json_get(d, "notification_settings"), "flags");
 
   const Json *guilds = json_get(d, "guilds");
   const Json *merged = json_get(d, "merged_presences");
@@ -259,11 +261,7 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
                          json_get(d, "emoji"));
   }
   else if (IS("MESSAGE_ACK")) {
-    // only channels are tracked, the other read state types badge features.
-    if (json_get_i64(d, "ack_type", 0) == 0) {
-      store_ack(s, channel_id, json_get_u64(d, "message_id"),
-                json_get_i64(d, "mention_count", -1));
-    }
+    store_put_ack(s, d);
   }
   else if (IS("CHANNEL_CREATE") || IS("CHANNEL_UPDATE") ||
            IS("THREAD_CREATE") || IS("THREAD_UPDATE")) {

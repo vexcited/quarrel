@@ -137,6 +137,8 @@ typedef struct {
   RelationshipType type;
   // the name the current user gave this friend, null when none.
   char *nickname;
+  // the current user ignores them, which is not a type of its own.
+  bool ignored;
 } Relationship;
 
 /* ========================================================================== */
@@ -187,8 +189,28 @@ typedef enum : uint8_t {
   NOTIFY_INHERIT = 3,
 } NotifyLevel;
 
+// the account's notification_settings flags.
+constexpr uint32_t NOTIFY_FLAG_NEW_NOTIFICATIONS = 1u << 4;
+constexpr uint32_t NOTIFY_FLAG_MENTION_ON_ALL_MESSAGES = 1u << 5;
+
+// the flags of a guild's settings.
+constexpr uint32_t GUILD_SETTINGS_UNREADS_ALL_MESSAGES = 1u << 11;
+constexpr uint32_t GUILD_SETTINGS_UNREADS_ONLY_MENTIONS = 1u << 12;
+constexpr uint32_t GUILD_SETTINGS_OPT_IN_CHANNELS_ON = 1u << 14;
+
+// the flags of a channel's override in them.
+constexpr uint32_t OVERRIDE_UNREADS_ONLY_MENTIONS = 1u << 9;
+constexpr uint32_t OVERRIDE_UNREADS_ALL_MESSAGES = 1u << 10;
+constexpr uint32_t OVERRIDE_OPT_IN_ENABLED = 1u << 12;
+
+// a channel listed in the guild's resources rather than with the others.
+constexpr uint32_t CHANNEL_FLAG_RESOURCE = 1u << 7;
+
 typedef struct {
+  // messages wait and the user's settings want them shown.
   bool unread;
+  // messages newer than what was acknowledged, whatever the settings say.
+  bool pending;
   // the channel, its category or its guild is muted: `unread` should not be
   // shown, `mentions` still are.
   bool muted;
@@ -275,6 +297,13 @@ struct Guild {
   int64_t mute_until;
   NotifyLevel notifications;
   bool suppress_everyone, suppress_roles;
+  // GUILD_SETTINGS_ flags.
+  uint32_t settings_flags;
+  // the user has settings of their own for the guild, `notifications` is
+  // the guild's default until then.
+  bool has_settings;
+  // the guild has the COMMUNITY feature.
+  bool community;
 
   uint64_t version, members_version;
 
@@ -366,12 +395,19 @@ struct Channel {
   bool thread_archived, thread_locked;
   // the current user is a member of the thread.
   bool thread_joined;
+  // unix milliseconds the current user joined the thread at and the thread
+  // was archived at, 0 when unknown.
+  int64_t thread_joined_at, thread_archived_at;
   uint32_t message_count, member_count;
+  // a dm waiting as a message request, or one discord holds for spam.
+  bool request;
 
   // the current user's notification settings for the channel.
   bool muted;
   int64_t mute_until;
   NotifyLevel notifications;
+  // OVERRIDE_ flags.
+  uint32_t override_flags;
   // a category the user folded.
   bool collapsed;
 
@@ -423,6 +459,7 @@ typedef enum : uint8_t {
   MESSAGE_THREAD_STARTER_MESSAGE = 21,
   MESSAGE_CONTEXT_MENU_COMMAND = 23,
   MESSAGE_AUTO_MODERATION_ACTION = 24,
+  MESSAGE_POLL_RESULT = 46,
 } MessageType;
 
 typedef enum : uint8_t {
@@ -572,6 +609,8 @@ struct Store {
   // the status the user picked in their settings: what to show for them and
   // what to tell the gateway.
   UserStatus self_status;
+  // NOTIFY_FLAG_, the account's notification_settings flags.
+  uint32_t notify_flags;
   // true once READY was applied.
   bool ready;
 
@@ -719,8 +758,9 @@ static inline bool store_can(Store *s, const Channel *c, Permissions p) {
   return (store_permissions(s, c) & p) == p;
 }
 
-// read states. a channel is unread when its last message is newer than the
-// last one acknowledged.
+// read states, after the rules of discord's client: a channel is unread
+// when its last message is newer than the last one acknowledged, and the
+// user's settings for it want unread messages shown.
 Unread store_channel_unread(Store *s, const Channel *c);
 // every channel of the guild the user may view, muted ones left out of
 // `unread` but not of `mentions`.
@@ -821,10 +861,12 @@ void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
                           const Json *emoji);
 
 void store_put_read_state(Store *s, const Json *read_state);
-// MESSAGE_ACK and the session's own acks. a negative `mention_count` keeps
-// the count as it is.
+// the session's own acks: read up to `message_id`, `mention_count` pings
+// left after it.
 void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
-               int64_t mention_count);
+               uint32_t mention_count);
+// MESSAGE_ACK, an ack made by any of the account's clients.
+void store_put_ack(Store *s, const Json *ack);
 // one entry of user_guild_settings.
 void store_put_guild_settings(Store *s, const Json *settings);
 // user_settings, whole or partial.

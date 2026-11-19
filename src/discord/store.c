@@ -857,6 +857,7 @@ void store_put_relationship(Store *s, const Json *relationship) {
   }
 
   put_str(&r->nickname, relationship, "nickname");
+  put_bool(&r->ignored, relationship, "user_ignored");
 
   s->users_version++;
   s->version++;
@@ -1106,20 +1107,29 @@ static void fill_stickers(Message *m, const Json *stickers) {
   }
 }
 
-static bool mentions_self(const Store *s, const Message *m, const Guild *g) {
+static bool channel_muted(const Store *s, const Channel *c);
+static int64_t mute_end(const Json *settings);
+
+// whether the message names the current user. `settings` leaves out what
+// the user's settings for the guild silence, as discord does when it counts
+// a ping.
+static bool mentions_self(const Store *s, const Message *m, const Guild *g,
+                          bool settings) {
+  bool quiet = settings && g != nullptr;
+
+  if (m->mention_everyone && !(quiet && g->suppress_everyone)) {
+    return true;
+  }
+
   for (size_t i = 0; i < m->nmentions; i++) {
     if (m->mentions[i] == s->self_id) {
       return true;
     }
   }
 
-  if (m->mention_everyone) {
-    return true;
-  }
-
   const Member *me = store_member(g, s->self_id);
 
-  if (me == nullptr) {
+  if (me == nullptr || (quiet && g->suppress_roles)) {
     return false;
   }
 
@@ -1271,7 +1281,7 @@ static void fill_message(Store *s, Message *m, const Json *json, Guild *g,
     }
   }
 
-  m->mentions_me = mentions_self(s, m, g);
+  m->mentions_me = mentions_self(s, m, g, false);
 }
 
 static void insert_at(Channel *c, size_t slot, Message *m) {
@@ -1335,7 +1345,38 @@ static size_t find_pending(const Channel *c, Snowflake nonce) {
   return SIZE_MAX;
 }
 
-static bool channel_muted(const Store *s, const Channel *c);
+static bool mute_active(bool muted, int64_t until, int64_t now);
+static NotifyLevel notify_level(const Store *s, const Channel *c);
+
+// whether a message of someone else counts as a ping, after the mention
+// test of discord's read state store.
+static bool pings(const Store *s, const Channel *c, const Message *m) {
+  const Relationship *r = store_relationship(s, m->author_id);
+
+  if (r != nullptr && (r->type == RELATIONSHIP_BLOCKED || r->ignored)) {
+    return false;
+  }
+
+  if (m->type == MESSAGE_RECIPIENT_REMOVE && c->type == CHANNEL_GROUP_DM) {
+    return false;
+  }
+
+  if (mentions_self(s, m, store_guild(s, c->guild_id), true)) {
+    return true;
+  }
+
+  // every message of a dm counts until it is muted.
+  if (channel_is_private(c)) {
+    return !channel_muted(s, c);
+  }
+
+  // the account may ask for a count wherever every message notifies. a
+  // thread follows its own setting, which is not kept, so threads are out.
+  return (s->notify_flags & NOTIFY_FLAG_MENTION_ON_ALL_MESSAGES) != 0 &&
+         !channel_is_thread(c) && !channel_is_voice(c) &&
+         !mute_active(c->muted, c->mute_until, now_ms(s)) &&
+         notify_level(s, c) == NOTIFY_ALL_MESSAGES;
+}
 
 Message *store_create_message(Store *s, const Json *message) {
   Channel *c = store_channel(s, json_get_u64(message, "channel_id"));
@@ -1375,40 +1416,16 @@ Message *store_create_message(Store *s, const Json *message) {
 
   ReadState *rs = read_state(s, c->id);
 
-  if (m->author_id == s->self_id) {
+  // writing in a channel reads it, the system line of a poll's end aside.
+  if (m->author_id == s->self_id && m->type != MESSAGE_POLL_RESULT) {
     rs->known = true;
     rs->last_acked_id = m->id;
     rs->mention_count = 0;
   }
-  else {
-    const Guild *g = store_guild(s, c->guild_id);
-    bool pinged = false;
-
-    if (channel_is_private(c)) {
-      pinged = m->type != MESSAGE_RECIPIENT_REMOVE &&
-               (!channel_muted(s, c) || m->mentions_me);
-    }
-    else if (m->mentions_me) {
-      bool by_name = false;
-
-      for (size_t i = 0; i < m->nmentions; i++) {
-        by_name = by_name || m->mentions[i] == s->self_id;
-      }
-
-      // @everyone and role pings count unless the guild's settings mute
-      // them.
-      bool by_everyone =
-        m->mention_everyone && !(g != nullptr && g->suppress_everyone);
-      bool by_role = !by_name && !m->mention_everyone &&
-                     !(g != nullptr && g->suppress_roles);
-      pinged = by_name || by_everyone || by_role;
-    }
-
-    // a message older than what was acknowledged was read already.
-    if (pinged && m->id > rs->last_acked_id) {
-      rs->known = true;
-      rs->mention_count++;
-    }
+  // a message older than what was acknowledged was read already.
+  else if (m->id > rs->last_acked_id && pings(s, c, m)) {
+    rs->known = true;
+    rs->mention_count++;
   }
 
   if (!c->history_loaded && c->nmessages > UNOPENED_MESSAGES) {
@@ -2032,6 +2049,23 @@ static void fill_guild(Guild *g, const Json *guild) {
   }
 
   put_bool(&g->large, guild, "large");
+
+  if ((v = json_get(props, "features")) != nullptr) {
+    g->community = false;
+
+    json_each(feature, v) {
+      const char *name = json_str(feature, nullptr);
+      g->community = g->community || (name != nullptr &&
+                                      strcmp(name, "COMMUNITY") == 0);
+    }
+  }
+
+  // the guild's default stands until the user picks a level of their own.
+  v = json_get(props, "default_message_notifications");
+
+  if (v != nullptr && !g->has_settings) {
+    g->notifications = (NotifyLevel)json_u64(v);
+  }
 }
 
 static bool array_has_id(const Json *array, Snowflake id) {
@@ -2334,11 +2368,30 @@ Channel *store_put_channel(Store *s, const Json *channel, Snowflake guild_id) {
   if (json_is(thread, JSON_OBJECT)) {
     put_bool(&c->thread_archived, thread, "archived");
     put_bool(&c->thread_locked, thread, "locked");
+
+    if ((v = json_get(thread, "archive_timestamp")) != nullptr) {
+      c->thread_archived_at = iso8601_parse_ms(json_str(v, nullptr));
+    }
   }
 
   // a thread comes with the current user's membership when they joined it.
-  if (json_is(json_get(channel, "member"), JSON_OBJECT)) {
+  const Json *membership = json_get(channel, "member");
+
+  if (json_is(membership, JSON_OBJECT)) {
     c->thread_joined = true;
+    c->thread_joined_at =
+      iso8601_parse_ms(json_get_str(membership, "join_timestamp"));
+    put_bool(&c->muted, membership, "muted");
+
+    if (json_get(membership, "mute_config") != nullptr) {
+      c->mute_until = mute_end(membership);
+    }
+  }
+
+  if (json_get(channel, "is_message_request") != nullptr ||
+      json_get(channel, "is_spam") != nullptr) {
+    c->request = json_bool(json_get(channel, "is_message_request"), false) ||
+                 json_bool(json_get(channel, "is_spam"), false);
   }
 
   if ((v = json_get(channel, "message_count")) != nullptr) {
@@ -2479,6 +2532,8 @@ void store_sync_threads(Store *s, const Json *sync) {
 
     if (c != nullptr) {
       c->thread_joined = true;
+      c->thread_joined_at =
+        iso8601_parse_ms(json_get_str(member, "join_timestamp"));
     }
   }
 
@@ -2494,6 +2549,8 @@ void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined) {
   }
 
   c->thread_joined = joined;
+  // the event's own time is seconds away at most.
+  c->thread_joined_at = joined ? now_ms(s) : 0;
 
   if (g != nullptr) {
     g->layout_version++;
@@ -2555,7 +2612,7 @@ void store_put_read_state(Store *s, const Json *entry) {
 }
 
 void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
-               int64_t mention_count) {
+               uint32_t mention_count) {
   if (channel_id == 0) {
     return;
   }
@@ -2564,15 +2621,36 @@ void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
 
   rs->known = true;
   rs->last_acked_id = message_id;
-
-  if (mention_count >= 0) {
-    rs->mention_count = (uint32_t)mention_count;
-  }
+  rs->mention_count = mention_count;
 
   Channel *c = store_channel(s, channel_id);
 
   if (c != nullptr) {
     store_touch_channel(s, c);
+  }
+  else {
+    s->version++;
+  }
+}
+
+void store_put_ack(Store *s, const Json *ack) {
+  // only channels are tracked, the other read state types badge features.
+  if (json_get_i64(ack, "ack_type", 0) != 0) {
+    return;
+  }
+
+  Snowflake channel_id = json_get_u64(ack, "channel_id");
+  Snowflake message_id = json_get_u64(ack, "message_id");
+
+  // marking as unread somewhere tells how many pings come after the
+  // message. reading does not: discord's client drops every ping then, and
+  // leaves an ack of what is acknowledged already alone.
+  if (json_bool(json_get(ack, "manual"), false)) {
+    store_ack(s, channel_id, message_id,
+              (uint32_t)json_get_u64(ack, "mention_count"));
+  }
+  else if (message_id != store_last_acked(s, channel_id)) {
+    store_ack(s, channel_id, message_id, 0);
   }
 }
 
@@ -2610,6 +2688,19 @@ static void apply_override(Store *s, const Json *override, Snowflake id) {
     c->notifications = (NotifyLevel)json_u64(v);
   }
 
+  if ((v = json_get(override, "flags")) != nullptr) {
+    c->override_flags = (uint32_t)json_u64(v);
+  }
+
+  c->version++;
+}
+
+static void clear_override(Channel *c) {
+  c->muted = false;
+  c->collapsed = false;
+  c->mute_until = 0;
+  c->notifications = NOTIFY_INHERIT;
+  c->override_flags = 0;
   c->version++;
 }
 
@@ -2631,6 +2722,22 @@ void store_put_guild_settings(Store *s, const Json *settings) {
 
     if ((v = json_get(settings, "message_notifications")) != nullptr) {
       g->notifications = (NotifyLevel)json_u64(v);
+      g->has_settings = true;
+    }
+
+    if ((v = json_get(settings, "flags")) != nullptr) {
+      g->settings_flags = (uint32_t)json_u64(v);
+    }
+  }
+
+  // the whole list replaces the overrides: one that is gone was removed.
+  if (json_is(overrides, JSON_ARRAY)) {
+    CILO_MAP_EACH(entry, &s->channels) {
+      Channel *c = entry->val;
+
+      if (c->guild_id == guild_id && !channel_is_thread(c)) {
+        clear_override(c);
+      }
     }
   }
 
@@ -2894,6 +3001,93 @@ static bool channel_muted(const Store *s, const Channel *c) {
   return g != nullptr && mute_active(g->muted, g->mute_until, now);
 }
 
+static NotifyLevel notify_level(const Store *s, const Channel *c) {
+  if (c->notifications != NOTIFY_INHERIT) {
+    return c->notifications;
+  }
+
+  const Channel *parent = store_channel(s, c->parent_id);
+
+  if (parent != nullptr && parent->notifications != NOTIFY_INHERIT) {
+    return parent->notifications;
+  }
+
+  const Guild *g = store_guild(s, c->guild_id);
+  return g != nullptr ? g->notifications : NOTIFY_ALL_MESSAGES;
+}
+
+// whether unread messages show, or only pings do: the channel's setting,
+// its parent's, the guild's, then what the notifications ask for.
+static bool shows_unreads(const Store *s, const Channel *c) {
+  bool modern = (s->notify_flags & NOTIFY_FLAG_NEW_NOTIFICATIONS) != 0;
+
+  if (!modern || channel_is_thread(c) || channel_is_private(c)) {
+    return true;
+  }
+
+  const Channel *parent = store_channel(s, c->parent_id);
+  const Guild *g = store_guild(s, c->guild_id);
+  uint32_t flags[] = {c->override_flags,
+                      parent != nullptr ? parent->override_flags : 0};
+
+  for (size_t i = 0; i < 2; i++) {
+    if ((flags[i] & OVERRIDE_UNREADS_ALL_MESSAGES) != 0) {
+      return true;
+    }
+
+    if ((flags[i] & OVERRIDE_UNREADS_ONLY_MENTIONS) != 0) {
+      return false;
+    }
+  }
+
+  if (g != nullptr) {
+    if ((g->settings_flags & GUILD_SETTINGS_UNREADS_ALL_MESSAGES) != 0) {
+      return true;
+    }
+
+    if ((g->settings_flags & GUILD_SETTINGS_UNREADS_ONLY_MENTIONS) != 0) {
+      return false;
+    }
+  }
+
+  return notify_level(s, c) == NOTIFY_ALL_MESSAGES;
+}
+
+// when the channel was read up to, in unix milliseconds. one never
+// acknowledged counts as read up to when the user came to it.
+static int64_t ack_time(const Store *s, const Channel *c, const ReadState *rs) {
+  if (rs != nullptr && rs->last_acked_id != 0) {
+    return snowflake_time_ms(rs->last_acked_id);
+  }
+
+  const Guild *g = store_guild(s, c->guild_id);
+  int64_t joined = g != nullptr ? g->joined_at : 0;
+
+  if (channel_is_thread(c)) {
+    const Channel *parent = store_channel(s, c->parent_id);
+    int64_t entered = c->thread_joined_at - 5000;
+    int64_t archived =
+      c->thread_archived_at != 0 ? c->thread_archived_at - 1 : 0;
+    int64_t since = entered > archived ? entered : archived;
+
+    if (since <= 0) {
+      since = snowflake_time_ms(c->id) - 1;
+    }
+
+    // a post of a forum is new to who joined the guild after it.
+    if (parent != nullptr && (parent->type == CHANNEL_GUILD_FORUM ||
+                              parent->type == CHANNEL_GUILD_MEDIA)) {
+      joined = 0;
+    }
+
+    return joined > since ? joined : since;
+  }
+
+  return joined != 0 ? joined : snowflake_time_ms(c->id);
+}
+
+constexpr int64_t DAY_MS = 86400000;
+
 Unread store_channel_unread(Store *s, const Channel *c) {
   Unread unread = {};
 
@@ -2901,24 +3095,49 @@ Unread store_channel_unread(Store *s, const Channel *c) {
     return unread;
   }
 
-  const ReadState *rs = CILO_MAP_GET(&s->read_states, c->id);
-  const Guild *g = store_guild(s, c->guild_id);
-
   unread.muted = channel_muted(s, c);
-  unread.mentions = rs != nullptr ? rs->mention_count : 0;
 
-  if (c->last_message_id == 0) {
+  bool thread = channel_is_thread(c);
+
+  // an archived thread, a resource channel and a channel out of view track
+  // nothing. neither does a thread before it is joined, nor a dm waiting
+  // as a request.
+  if ((thread && (c->thread_archived || !c->thread_joined)) || c->request ||
+      (c->flags & CHANNEL_FLAG_RESOURCE) != 0 ||
+      (c->guild_id != 0 && !store_can(s, c, PERM_VIEW_CHANNEL))) {
     return unread;
   }
 
-  if (rs != nullptr && rs->known) {
-    unread.unread = c->last_message_id > rs->last_acked_id;
-  }
-  else if (g != nullptr) {
-    // a channel never acknowledged counts as read up to when the user
-    // joined the guild.
-    unread.unread =
-      snowflake_time_ms(c->last_message_id) > g->joined_at && g->joined_at != 0;
+  const ReadState *rs = CILO_MAP_GET(&s->read_states, c->id);
+  const Guild *g = store_guild(s, c->guild_id);
+  int64_t now = now_ms(s);
+  int64_t last =
+    c->last_message_id != 0 ? snowflake_time_ms(c->last_message_id) : 0;
+  int64_t acked = ack_time(s, c, rs);
+  uint32_t mentions = rs != nullptr ? rs->mention_count : 0;
+
+  // a community where channels are picked one by one: nothing older than
+  // a week shows, and a channel left out only does for a ping or when it
+  // was read in the last three days.
+  bool picked = g != nullptr && g->community &&
+                (g->settings_flags & GUILD_SETTINGS_OPT_IN_CHANNELS_ON) != 0;
+  bool stale = picked && last < now - 7 * DAY_MS;
+
+  unread.mentions = stale ? 0 : mentions;
+  unread.pending = acked < last;
+  unread.unread = unread.pending && shows_unreads(s, c);
+
+  if (picked && !thread) {
+    const Channel *parent = store_channel(s, c->parent_id);
+    bool kept = (c->override_flags & OVERRIDE_OPT_IN_ENABLED) != 0 ||
+                (parent != nullptr &&
+                 (parent->override_flags & OVERRIDE_OPT_IN_ENABLED) != 0);
+    bool visited = last > 0 && rs != nullptr && rs->last_acked_id != 0 &&
+                   acked > now - 3 * DAY_MS;
+
+    if (stale || (!kept && !visited && mentions == 0)) {
+      unread.unread = false;
+    }
   }
 
   return unread;
@@ -2933,28 +3152,23 @@ Unread store_guild_unread(Store *s, Guild *g) {
     return g->unread;
   }
 
-  Unread total = {.muted = mute_active(g->muted, g->mute_until, now_ms(s))};
+  int64_t now = now_ms(s);
+  Unread total = {.muted = mute_active(g->muted, g->mute_until, now)};
 
   for (size_t i = 0; i < g->nchannels; i++) {
     const Channel *c = g->channels[i];
-
-    // voice channels have a chat nobody is told about.
-    if (!channel_has_text(c) || channel_is_voice(c)) {
-      continue;
-    }
-
-    if (channel_is_thread(c) && (!c->thread_joined || c->thread_archived)) {
-      continue;
-    }
-
-    if (!store_can(s, c, PERM_VIEW_CHANNEL)) {
-      continue;
-    }
-
     Unread unread = store_channel_unread(s, c);
+    // a thread only answers for its own mute, not for its channel's.
+    bool muted = channel_is_thread(c)
+                   ? mute_active(c->muted, c->mute_until, now)
+                   : unread.muted;
 
     total.mentions += unread.mentions;
-    total.unread = total.unread || (unread.unread && !unread.muted);
+
+    // the chat of a voice channel only tells of its pings.
+    if (!channel_is_voice(c)) {
+      total.unread = total.unread || (unread.unread && !muted);
+    }
   }
 
   if (total.muted) {
