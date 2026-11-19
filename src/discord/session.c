@@ -1000,6 +1000,22 @@ static void connect(Session *s) {
   gateway_start(s->gateway);
 }
 
+SessionLink session_link(const Session *s) {
+  if (s->offline || s->gateway == nullptr) {
+    return SESSION_LINK_UP;
+  }
+
+  switch (gateway_status(s->gateway)) {
+    case GATEWAY_READY:
+      return SESSION_LINK_UP;
+    case GATEWAY_CONNECTING:
+    case GATEWAY_HANDSHAKING:
+      return SESSION_LINK_CONNECTING;
+    default:
+      return SESSION_LINK_DOWN;
+  }
+}
+
 /* ========================================================================== */
 /* logging in and out.                                                        */
 /* ========================================================================== */
@@ -1400,6 +1416,27 @@ void roster_start(Roster *r) {
   wipe(&legacy);
 }
 
+// every account's connection hears of the network, and the ui of whether
+// there is one.
+static void on_network(void *ctx, bool online, bool returned) {
+  Roster *r = ctx;
+  Session *shown = r->current;
+
+  if (shown->gateway != nullptr && account_of(r, shown) == nullptr) {
+    gateway_network_changed(shown->gateway, online, returned);
+  }
+
+  for (size_t i = 0; i < r->naccounts; i++) {
+    Session *s = r->accounts[i].session;
+
+    if (s != nullptr && s->gateway != nullptr) {
+      gateway_network_changed(s->gateway, online, returned);
+    }
+  }
+
+  changed(r->current);
+}
+
 Roster *roster_new(const SessionOptions *options) {
   Roster *r = calloc(1, sizeof *r);
 
@@ -1412,6 +1449,7 @@ Roster *roster_new(const SessionOptions *options) {
   }
 
   r->current = session_new(r);
+  platform_network_watch(on_network, r);
   return r;
 }
 
@@ -1421,6 +1459,7 @@ void roster_free(Roster *r) {
   }
 
   r->options.on_change = nullptr;
+  platform_network_watch(nullptr, nullptr);
 
   if (account_of(r, r->current) == nullptr) {
     session_free(r->current);

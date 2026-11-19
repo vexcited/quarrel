@@ -296,6 +296,18 @@ void session_create_invite(Session *s, Snowflake guild_id);
 // the status others see.
 void session_set_status(Session *s, UserStatus status, bool invisible);
 
+typedef enum : uint8_t {
+  SESSION_LINK_UP,
+  // connecting, or resuming after a drop.
+  SESSION_LINK_CONNECTING,
+  // dropped, and the next attempt waits for its turn.
+  SESSION_LINK_DOWN,
+} SessionLink;
+
+// how the session's connection to discord is, to tell the user when what
+// they see may be late.
+SessionLink session_link(const Session *s);
+
 /* ========================================================================== */
 /* voice.                                                                     */
 /* ========================================================================== */

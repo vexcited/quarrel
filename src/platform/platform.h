@@ -91,6 +91,16 @@ double platform_now(void);
 // that its timers and its sockets are not slowed down. lasts until exit.
 void platform_stay_responsive(void);
 
+// whether the machine has a network to reach the internet through.
+bool platform_online(void);
+// `changed` runs on the main thread when the network the machine goes
+// through changes, with whether it has one now and whether it had none
+// before, and when the machine wakes from sleep with one. one watcher, the
+// last given.
+void platform_network_watch(void (*changed)(void *ctx, bool online,
+                                            bool returned),
+                            void *ctx);
+
 // calls `fn` soon on the main thread, from any thread.
 void platform_post(void (*fn)(void *ctx), void *ctx);
 

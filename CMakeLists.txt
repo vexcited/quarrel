@@ -94,7 +94,7 @@ if(APPLE)
     "-framework Foundation" "-framework Security" "-framework ImageIO"
     "-framework CoreGraphics" "-framework CoreFoundation"
     "-framework AudioToolbox" "-framework AVFoundation"
-    "-framework CoreAudio" z)
+    "-framework CoreAudio" "-framework AppKit" "-framework Network" z)
 else()
   message(FATAL_ERROR "Quarrel only has a macOS backend for now")
 endif()

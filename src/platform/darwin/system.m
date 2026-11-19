@@ -1,4 +1,6 @@
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
+#import <Network/Network.h>
 
 #include "platform/platform.h"
 
@@ -48,6 +50,61 @@ void platform_stay_responsive(void) {
       beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep
                         reason:@"Keeping the gateway connection live."];
   }
+}
+
+static bool online = true;
+static void (*network_changed)(void *ctx, bool online, bool returned);
+static void *network_ctx;
+
+static void watch_network(void) {
+  static bool watching;
+
+  if (watching) {
+    return;
+  }
+
+  watching = true;
+
+  nw_path_monitor_t monitor = nw_path_monitor_create();
+  // the first update only says how things are.
+  __block bool first = true;
+
+  nw_path_monitor_set_queue(monitor, dispatch_get_main_queue());
+  nw_path_monitor_set_update_handler(monitor, ^(nw_path_t path) {
+    bool was = online;
+
+    online = nw_path_get_status(path) == nw_path_status_satisfied;
+
+    if (!first && network_changed != nullptr) {
+      network_changed(network_ctx, online, online && !was);
+    }
+
+    first = false;
+  });
+  nw_path_monitor_start(monitor);
+
+  [NSWorkspace.sharedWorkspace.notificationCenter
+    addObserverForName:NSWorkspaceDidWakeNotification
+                object:nil
+                 queue:NSOperationQueue.mainQueue
+            usingBlock:^(NSNotification *) {
+              if (online && network_changed != nullptr) {
+                network_changed(network_ctx, true, false);
+              }
+            }];
+}
+
+bool platform_online(void) {
+  watch_network();
+  return online;
+}
+
+void platform_network_watch(void (*changed)(void *ctx, bool online,
+                                            bool returned),
+                            void *ctx) {
+  network_changed = changed;
+  network_ctx = ctx;
+  watch_network();
 }
 
 void platform_post(void (*fn)(void *ctx), void *ctx) {

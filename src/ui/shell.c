@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #include <civue/dsl.h>
@@ -159,6 +160,51 @@ static void inbox_button(App *app) {
   inbox(app, anchor);
 }
 
+// shown while what the window holds may be late: the connection to discord
+// is being made, dropped, or there is no network at all.
+// seconds for one pulse of the link icon.
+constexpr double PULSE = 1.6;
+
+static void link_state(App *app) {
+  const Look *k = &app->look;
+  civue_id id = id("link-state");
+  SessionLink link = session_link(app->session);
+  bool online = platform_online();
+
+  if (link == SESSION_LINK_UP && online) {
+    return;
+  }
+
+  bool down = !online || link == SESSION_LINK_DOWN;
+  const char *why = !online ? "No internet connection"
+                    : down  ? "Disconnected, trying again soon"
+                            : "Connecting to Discord...";
+
+  civue_color color = down ? k->critical_text : k->faint;
+
+  // an attempt under way breathes, a slow fade out and back in.
+  if (!down) {
+    civue_ui *ui = civue_ui_current();
+
+    color.a *= .65f + .35f * (float)cos(ui->now * 2 * M_PI / PULSE);
+    civue_request_repaint_after(ui, 1.0 / 30);
+  }
+
+  div(key(id), flex, items_center, justify_center, size(7), flex_shrink_0,
+      rounded(lg), text_color(color)) {
+    civue_button_state state = button();
+
+    if (down) {
+      icon(lucide, unlink, size(px(18)));
+    }
+    else {
+      icon(lucide, link, size(px(18)));
+    }
+
+    hint(app, id, &state.response, why, CIVUE_TOOLTIP_BELOW);
+  }
+}
+
 static void settings_button(App *app) {
   const Look *k = &app->look;
   civue_id id = id("settings-button");
@@ -290,6 +336,7 @@ void top_bar(App *app) {
 
     account_switch(app);
     div(flex_1) {}
+    link_state(app);
     inbox_button(app);
     settings_button(app);
   }

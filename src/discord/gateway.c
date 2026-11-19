@@ -38,6 +38,16 @@ constexpr double BACKOFF_FIRST = 1;
 constexpr double BACKOFF_MAX = 60;
 // how long discord gets to say hello or to answer an identify.
 constexpr double HANDSHAKE_TIMEOUT = 30;
+// learned from the client's GatewaySocket. when the network changes it
+// beats at once and gives discord this long to answer before it takes the
+// connection for dead: 5 s once a network is back or the machine woke up,
+// 15 s when the network is said to be gone, which may be wrong.
+constexpr double PROBE_ONLINE = 5;
+constexpr double PROBE_OFFLINE = 15;
+// a session is resumed when its last heartbeat was answered within 3
+// minutes, and identified anew past that or past 4 failed attempts.
+constexpr double RESUME_WITHIN = 180;
+constexpr int FAILS_MAX = 4;
 
 enum {
   OP_DISPATCH = 0,
@@ -62,6 +72,8 @@ struct Gateway {
 
   PlatformWebSocket *ws;
   PlatformTimer *heartbeat, *retry, *watchdog;
+  // runs out when a heartbeat sent for a change of network stays unanswered.
+  PlatformTimer *probe;
 
   // the session to resume, null when the next connection identifies.
   char *session_id, *resume_url;
@@ -72,7 +84,13 @@ struct Gateway {
   double heartbeat_sent_at, latency;
   // the last heartbeat was answered.
   bool acked;
+  // when one last was, or the connection last tried to resume, 0 for never.
+  double acked_at;
   double backoff;
+  // attempts that had to wait since the last session, and whether this one
+  // got its hello.
+  int fails;
+  bool greeted;
 
   // the decompression stream of the connection and what it has produced of
   // the message being received.
@@ -119,6 +137,7 @@ static void clear_session(Gateway *g) {
 static void drop_socket(Gateway *g, int code) {
   cancel_timer(&g->heartbeat);
   cancel_timer(&g->watchdog);
+  cancel_timer(&g->probe);
 
   if (g->ws != nullptr) {
     if (code != 0) {
@@ -183,20 +202,75 @@ static void on_heartbeat(void *ctx) {
   g->heartbeat = nullptr;
 
   // a heartbeat left unanswered means the connection is dead though the
-  // socket has not noticed: it is dropped and the session resumed.
-  if (!g->acked) {
+  // socket has not noticed: it is dropped and the session resumed. one
+  // sent for a change of network has its own, shorter, wait.
+  if (!g->acked && g->probe == nullptr) {
     reconnect(g, true, 0);
     return;
   }
 
-  send_heartbeat(g);
+  if (g->acked) {
+    send_heartbeat(g);
+  }
+
   g->heartbeat = platform_timer(g->heartbeat_interval, on_heartbeat, g);
 }
 
 static void on_watchdog(void *ctx) {
   Gateway *g = ctx;
   g->watchdog = nullptr;
+
+  // no hello in time: the same as a socket that failed, see on_closed.
+  if (!g->greeted) {
+    free(g->resume_url);
+    g->resume_url = nullptr;
+  }
+
   reconnect(g, g->session_id != nullptr, g->backoff);
+}
+
+static void on_probe(void *ctx) {
+  Gateway *g = ctx;
+  g->probe = nullptr;
+
+  if (!g->acked) {
+    reconnect(g, true, 0);
+  }
+}
+
+// the client's expeditedHeartbeat.
+static void probe(Gateway *g, double patience) {
+  send_heartbeat(g);
+  cancel_timer(&g->probe);
+  g->probe = platform_timer(patience, on_probe, g);
+}
+
+// the client's networkStateChange, which it calls with 15 s when the
+// browser says offline and 5 s when it says online, and its power monitor's
+// resume, which beats with 5 s. connected is from the identify on. without
+// a connection the client only acts once online: it forgets its backoff
+// and connects at once, dropping an attempt under way.
+void gateway_network_changed(Gateway *g, bool online, bool returned) {
+  bool connected =
+    g->status == GATEWAY_HANDSHAKING || g->status == GATEWAY_READY;
+
+  if (g->status == GATEWAY_STOPPED) {
+    return;
+  }
+
+  if (connected) {
+    probe(g, online ? PROBE_ONLINE : PROBE_OFFLINE);
+    return;
+  }
+
+  // an attempt made while the network only changed is left to end.
+  if (!online || (g->status == GATEWAY_CONNECTING && !returned)) {
+    return;
+  }
+
+  g->backoff = BACKOFF_FIRST;
+  g->fails = 0;
+  reconnect(g, g->session_id != nullptr, 0);
 }
 
 static void send_identify(Gateway *g) {
@@ -261,6 +335,18 @@ static void on_hello(Gateway *g, const Json *d) {
 
   g->heartbeat_interval = interval;
   g->acked = true;
+  g->greeted = true;
+
+  // the client's _doResumeOrIdentify: a session left alone for too long
+  // is not resumed.
+  double now = platform_now();
+
+  if (g->session_id != nullptr && g->acked_at != 0 &&
+      now - g->acked_at > RESUME_WITHIN) {
+    clear_session(g);
+  }
+
+  g->acked_at = now;
 
   // the first heartbeat comes after a random part of the interval, so
   // clients reconnecting together do not beat together.
@@ -309,6 +395,7 @@ static void on_dispatch(Gateway *g, const char *type, const Json *d) {
   if (ready || strcmp(type, "RESUMED") == 0) {
     cancel_timer(&g->watchdog);
     g->backoff = BACKOFF_FIRST;
+    g->fails = 0;
     set_status(g, GATEWAY_READY);
   }
 }
@@ -332,7 +419,9 @@ static void on_payload(Gateway *g, const char *text, size_t len) {
       break;
     case OP_HEARTBEAT_ACK:
       g->acked = true;
-      g->latency = platform_now() - g->heartbeat_sent_at;
+      g->acked_at = platform_now();
+      g->latency = g->acked_at - g->heartbeat_sent_at;
+      cancel_timer(&g->probe);
       break;
     case OP_HELLO:
       on_hello(g, d);
@@ -525,6 +614,14 @@ static void on_closed(void *ctx, int code, const char *reason) {
   // the socket is done, what is left is to forget it.
   drop_socket(g, 0);
 
+  // the client's socket error: the next attempt goes back to the gateway
+  // everyone starts from, the one the session named being perhaps what
+  // cannot be reached.
+  if (!g->greeted) {
+    free(g->resume_url);
+    g->resume_url = nullptr;
+  }
+
   switch (code) {
     case 4004:
       clear_session(g);
@@ -582,6 +679,11 @@ static void reconnect(Gateway *g, bool resume, double delay) {
     return;
   }
 
+  // the client's _handleClose: past a few attempts the session is given up.
+  if (++g->fails > FAILS_MAX) {
+    clear_session(g);
+  }
+
   // each failed attempt doubles the wait, up to a minute.
   g->backoff = g->backoff * 2 < BACKOFF_MAX ? g->backoff * 2 : BACKOFF_MAX;
 
@@ -617,6 +719,7 @@ static void connect_now(Gateway *g) {
 
   set_status(g, GATEWAY_CONNECTING);
 
+  g->greeted = false;
   g->ws = platform_ws_connect(url, headers, 2, &events);
   g->watchdog = platform_timer(HANDSHAKE_TIMEOUT, on_watchdog, g);
 }

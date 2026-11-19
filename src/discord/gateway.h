@@ -53,6 +53,11 @@ void gateway_start(Gateway *g);
 // closes the connection and ends the session.
 void gateway_stop(Gateway *g);
 GatewayStatus gateway_status(const Gateway *g);
+// the network under the connection changed, or the machine woke up:
+// `online` for whether there is one, `returned` when there was none before.
+// a dead connection is found within seconds rather than at the next
+// heartbeat, and an attempt that waits for its turn is made at once.
+void gateway_network_changed(Gateway *g, bool online, bool returned);
 // the round trip of the last heartbeat in seconds, negative before the
 // first.
 double gateway_latency(const Gateway *g);
