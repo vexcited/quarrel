@@ -73,7 +73,13 @@ bool platform_secret_delete(const char *key) {
 static NSUserDefaults *prefs(void) {
   static NSUserDefaults *defaults;
 
-  if (defaults == nil) {
+  // a suite named after the app's own bundle is refused, and the standard
+  // defaults read the same file then.
+  if (defaults == nil && [NSBundle.mainBundle.bundleIdentifier
+                           isEqualToString:service]) {
+    defaults = NSUserDefaults.standardUserDefaults;
+  }
+  else if (defaults == nil) {
     defaults = [[NSUserDefaults alloc] initWithSuiteName:service];
   }
 

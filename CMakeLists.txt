@@ -11,7 +11,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ${PROJECT_IS_TOP_LEVEL})
 
 if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES
   AND NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "build type" FORCE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "build type" FORCE)
+endif()
+
+if(PROJECT_IS_TOP_LEVEL AND APPLE
+  AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX /Applications CACHE PATH "install prefix" FORCE)
+endif()
+
+find_program(QUARREL_CCACHE ccache)
+if(QUARREL_CCACHE)
+  foreach(lang C CXX OBJC)
+    if(NOT CMAKE_${lang}_COMPILER_LAUNCHER)
+      set(CMAKE_${lang}_COMPILER_LAUNCHER ${QUARREL_CCACHE})
+    endif()
+  endforeach()
 endif()
 
 include(FetchContent)
@@ -138,21 +152,30 @@ target_compile_options(quarrel PRIVATE -Wall -Wextra)
 
 civue_icons(quarrel)
 
-# the system asks for the microphone with what this says. it names no
-# bundle, so the preferences stay where they are.
 if(APPLE)
-  set(QUARREL_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist)
-  target_link_options(quarrel PRIVATE
-    "LINKER:-sectcreate,__TEXT,__info_plist,${QUARREL_PLIST}")
-  set_property(TARGET quarrel APPEND PROPERTY LINK_DEPENDS ${QUARREL_PLIST})
-endif()
+  set_target_properties(quarrel PROPERTIES
+    MACOSX_BUNDLE ON
+    OUTPUT_NAME Quarrel
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist
+    MACOSX_BUNDLE_GUI_IDENTIFIER com.vexcited.quarrel
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
+  target_link_options(quarrel PRIVATE LINKER:-dead_strip,-S,-x)
 
-set(QUARREL_SIGN_IDENTITY "" CACHE STRING
-  "The codesign identity Quarrel is signed with, none for the ad hoc one.")
+  set(QUARREL_SIGN_IDENTITY "-" CACHE STRING
+    "The codesign identity Quarrel is signed with, - for the ad hoc one.")
+  if(NOT QUARREL_SIGN_IDENTITY)
+    set(QUARREL_SIGN_IDENTITY -)
+  endif()
 
-if(APPLE AND QUARREL_SIGN_IDENTITY)
   add_custom_command(TARGET quarrel POST_BUILD
     COMMAND codesign --force --sign "${QUARREL_SIGN_IDENTITY}"
-      --identifier com.vexcited.quarrel $<TARGET_FILE:quarrel>
+      $<TARGET_BUNDLE_DIR:quarrel>
     VERBATIM)
+
+  install(TARGETS quarrel BUNDLE DESTINATION . COMPONENT quarrel)
+  install(CODE "execute_process(COMMAND codesign --force
+    --sign [==[${QUARREL_SIGN_IDENTITY}]==]
+    \"\${CMAKE_INSTALL_PREFIX}/$<TARGET_BUNDLE_DIR_NAME:quarrel>\"
+    COMMAND_ERROR_IS_FATAL ANY)" COMPONENT quarrel)
 endif()
