@@ -49,6 +49,9 @@ civue_images *images_new(void) {
     .fetch = fetch,
     .cancel = cancel,
     .disk_name = "quarrel",
+    // a screen of attachments is a few tens of megabytes. what scrolled
+    // away comes back from the disk cache.
+    .memory_bytes = 64u << 20,
   });
   return images;
 }
