@@ -62,8 +62,10 @@ void platform_timer_cancel(PlatformTimer *timer);
 /* ========================================================================== */
 
 bool platform_secret_set(const char *key, const char *value);
-// from malloc, null when there is none.
-char *platform_secret_get(const char *key);
+// from malloc, null when there is none or the keychain would not give it,
+// locked or asked by a build it does not trust. `missing`, when given, is
+// true only when it has none.
+char *platform_secret_get(const char *key, bool *missing);
 bool platform_secret_delete(const char *key);
 
 // a null value removes the key.

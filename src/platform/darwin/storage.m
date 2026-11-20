@@ -33,7 +33,11 @@ bool platform_secret_set(const char *key, const char *value) {
   return status == errSecSuccess;
 }
 
-char *platform_secret_get(const char *key) {
+char *platform_secret_get(const char *key, bool *missing) {
+  if (missing != nullptr) {
+    *missing = false;
+  }
+
   if (key == nullptr) {
     return nullptr;
   }
@@ -47,6 +51,10 @@ char *platform_secret_get(const char *key) {
     SecItemCopyMatching((__bridge CFDictionaryRef)query, &found);
 
   if (status != errSecSuccess || found == nullptr) {
+    if (missing != nullptr) {
+      *missing = status == errSecItemNotFound;
+    }
+
     return nullptr;
   }
 

@@ -1406,14 +1406,19 @@ static void reap(Roster *r) {
 }
 
 // connects the account with the token the keychain holds for it. false when
-// it holds none, the account is then forgotten.
+// it holds none, the account is then forgotten, or would not give it: the
+// account is kept for a later try then, its token and snapshot with it.
 static bool open_account(Roster *r, Snowflake id) {
   char key[32];
-  char *token = platform_secret_get(token_key(id, key));
+  bool missing = false;
+  char *token = platform_secret_get(token_key(id, key), &missing);
 
   if (token == nullptr || token[0] == '\0') {
+    if (missing || token != nullptr) {
+      forget(r, id);
+    }
+
     wipe(&token);
-    forget(r, id);
     return false;
   }
 
@@ -1542,8 +1547,13 @@ void roster_start(Roster *r) {
   load_accounts(r);
 
   // an account whose token is gone is forgotten, and takes its place away.
+  // one the keychain would not answer for stays, without a session.
   for (size_t i = 0; i < r->naccounts;) {
-    if (open_account(r, r->accounts[i].id)) {
+    Snowflake id = r->accounts[i].id;
+
+    open_account(r, id);
+
+    if (account_find(r, id) != nullptr) {
       i++;
     }
   }
@@ -1553,16 +1563,23 @@ void roster_start(Roster *r) {
 
   free(last);
 
-  if (a == nullptr && r->naccounts > 0) {
-    a = &r->accounts[0];
+  for (size_t i = 0; (a == nullptr || a->session == nullptr) &&
+                     i < r->naccounts;
+       i++) {
+    a = &r->accounts[i];
   }
 
-  if (a != nullptr) {
+  if (a != nullptr && a->session != nullptr) {
     show(r, a->session);
     return;
   }
 
-  char *legacy = platform_secret_get(LEGACY_TOKEN_KEY);
+  if (r->naccounts > 0) {
+    set_error(r->current, "The keychain did not give Quarrel your saved "
+                          "logins. Allow it, then pick an account again.");
+  }
+
+  char *legacy = platform_secret_get(LEGACY_TOKEN_KEY, nullptr);
 
   if (legacy != nullptr && legacy[0] != '\0') {
     enter(r->current, legacy, false);
