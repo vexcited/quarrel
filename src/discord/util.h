@@ -5,13 +5,17 @@
 #include <stdint.h>
 
 #include <cilo/map.h>
+#include <cima/json.h>
 
 /* ========================================================================== */
 /* snowflakes. an id is 64 bits, its top 42 the milliseconds since the first  */
 /* second of 2015, so ids sort by age.                                        */
 /* ========================================================================== */
 
-typedef uint64_t Snowflake;
+// read from a string of digits or a number, written as a string, through
+// cima: Snowflake_list and Snowflake_maybe come along, and schemas can hold it.
+extern const cima_codec snowflake_codec;
+CIMA_CUSTOM(Snowflake, uint64_t, &snowflake_codec);
 
 constexpr int64_t DISCORD_EPOCH_MS = 1420070400000;
 
@@ -35,6 +39,11 @@ Snowflake snowflake_parse(const char *s);
 Snowflake snowflake_parse_n(const char *s, size_t len);
 // writes the decimal digits of `id` and returns `out`.
 char *snowflake_format(Snowflake id, char out[static 21]);
+// the id held by `v`, a string of digits as discord writes ids and
+// permissions, or a number. 0 for anything else.
+Snowflake snowflake_of(const cima_json *v);
+// `id` as a string, the way discord reads them.
+void snowflake_write(cima_json_writer *w, Snowflake id);
 
 /* ========================================================================== */
 /* time and text.                                                             */

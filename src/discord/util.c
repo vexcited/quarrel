@@ -30,6 +30,59 @@ Snowflake snowflake_parse(const char *s) {
   return s != nullptr ? snowflake_parse_n(s, strlen(s)) : 0;
 }
 
+// false when `v` holds no id: anything but digits or a number that fits.
+static bool snowflake_read(const cima_json *v, Snowflake *id) {
+  switch (cima_json_type_of(v)) {
+    case CIMA_JSON_STRING:
+      *id = snowflake_parse_n(v->str, v->len);
+      return *id != 0 || (v->len == 1 && v->str[0] == '0');
+    case CIMA_JSON_INT:
+      *id = v->i >= 0 ? (Snowflake)v->i : 0;
+      return v->i >= 0;
+    case CIMA_JSON_UINT:
+      *id = v->u;
+      return true;
+    case CIMA_JSON_DOUBLE:
+      // some payloads put ids through a double, the integer part is kept.
+      *id = v->d >= 0 && v->d < 0x1p64 ? (Snowflake)v->d : 0;
+      return v->d >= 0 && v->d < 0x1p64;
+    default:
+      *id = 0;
+      return false;
+  }
+}
+
+Snowflake snowflake_of(const cima_json *v) {
+  Snowflake id;
+  snowflake_read(v, &id);
+  return id;
+}
+
+static bool snowflake_decode(const cima_json *in, void *out, cima_ctx *ctx) {
+  if (snowflake_read(in, out)) {
+    return true;
+  }
+
+  cima_report(ctx, "", "must be a snowflake");
+  return false;
+}
+
+static void snowflake_encode(cima_json_writer *w, const void *value) {
+  char digits[CIMA_JSON_NUMBER_MAX];
+  size_t n = cima_json_format_uint(digits, *(const Snowflake *)value);
+  cima_json_write_string_n(w, digits, n);
+}
+
+const cima_codec snowflake_codec = {
+  .decode = snowflake_decode,
+  .encode = snowflake_encode,
+  .json_schema = CIMA_LITERAL({"type" : "string", "pattern" : "^[0-9]+$"}),
+};
+
+void snowflake_write(cima_json_writer *w, Snowflake id) {
+  cima_json_write_typed(w, &Snowflake_schema, &id);
+}
+
 char *snowflake_format(Snowflake id, char out[static 21]) {
   snprintf(out, 21, "%" PRIu64, id);
   return out;

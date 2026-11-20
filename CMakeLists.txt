@@ -44,6 +44,11 @@ if(NOT TARGET cinc::cinc)
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cinc)
   FetchContent_MakeAvailable(cinc)
 endif()
+if(NOT TARGET cima::cima)
+  FetchContent_Declare(cima
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cima)
+  FetchContent_MakeAvailable(cima)
+endif()
 if(NOT TARGET ciphon::curl)
   set(CIPHON_BINDINGS OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(ciphon
@@ -105,7 +110,7 @@ endif()
 target_include_directories(quarrel_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(quarrel_core PUBLIC
-  civue::civue cilo::cilo cinc::cinc ciphon::curl)
+  civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl)
 target_compile_options(quarrel_core PRIVATE -Wall -Wextra)
 
 find_package(PkgConfig)
