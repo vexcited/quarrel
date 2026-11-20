@@ -62,7 +62,6 @@ endif()
 set(QUARREL_CORE_SOURCES
   src/http.c
   src/images.c
-  src/json.c
   src/discord/api.c
   src/discord/cdn.c
   src/discord/emoji.c

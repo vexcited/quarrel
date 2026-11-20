@@ -177,7 +177,7 @@ static void on_history(void *ctx, const ApiResponse *res) {
   Channel *c = store_channel(s->store, call->channel_id);
 
   if (c != nullptr) {
-    if (res->ok && json_is(res->json, JSON_ARRAY)) {
+    if (res->ok && (json_type(res->json) == CIMA_JSON_ARRAY)) {
       store_put_history(s->store, c, res->json, call->kind, HISTORY_PAGE);
       request_unknown_members(s, c);
     }
@@ -412,25 +412,25 @@ static void save_last(Snowflake id) {
 }
 
 static void save_accounts(const Roster *r) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
-  jw_array(&w);
+  json_begin_array(&w);
 
   for (size_t i = 0; i < r->naccounts; i++) {
     const SessionAccount *a = &r->accounts[i];
 
-    jw_object(&w);
-    jw_key(&w, "id"), jw_id(&w, a->id);
-    jw_key(&w, "username"), jw_str(&w, a->username);
-    jw_key(&w, "global_name"), jw_str(&w, a->global_name);
-    jw_key(&w, "discriminator"), jw_str(&w, a->discriminator);
-    jw_key(&w, "avatar"), jw_str(&w, a->avatar);
-    jw_end(&w);
+    json_begin_object(&w);
+    json_key(&w, "id"), snowflake_write(&w, a->id);
+    json_field(&w, "username", a->username);
+    json_field(&w, "global_name", a->global_name);
+    json_field(&w, "discriminator", a->discriminator);
+    json_field(&w, "avatar", a->avatar);
+    json_end_object(&w);
   }
 
-  jw_end(&w);
-  platform_pref_set(ACCOUNTS_KEY, w.data);
-  jw_free(&w);
+  json_end_array(&w);
+  platform_pref_set(ACCOUNTS_KEY, cima_json_writer_text(&w));
+  cima_json_writer_dispose(&w);
 }
 
 static void load_accounts(Roster *r) {
@@ -441,10 +441,10 @@ static void load_accounts(Roster *r) {
   }
 
   cilo_arena arena = {};
-  const Json *saved = json_parse(&arena, text, strlen(text), nullptr);
+  const cima_json *saved = json_parse(&arena, text, strlen(text), nullptr);
 
-  json_each(item, saved) {
-    Snowflake id = json_get_u64(item, "id");
+  CIMA_EACH(item, json_items(saved)) {
+    Snowflake id = snowflake_of(json_get(item, "id"));
 
     if (id == 0) {
       continue;
@@ -452,10 +452,10 @@ static void load_accounts(Roster *r) {
 
     SessionAccount *a = account_add(r, id);
 
-    str_set(&a->username, json_get_str(item, "username"));
-    str_set(&a->global_name, json_get_str(item, "global_name"));
-    str_set(&a->discriminator, json_get_str(item, "discriminator"));
-    str_set(&a->avatar, json_get_str(item, "avatar"));
+    str_set(&a->username, json_get_or(item, "username", nullptr));
+    str_set(&a->global_name, json_get_or(item, "global_name", nullptr));
+    str_set(&a->discriminator, json_get_or(item, "discriminator", nullptr));
+    str_set(&a->avatar, json_get_or(item, "avatar", nullptr));
   }
 
   cilo_arena_drop(&arena);
@@ -681,14 +681,14 @@ static void voice_try(Session *s) {
 
 // the account's own voice state, as this session of the gateway has it:
 // the account may be in a call from another device too.
-static void on_voice_state(Session *s, const Json *d) {
+static void on_voice_state(Session *s, const cima_json *d) {
   const char *session_id =
     s->gateway != nullptr ? gateway_session_id(s->gateway) : nullptr;
-  const char *theirs = json_get_str(d, "session_id");
-  Snowflake channel_id = json_get_u64(d, "channel_id");
+  const char *theirs = json_get_or(d, "session_id", nullptr);
+  Snowflake channel_id = snowflake_of(json_get(d, "channel_id"));
 
   if (s->voice_channel_id == 0 || s->voice_error != nullptr ||
-      json_get_u64(d, "user_id") != s->store->self_id ||
+      snowflake_of(json_get(d, "user_id")) != s->store->self_id ||
       session_id == nullptr || theirs == nullptr ||
       strcmp(session_id, theirs) != 0) {
     return;
@@ -714,13 +714,13 @@ static void on_voice_state(Session *s, const Json *d) {
   voice_try(s);
 }
 
-static void on_voice_server(Session *s, const Json *d) {
-  const char *token = json_get_str(d, "token");
-  const char *endpoint = json_get_str(d, "endpoint");
-  Snowflake channel_id = json_get_u64(d, "channel_id");
+static void on_voice_server(Session *s, const cima_json *d) {
+  const char *token = json_get_or(d, "token", nullptr);
+  const char *endpoint = json_get_or(d, "endpoint", nullptr);
+  Snowflake channel_id = snowflake_of(json_get(d, "channel_id"));
 
   if (s->voice_channel_id == 0 ||
-      json_get_u64(d, "guild_id") != s->voice_guild_id ||
+      snowflake_of(json_get(d, "guild_id")) != s->voice_guild_id ||
       (s->voice_guild_id == 0 && channel_id != s->voice_channel_id)) {
     return;
   }
@@ -900,7 +900,7 @@ static void on_snapshot(void *ctx, const char *type, const char *text,
   s->ready_text = nullptr;
 }
 
-static void on_dispatch(void *ctx, const char *type, const Json *data) {
+static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   Session *s = ctx;
 
   events_dispatch(s->store, type, data);
@@ -924,7 +924,7 @@ static void on_dispatch(void *ctx, const char *type, const Json *data) {
 
     // discord names the installation when the identify carried none.
     api_set_installation_id(
-      json_get_str(json_get(data, "apex_experiments"), "installation"));
+      json_get_or(json_get(data, "apex_experiments"), "installation", nullptr));
 
     // discord may replace the token, the old one stops working later.
     if (s->store->refreshed_token != nullptr) {
@@ -1647,52 +1647,53 @@ static void iso_now(const Store *store, char out[static 40]) {
 // offline, what discord would have answered is made up here so the ui has
 // something to show.
 static void echo_message(Session *s, const Channel *c, const Message *pending) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
   char timestamp[40];
 
   iso_now(s->store, timestamp);
 
-  jw_object(&w);
-  jw_key(&w, "id"), jw_id(&w, pending->nonce);
-  jw_key(&w, "nonce"), jw_id(&w, pending->nonce);
-  jw_key(&w, "channel_id"), jw_id(&w, c->id);
-  jw_key(&w, "type"), jw_u64(&w, pending->type);
-  jw_key(&w, "content"), jw_str(&w, pending->content);
-  jw_key(&w, "timestamp"), jw_str(&w, timestamp);
-  jw_key(&w, "author");
-  jw_object(&w);
-  jw_key(&w, "id"), jw_id(&w, s->store->self_id);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, pending->nonce);
+  json_key(&w, "nonce"), snowflake_write(&w, pending->nonce);
+  json_key(&w, "channel_id"), snowflake_write(&w, c->id);
+  json_field(&w, "type", pending->type);
+  json_field(&w, "content", pending->content);
+  json_field(&w, "timestamp", timestamp);
+  json_key(&w, "author");
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, s->store->self_id);
+  json_end_object(&w);
 
   if (pending->reference_id != 0) {
-    jw_key(&w, "message_reference");
-    jw_object(&w);
-    jw_key(&w, "message_id"), jw_id(&w, pending->reference_id);
-    jw_key(&w, "channel_id"), jw_id(&w, c->id);
-    jw_end(&w);
+    json_key(&w, "message_reference");
+    json_begin_object(&w);
+    json_key(&w, "message_id"), snowflake_write(&w, pending->reference_id);
+    json_key(&w, "channel_id"), snowflake_write(&w, c->id);
+    json_end_object(&w);
 
     const Message *target = store_message(c, pending->reference_id);
 
     if (target != nullptr) {
-      jw_key(&w, "referenced_message");
-      jw_object(&w);
-      jw_key(&w, "id"), jw_id(&w, target->id);
-      jw_key(&w, "channel_id"), jw_id(&w, c->id);
-      jw_key(&w, "content"), jw_str(&w, target->content);
-      jw_key(&w, "author");
-      jw_object(&w);
-      jw_key(&w, "id"), jw_id(&w, target->author_id);
-      jw_end(&w);
-      jw_end(&w);
+      json_key(&w, "referenced_message");
+      json_begin_object(&w);
+      json_key(&w, "id"), snowflake_write(&w, target->id);
+      json_key(&w, "channel_id"), snowflake_write(&w, c->id);
+      json_field(&w, "content", target->content);
+      json_key(&w, "author");
+      json_begin_object(&w);
+      json_key(&w, "id"), snowflake_write(&w, target->author_id);
+      json_end_object(&w);
+      json_end_object(&w);
     }
   }
 
-  jw_end(&w);
+  json_end_object(&w);
 
   cilo_arena arena = {};
-  store_create_message(s->store, json_parse(&arena, w.data, w.len, nullptr));
+  store_create_message(
+    s->store, json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr));
   cilo_arena_drop(&arena);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 static void on_sent(void *ctx, const ApiResponse *res) {
@@ -1796,12 +1797,14 @@ void session_discard(Session *s, Snowflake channel_id, Snowflake nonce) {
 }
 
 // applies an event made up here, for what is done offline.
-static void apply_local(Session *s, const char *type, JsonWriter *w) {
+static void apply_local(Session *s, const char *type, cima_json_writer *w) {
   cilo_arena arena = {};
 
-  events_dispatch(s->store, type, json_parse(&arena, w->data, w->len, nullptr));
+  events_dispatch(
+    s->store, type,
+    json_parse(&arena, cima_json_writer_text(w), w->len, nullptr));
   cilo_arena_drop(&arena);
-  jw_free(w);
+  cima_json_writer_dispose(w);
 }
 
 void session_edit(Session *s, Snowflake channel_id, Snowflake message_id,
@@ -1813,17 +1816,17 @@ void session_edit(Session *s, Snowflake channel_id, Snowflake message_id,
   }
 
   if (s->offline) {
-    JsonWriter w = {};
+    cima_json_writer w = {};
     char timestamp[40];
 
     iso_now(s->store, timestamp);
 
-    jw_object(&w);
-    jw_key(&w, "id"), jw_id(&w, message_id);
-    jw_key(&w, "channel_id"), jw_id(&w, channel_id);
-    jw_key(&w, "content"), jw_str(&w, content);
-    jw_key(&w, "edited_timestamp"), jw_str(&w, timestamp);
-    jw_end(&w);
+    json_begin_object(&w);
+    json_key(&w, "id"), snowflake_write(&w, message_id);
+    json_key(&w, "channel_id"), snowflake_write(&w, channel_id);
+    json_field(&w, "content", content);
+    json_field(&w, "edited_timestamp", timestamp);
+    json_end_object(&w);
 
     apply_local(s, "MESSAGE_UPDATE", &w);
     changed(s);
@@ -1863,23 +1866,24 @@ void session_react(Session *s, Snowflake channel_id, Snowflake message_id,
   }
 
   if (s->offline) {
-    JsonWriter w = {};
+    cima_json_writer w = {};
     cilo_arena arena = {};
 
-    jw_object(&w);
-    jw_key(&w, "id");
+    json_begin_object(&w);
+    json_key(&w, "id");
 
     if (emoji_id != 0) {
-      jw_id(&w, emoji_id);
+      snowflake_write(&w, emoji_id);
     }
     else {
-      jw_null(&w);
+      cima_json_write_null(&w);
     }
 
-    jw_key(&w, "name"), jw_str(&w, name);
-    jw_end(&w);
+    json_field(&w, "name", name);
+    json_end_object(&w);
 
-    const Json *emoji = json_parse(&arena, w.data, w.len, nullptr);
+    const cima_json *emoji =
+      json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr);
 
     if (add) {
       store_reaction_add(s->store, channel_id, message_id, s->store->self_id,
@@ -1891,7 +1895,7 @@ void session_react(Session *s, Snowflake channel_id, Snowflake message_id,
     }
 
     cilo_arena_drop(&arena);
-    jw_free(&w);
+    cima_json_writer_dispose(&w);
     changed(s);
     return;
   }
@@ -1967,28 +1971,28 @@ static void on_mentions(void *ctx, const ApiResponse *res) {
   clear_mentions(s);
   s->mentions_loaded = true;
 
-  if (res->ok && json_is(res->json, JSON_ARRAY)) {
-    s->mentions = calloc(res->json->len + 1, sizeof *s->mentions);
+  if (res->ok && (json_type(res->json) == CIMA_JSON_ARRAY)) {
+    s->mentions = calloc(json_len(res->json) + 1, sizeof *s->mentions);
 
     if (s->mentions == nullptr) {
-      cilo_oom(res->json->len * sizeof *s->mentions);
+      cilo_oom(json_len(res->json) * sizeof *s->mentions);
     }
 
-    json_each(item, res->json) {
-      const Json *author = json_get(item, "author");
-      const char *content = json_get_str(item, "content");
+    CIMA_EACH(item, json_items(res->json)) {
+      const cima_json *author = json_get(item, "author");
+      const char *content = json_get_or(item, "content", nullptr);
 
       // the names the message shows and the ones its text mentions.
       store_put_user(s->store, author);
 
-      json_each(user, json_get(item, "mentions")) {
+      CIMA_EACH(user, json_items(json_get(item, "mentions"))) {
         store_put_user(s->store, user);
       }
 
       s->mentions[s->nmentions++] = (SessionMention){
-        .id = json_get_u64(item, "id"),
-        .channel_id = json_get_u64(item, "channel_id"),
-        .author_id = json_get_u64(author, "id"),
+        .id = snowflake_of(json_get(item, "id")),
+        .channel_id = snowflake_of(json_get(item, "channel_id")),
+        .author_id = snowflake_of(json_get(author, "id")),
         .content = str_dup(content != nullptr ? content : ""),
       };
     }
@@ -2123,7 +2127,7 @@ static void on_frecency(void *ctx, const ApiResponse *res) {
   s->frecency_loaded = true;
 
   if (res->ok) {
-    const char *settings = json_get_str(res->json, "settings");
+    const char *settings = json_get_or(res->json, "settings", nullptr);
 
     if (settings != nullptr) {
       uses = settings_proto_reaction_uses(settings, &count);
@@ -2156,15 +2160,15 @@ static void on_application(void *ctx, const ApiResponse *res) {
     return;
   }
 
-  json_each(application, res->json) {
-    if (json_get_u64(application, "id") != id) {
+  CIMA_EACH(application, json_items(res->json)) {
+    if (snowflake_of(json_get(application, "id")) != id) {
       continue;
     }
 
     for (size_t i = 0; i < s->napplications; i++) {
       if (s->applications[i].id == id && s->applications[i].icon == nullptr) {
         s->applications[i].icon =
-          str_dup(json_get_str(application, "icon"));
+          str_dup(json_get_or(application, "icon", nullptr));
       }
     }
   }
@@ -2334,8 +2338,8 @@ static void on_guild_created(void *ctx, const ApiResponse *res) {
   s->guild_creating = false;
 
   // the guild itself comes through the gateway's GUILD_CREATE.
-  if (res->ok && json_get_u64(res->json, "id") != 0) {
-    s->guild_created = json_get_u64(res->json, "id");
+  if (res->ok && snowflake_of(json_get(res->json, "id")) != 0) {
+    s->guild_created = snowflake_of(json_get(res->json, "id"));
   }
   else {
     str_set(&s->guild_error,
@@ -2381,7 +2385,7 @@ static void on_invite(void *ctx, const ApiResponse *res) {
     return;
   }
 
-  const char *code = json_get_str(res->json, "code");
+  const char *code = json_get_or(res->json, "code", nullptr);
 
   s->invite_loading = false;
 
@@ -2471,18 +2475,18 @@ void session_set_status(Session *s, UserStatus status, bool invisible,
   if (online(s) && s->store->status_proto != nullptr) {
     char *settings =
       settings_proto_with_status(s->store->status_proto, name, until, now);
-    JsonWriter w = {};
+    cima_json_writer w = {};
 
-    jw_object(&w);
-    jw_key(&w, "settings"), jw_str(&w, settings);
-    jw_end(&w);
+    json_begin_object(&w);
+    json_field(&w, "settings", settings);
+    json_end_object(&w);
 
     ApiRequest req = {.method = "PATCH",
                       .path = "/users/@me/settings-proto/1",
-                      .body = w.data};
+                      .body = cima_json_writer_text(&w)};
 
     api_request(s->api, &req, nullptr, nullptr);
-    jw_free(&w);
+    cima_json_writer_dispose(&w);
     free(settings);
   }
 
@@ -2533,7 +2537,7 @@ static void on_profile(void *ctx, const ApiResponse *res) {
   }
 
   Session *s = call->s;
-  const Json *badges = json_get(res->json, "badges");
+  const cima_json *badges = json_get(res->json, "badges");
 
   call_end(call);
   s->profile_loading = false;
@@ -2550,10 +2554,10 @@ static void on_profile(void *ctx, const ApiResponse *res) {
     cilo_oom(sizeof *s->badges);
   }
 
-  json_each(badge, badges) {
+  CIMA_EACH(badge, json_items(badges)) {
     s->badges[s->nbadges++] = (SessionBadge){
-      .icon = str_dup(json_get_str(badge, "icon")),
-      .description = str_dup(json_get_str(badge, "description")),
+      .icon = str_dup(json_get_or(badge, "icon", nullptr)),
+      .description = str_dup(json_get_or(badge, "description", nullptr)),
     };
   }
 

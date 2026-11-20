@@ -190,7 +190,7 @@ const char *api_user_agent(void) {
 // the app runs. the docs show os_version as the kernel's on macOS, the
 // client now sends what process.getSystemVersion says with
 // os_version_is_release, and keeps the kernel's major in os_sdk_version.
-void api_write_client_properties(JsonWriter *w, bool gateway) {
+void api_write_client_properties(cima_json_writer *w, bool gateway) {
   char locale[32], os_version[32], sdk[16];
   struct utsname sys = {};
 
@@ -204,39 +204,39 @@ void api_write_client_properties(JsonWriter *w, bool gateway) {
   // node names the architectures its own way.
   const char *arch = strcmp(sys.machine, "x86_64") == 0 ? "x64" : sys.machine;
 
-  jw_object(w);
-  jw_key(w, "os"), jw_str(w, "Mac OS X");
-  jw_key(w, "browser"), jw_str(w, "Discord Client");
-  jw_key(w, "release_channel"), jw_str(w, "stable");
-  jw_key(w, "client_version"), jw_str(w, CLIENT_VERSION);
-  jw_key(w, "os_version"), jw_str(w, os_version);
-  jw_key(w, "os_version_is_release"), jw_bool(w, true);
-  jw_key(w, "os_sdk_version"), jw_str(w, sdk);
-  jw_key(w, "os_arch"), jw_str(w, arch);
-  jw_key(w, "app_arch"), jw_str(w, arch);
-  jw_key(w, "system_locale"), jw_str(w, locale);
-  jw_key(w, "has_client_mods"), jw_bool(w, false);
-  jw_key(w, "client_launch_id"), jw_str(w, identity.launch_id);
-  jw_key(w, "browser_user_agent"), jw_str(w, USER_AGENT);
-  jw_key(w, "browser_version"), jw_str(w, ELECTRON_VERSION);
-  jw_key(w, "client_build_number"), jw_u64(w, DISCORD_BUILD_NUMBER);
-  jw_key(w, "native_build_number"), jw_u64(w, NATIVE_BUILD_NUMBER);
-  jw_key(w, "client_event_source"), jw_null(w);
-  jw_key(w, "launch_signature"), jw_str(w, identity.launch_signature);
-  jw_key(w, "client_heartbeat_session_id");
-  jw_str(w, identity.heartbeat_session_id);
-  jw_key(w, "client_app_state"), jw_str(w, "focused");
+  json_begin_object(w);
+  json_field(w, "os", "Mac OS X");
+  json_field(w, "browser", "Discord Client");
+  json_field(w, "release_channel", "stable");
+  json_field(w, "client_version", CLIENT_VERSION);
+  json_field(w, "os_version", os_version);
+  json_field(w, "os_version_is_release", true);
+  json_field(w, "os_sdk_version", sdk);
+  json_field(w, "os_arch", arch);
+  json_field(w, "app_arch", arch);
+  json_field(w, "system_locale", locale);
+  json_field(w, "has_client_mods", false);
+  json_field(w, "client_launch_id", identity.launch_id);
+  json_field(w, "browser_user_agent", USER_AGENT);
+  json_field(w, "browser_version", ELECTRON_VERSION);
+  json_field(w, "client_build_number", DISCORD_BUILD_NUMBER);
+  json_field(w, "native_build_number", NATIVE_BUILD_NUMBER);
+  json_field(w, "client_event_source", nullptr);
+  json_field(w, "launch_signature", identity.launch_signature);
+  json_key(w, "client_heartbeat_session_id");
+  json_put(w, identity.heartbeat_session_id);
+  json_field(w, "client_app_state", "focused");
 
   if (gateway) {
-    jw_key(w, "is_fast_connect"), jw_bool(w, false);
-    jw_key(w, "gateway_connect_reasons"), jw_str(w, "AppSkeleton");
+    json_field(w, "is_fast_connect", false);
+    json_field(w, "gateway_connect_reasons", "AppSkeleton");
 
     if (identity.installation_id != nullptr) {
-      jw_key(w, "installation_id"), jw_str(w, identity.installation_id);
+      json_field(w, "installation_id", identity.installation_id);
     }
   }
 
-  jw_end(w);
+  json_end_object(w);
 }
 
 static void refresh_properties(Api *api) {
@@ -247,12 +247,12 @@ static void refresh_properties(Api *api) {
     return;
   }
 
-  JsonWriter w = {};
+  cima_json_writer w = {};
   api_write_client_properties(&w, false);
   free(api->super_properties);
-  api->super_properties = base64_encode(w.data, w.len);
+  api->super_properties = base64_encode(cima_json_writer_text(&w), w.len);
   api->properties_stamp = identity.heartbeat_since;
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 /* ========================================================================== */
@@ -321,14 +321,14 @@ static void on_timer(void *ctx) {
 }
 
 // the field errors of a form, each with the path of keys leading to it.
-static void collect_errors(const Json *node, char *path, size_t path_len,
+static void collect_errors(const cima_json *node, char *path, size_t path_len,
                            size_t cap, ApiFieldError *fields,
                            char (*paths)[API_PATH_MAX], size_t *count) {
-  if (!json_is(node, JSON_OBJECT)) {
+  if (json_type(node) != CIMA_JSON_OBJECT) {
     return;
   }
 
-  json_each(error, json_get(node, "_errors")) {
+  CIMA_EACH(error, json_items(json_get(node, "_errors"))) {
     if (*count >= API_MAX_FIELD_ERRORS) {
       return;
     }
@@ -337,14 +337,14 @@ static void collect_errors(const Json *node, char *path, size_t path_len,
 
     fields[*count] = (ApiFieldError){
       .path = paths[*count],
-      .code = json_get_str(error, "code"),
-      .message = json_get_str(error, "message"),
+      .code = json_get_or(error, "code", nullptr),
+      .message = json_get_or(error, "message", nullptr),
     };
 
     (*count)++;
   }
 
-  json_each(child, node) {
+  CIMA_EACH(child, json_members(node)) {
     if (strcmp(child->key, "_errors") == 0) {
       continue;
     }
@@ -356,8 +356,8 @@ static void collect_errors(const Json *node, char *path, size_t path_len,
       continue;
     }
 
-    collect_errors(child, path, path_len + (size_t)n, cap, fields, paths,
-                   count);
+    collect_errors(&child->value, path, path_len + (size_t)n, cap, fields,
+                   paths, count);
   }
 }
 
@@ -366,8 +366,8 @@ typedef struct {
   const char *keys[8];
 } CaptchaView;
 
-static bool read_captcha(const Json *json, int status, CaptchaView *view) {
-  const Json *keys = json_get(json, "captcha_key");
+static bool read_captcha(const cima_json *json, int status, CaptchaView *view) {
+  const cima_json *keys = json_get(json, "captcha_key");
 
   if (status != 400 || keys == nullptr) {
     return false;
@@ -375,21 +375,21 @@ static bool read_captcha(const Json *json, int status, CaptchaView *view) {
 
   *view = (CaptchaView){};
 
-  json_each(key, keys) {
-    if (view->captcha.nkeys < 8 && json_is(key, JSON_STRING)) {
-      view->keys[view->captcha.nkeys++] = key->string;
+  CIMA_EACH(key, json_items(keys)) {
+    if (view->captcha.nkeys < 8 && (json_type(key) == CIMA_JSON_STRING)) {
+      view->keys[view->captcha.nkeys++] = key->str;
     }
   }
 
   view->captcha.keys = view->keys;
   view->captcha.service =
-    json_str(json_get(json, "captcha_service"), "hcaptcha");
-  view->captcha.sitekey = json_get_str(json, "captcha_sitekey");
-  view->captcha.session_id = json_get_str(json, "captcha_session_id");
-  view->captcha.rqdata = json_get_str(json, "captcha_rqdata");
-  view->captcha.rqtoken = json_get_str(json, "captcha_rqtoken");
+    json_or(json_get(json, "captcha_service"), "hcaptcha");
+  view->captcha.sitekey = json_get_or(json, "captcha_sitekey", nullptr);
+  view->captcha.session_id = json_get_or(json, "captcha_session_id", nullptr);
+  view->captcha.rqdata = json_get_or(json, "captcha_rqdata", nullptr);
+  view->captcha.rqtoken = json_get_or(json, "captcha_rqtoken", nullptr);
   view->captcha.serve_invisible =
-    json_get_bool(json, "should_serve_invisible", false);
+    json_get_coerce(json, "should_serve_invisible", false);
   return true;
 }
 
@@ -400,7 +400,7 @@ static void on_response(void *ctx, const HttpResponse *http) {
   double now = platform_now();
 
   cilo_arena arena = {};
-  const Json *json = nullptr;
+  const cima_json *json = nullptr;
 
   if (http->body_len > 0) {
     json = json_parse(&arena, http->body, http->body_len, nullptr);
@@ -415,7 +415,7 @@ static void on_response(void *ctx, const HttpResponse *http) {
   const char *scope = http_header(http, "x-ratelimit-scope");
 
   if (http->status == 429) {
-    double retry = json_get_f64(json, "retry_after", -1);
+    double retry = json_get_coerce(json, "retry_after", (double)-1);
 
     if (retry < 0 && retry_header != nullptr) {
       retry = strtod(retry_header, nullptr);
@@ -425,7 +425,7 @@ static void on_response(void *ctx, const HttpResponse *http) {
       retry = 1;
     }
 
-    bool global = json_get_bool(json, "global", false) ||
+    bool global = json_get_coerce(json, "global", false) ||
                   http_header(http, "x-ratelimit-global") != nullptr ||
                   (scope != nullptr && strcmp(scope, "global") == 0);
 
@@ -473,14 +473,14 @@ static void on_response(void *ctx, const HttpResponse *http) {
                    paths, &nfields);
 
     res.error.status = http->status;
-    res.error.code = (uint32_t)json_get_u64(json, "code");
+    res.error.code = (uint32_t)json_get_coerce(json, "code", (uint64_t)0);
     res.error.fields = fields;
     res.error.nfields = nfields;
 
     const char *text = nfields > 0 ? fields[0].message : nullptr;
 
     if (text == nullptr) {
-      text = json_get_str(json, "message");
+      text = json_get_or(json, "message", nullptr);
     }
 
     if (text == nullptr && http->status == 0) {
@@ -743,7 +743,7 @@ typedef struct {
 
 static void on_fingerprint(void *ctx, const ApiResponse *res) {
   FingerprintCall *call = ctx;
-  const char *fingerprint = json_get_str(res->json, "fingerprint");
+  const char *fingerprint = json_get_or(res->json, "fingerprint", nullptr);
 
   if (res->ok && fingerprint != nullptr) {
     str_set(&call->api->fingerprint, fingerprint);
@@ -774,28 +774,28 @@ typedef struct {
 
 static void on_login(void *ctx, const ApiResponse *res) {
   LoginCall *call = ctx;
-  const Json *json = res->json;
+  const cima_json *json = res->json;
   ApiLoginResult result = {.kind = API_LOGIN_ERROR, .error = res->error};
 
   if (res->captcha != nullptr) {
     result.kind = API_LOGIN_CAPTCHA;
     result.captcha = *res->captcha;
   }
-  else if (res->ok && json_get_str(json, "token") != nullptr) {
+  else if (res->ok && json_get_or(json, "token", nullptr) != nullptr) {
     result.kind = API_LOGIN_TOKEN;
-    result.token = json_get_str(json, "token");
-    result.user_id = json_get_u64(json, "user_id");
+    result.token = json_get_or(json, "token", nullptr);
+    result.user_id = snowflake_of(json_get(json, "user_id"));
   }
-  else if (res->ok && json_get_str(json, "ticket") != nullptr) {
+  else if (res->ok && json_get_or(json, "ticket", nullptr) != nullptr) {
     result.kind = API_LOGIN_MFA;
-    result.user_id = json_get_u64(json, "user_id");
+    result.user_id = snowflake_of(json_get(json, "user_id"));
     result.mfa = (ApiMfa){
-      .ticket = json_get_str(json, "ticket"),
-      .login_instance_id = json_get_str(json, "login_instance_id"),
-      .totp = json_get_bool(json, "totp", false),
-      .sms = json_get_bool(json, "sms", false),
-      .backup = json_get_bool(json, "backup", false),
-      .webauthn = json_get_str(json, "webauthn") != nullptr,
+      .ticket = json_get_or(json, "ticket", nullptr),
+      .login_instance_id = json_get_or(json, "login_instance_id", nullptr),
+      .totp = json_get_coerce(json, "totp", false),
+      .sms = json_get_coerce(json, "sms", false),
+      .backup = json_get_coerce(json, "backup", false),
+      .webauthn = json_get_or(json, "webauthn", nullptr) != nullptr,
     };
   }
   else if (res->ok) {
@@ -805,7 +805,7 @@ static void on_login(void *ctx, const ApiResponse *res) {
       .message = "Discord answered the login with nothing to go on",
     };
   }
-  else if (json_get_str(json, "suspended_user_token") != nullptr) {
+  else if (json_get_or(json, "suspended_user_token", nullptr) != nullptr) {
     result.error.message = "This account is suspended";
   }
 
@@ -831,23 +831,24 @@ static void login_request(Api *api, const char *path, char *body,
   };
 
   enqueue(api, &req, on_login, call, call);
-  free(body);
+  cilo_mfree(body);
 }
 
 void api_login(Api *api, const char *login, const char *password,
                const ApiCaptchaSolution *captcha, ApiLoginDone done,
                void *ctx) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
-  jw_object(&w);
-  jw_key(&w, "login"), jw_str(&w, login != nullptr ? login : "");
-  jw_key(&w, "password"), jw_str(&w, password != nullptr ? password : "");
-  jw_key(&w, "undelete"), jw_bool(&w, false);
-  jw_key(&w, "login_source"), jw_null(&w);
-  jw_key(&w, "gift_code_sku_id"), jw_null(&w);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "login", login != nullptr ? login : "");
+  json_field(&w, "password", password != nullptr ? password : "");
+  json_field(&w, "undelete", false);
+  json_field(&w, "login_source", nullptr);
+  json_field(&w, "gift_code_sku_id", nullptr);
+  json_end_object(&w);
 
-  login_request(api, "/auth/login", jw_take(&w), captcha, done, ctx);
+  login_request(api, "/auth/login", cima_json_writer_finish(&w, nullptr),
+                captcha, done, ctx);
 }
 
 void api_mfa(Api *api, ApiMfaKind kind, const ApiMfa *mfa, const char *code,
@@ -858,39 +859,40 @@ void api_mfa(Api *api, ApiMfaKind kind, const ApiMfa *mfa, const char *code,
     [API_MFA_BACKUP] = "/auth/mfa/backup",
   };
 
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
-  jw_object(&w);
-  jw_key(&w, "ticket"), jw_str(&w, mfa->ticket != nullptr ? mfa->ticket : "");
+  json_begin_object(&w);
+  json_field(&w, "ticket", mfa->ticket != nullptr ? mfa->ticket : "");
 
   if (mfa->login_instance_id != nullptr) {
-    jw_key(&w, "login_instance_id"), jw_str(&w, mfa->login_instance_id);
+    json_field(&w, "login_instance_id", mfa->login_instance_id);
   }
 
-  jw_key(&w, "code"), jw_str(&w, code != nullptr ? code : "");
-  jw_key(&w, "login_source"), jw_null(&w);
-  jw_key(&w, "gift_code_sku_id"), jw_null(&w);
-  jw_end(&w);
+  json_field(&w, "code", code != nullptr ? code : "");
+  json_field(&w, "login_source", nullptr);
+  json_field(&w, "gift_code_sku_id", nullptr);
+  json_end_object(&w);
 
   const char *path = kind <= API_MFA_BACKUP ? paths[kind] : paths[0];
-  login_request(api, path, jw_take(&w), nullptr, done, ctx);
+  login_request(api, path, cima_json_writer_finish(&w, nullptr), nullptr, done,
+                ctx);
 }
 
 void api_mfa_send_sms(Api *api, const char *ticket, ApiDone done, void *ctx) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
-  jw_object(&w);
-  jw_key(&w, "ticket"), jw_str(&w, ticket != nullptr ? ticket : "");
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "ticket", ticket != nullptr ? ticket : "");
+  json_end_object(&w);
 
   ApiRequest req = {
     .method = "POST",
     .path = "/auth/mfa/sms/send",
-    .body = w.data,
+    .body = cima_json_writer_text(&w),
   };
 
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_logout(Api *api, ApiDone done, void *ctx) {
@@ -939,62 +941,65 @@ void api_get_messages(Api *api, Snowflake channel_id, uint32_t limit,
 void api_send_message(Api *api, Snowflake channel_id,
                       const ApiSendMessage *message, ApiDone done, void *ctx) {
   char path[96];
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   snprintf(path, sizeof path, "/channels/%" PRIu64 "/messages", channel_id);
 
-  jw_object(&w);
-  jw_key(&w, "mobile_network_type"), jw_str(&w, "unknown");
-  jw_key(&w, "content");
-  jw_str(&w, message->content != nullptr ? message->content : "");
+  json_begin_object(&w);
+  json_field(&w, "mobile_network_type", "unknown");
+  json_key(&w, "content");
+  cima_json_write_string(&w,
+                         message->content != nullptr ? message->content : "");
 
   if (message->nonce != 0) {
-    jw_key(&w, "nonce"), jw_id(&w, message->nonce);
+    json_key(&w, "nonce"), snowflake_write(&w, message->nonce);
   }
 
-  jw_key(&w, "tts"), jw_bool(&w, false);
-  jw_key(&w, "flags"), jw_u64(&w, 0);
+  json_field(&w, "tts", false);
+  json_field(&w, "flags", 0);
 
   if (message->forward_id != 0) {
     // type 1 is a forward, which carries a snapshot and no text of its own.
-    jw_key(&w, "message_reference");
-    jw_object(&w);
-    jw_key(&w, "type"), jw_u64(&w, 1);
-    jw_key(&w, "channel_id"), jw_id(&w, message->forward_channel_id);
-    jw_key(&w, "message_id"), jw_id(&w, message->forward_id);
+    json_key(&w, "message_reference");
+    json_begin_object(&w);
+    json_field(&w, "type", 1);
+    json_key(&w, "channel_id"),
+      snowflake_write(&w, message->forward_channel_id);
+    json_key(&w, "message_id"), snowflake_write(&w, message->forward_id);
 
     if (message->forward_guild_id != 0) {
-      jw_key(&w, "guild_id"), jw_id(&w, message->forward_guild_id);
+      json_key(&w, "guild_id"), snowflake_write(&w, message->forward_guild_id);
     }
 
-    jw_end(&w);
+    json_end_object(&w);
   }
   else if (message->reply_to != 0) {
-    jw_key(&w, "message_reference");
-    jw_object(&w);
-    jw_key(&w, "channel_id"), jw_id(&w, channel_id);
-    jw_key(&w, "message_id"), jw_id(&w, message->reply_to);
-    jw_end(&w);
+    json_key(&w, "message_reference");
+    json_begin_object(&w);
+    json_key(&w, "channel_id"), snowflake_write(&w, channel_id);
+    json_key(&w, "message_id"), snowflake_write(&w, message->reply_to);
+    json_end_object(&w);
 
     // the web client lists what may ping and says whether the answered
     // author is one of them.
-    jw_key(&w, "allowed_mentions");
-    jw_object(&w);
-    jw_key(&w, "parse");
-    jw_array(&w);
-    jw_str(&w, "users");
-    jw_str(&w, "roles");
-    jw_str(&w, "everyone");
-    jw_end(&w);
-    jw_key(&w, "replied_user"), jw_bool(&w, message->reply_ping);
-    jw_end(&w);
+    json_key(&w, "allowed_mentions");
+    json_begin_object(&w);
+    json_key(&w, "parse");
+    json_begin_array(&w);
+    json_put(&w, "users");
+    json_put(&w, "roles");
+    json_put(&w, "everyone");
+    json_end_array(&w);
+    json_key(&w, "replied_user"), cima_json_write_bool(&w, message->reply_ping);
+    json_end_object(&w);
   }
 
-  jw_end(&w);
+  json_end_object(&w);
 
-  ApiRequest req = {.method = "POST", .path = path, .body = w.data};
+  ApiRequest req = {
+    .method = "POST", .path = path, .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 // messages of a channel are limited together whichever one is touched.
@@ -1007,20 +1012,22 @@ static void message_route(char *route, size_t cap, Snowflake channel_id,
 void api_edit_message(Api *api, Snowflake channel_id, Snowflake message_id,
                       const char *content, ApiDone done, void *ctx) {
   char path[128], route[128];
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   snprintf(path, sizeof path, "/channels/%" PRIu64 "/messages/%" PRIu64,
            channel_id, message_id);
   message_route(route, sizeof route, channel_id, "");
 
-  jw_object(&w);
-  jw_key(&w, "content"), jw_str(&w, content != nullptr ? content : "");
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "content", content != nullptr ? content : "");
+  json_end_object(&w);
 
-  ApiRequest req = {
-    .method = "PATCH", .path = path, .route = route, .body = w.data};
+  ApiRequest req = {.method = "PATCH",
+                    .path = path,
+                    .route = route,
+                    .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_delete_message(Api *api, Snowflake channel_id, Snowflake message_id,
@@ -1039,23 +1046,25 @@ void api_ack_message(Api *api, Snowflake channel_id, Snowflake message_id,
                      uint32_t flags, uint32_t last_viewed, ApiDone done,
                      void *ctx) {
   char path[128], route[128];
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   snprintf(path, sizeof path, "/channels/%" PRIu64 "/messages/%" PRIu64 "/ack",
            channel_id, message_id);
   message_route(route, sizeof route, channel_id, "/ack");
 
   // ack tokens are gone from discord's side, null is what is expected.
-  jw_object(&w);
-  jw_key(&w, "token"), jw_null(&w);
-  jw_key(&w, "flags"), jw_u64(&w, flags);
-  jw_key(&w, "last_viewed"), jw_u64(&w, last_viewed);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "token", nullptr);
+  json_field(&w, "flags", flags);
+  json_field(&w, "last_viewed", last_viewed);
+  json_end_object(&w);
 
-  ApiRequest req = {
-    .method = "POST", .path = path, .route = route, .body = w.data};
+  ApiRequest req = {.method = "POST",
+                    .path = path,
+                    .route = route,
+                    .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_trigger_typing(Api *api, Snowflake channel_id, ApiDone done,
@@ -1070,21 +1079,23 @@ void api_trigger_typing(Api *api, Snowflake channel_id, ApiDone done,
 void api_ack_manual(Api *api, Snowflake channel_id, Snowflake message_id,
                     uint32_t mentions, ApiDone done, void *ctx) {
   char path[128], route[128];
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   snprintf(path, sizeof path, "/channels/%" PRIu64 "/messages/%" PRIu64 "/ack",
            channel_id, message_id);
   message_route(route, sizeof route, channel_id, "/ack");
 
-  jw_object(&w);
-  jw_key(&w, "manual"), jw_bool(&w, true);
-  jw_key(&w, "mention_count"), jw_u64(&w, mentions);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "manual", true);
+  json_field(&w, "mention_count", mentions);
+  json_end_object(&w);
 
-  ApiRequest req = {
-    .method = "POST", .path = path, .route = route, .body = w.data};
+  ApiRequest req = {.method = "POST",
+                    .path = path,
+                    .route = route,
+                    .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_pin_message(Api *api, Snowflake channel_id, Snowflake message_id,
@@ -1143,77 +1154,81 @@ void api_remove_reaction(Api *api, Snowflake channel_id, Snowflake message_id,
 }
 
 void api_open_dm(Api *api, Snowflake user_id, ApiDone done, void *ctx) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
-  jw_object(&w);
-  jw_key(&w, "recipients");
-  jw_array(&w);
-  jw_id(&w, user_id);
-  jw_end(&w);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_key(&w, "recipients");
+  json_begin_array(&w);
+  snowflake_write(&w, user_id);
+  json_end_array(&w);
+  json_end_object(&w);
 
-  ApiRequest req = {
-    .method = "POST", .path = "/users/@me/channels", .body = w.data};
+  ApiRequest req = {.method = "POST",
+                    .path = "/users/@me/channels",
+                    .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_open_group(Api *api, const Snowflake *user_ids, size_t count,
                     ApiDone done, void *ctx) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
-  jw_object(&w);
-  jw_key(&w, "recipients");
-  jw_array(&w);
+  json_begin_object(&w);
+  json_key(&w, "recipients");
+  json_begin_array(&w);
 
   for (size_t i = 0; i < count; i++) {
-    jw_id(&w, user_ids[i]);
+    snowflake_write(&w, user_ids[i]);
   }
 
-  jw_end(&w);
-  jw_end(&w);
+  json_end_array(&w);
+  json_end_object(&w);
 
-  ApiRequest req = {
-    .method = "POST", .path = "/users/@me/channels", .body = w.data};
+  ApiRequest req = {.method = "POST",
+                    .path = "/users/@me/channels",
+                    .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_create_invite(Api *api, Snowflake channel_id, ApiDone done,
                        void *ctx) {
   char path[96];
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   snprintf(path, sizeof path, "/channels/%" PRIu64 "/invites", channel_id);
 
   // what the client sends for the link of its invite dialog.
-  jw_object(&w);
-  jw_key(&w, "max_age"), jw_u64(&w, 604800);
-  jw_key(&w, "max_uses"), jw_u64(&w, 0);
-  jw_key(&w, "target_type"), jw_null(&w);
-  jw_key(&w, "temporary"), jw_bool(&w, false);
-  jw_key(&w, "flags"), jw_u64(&w, 0);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "max_age", 604800);
+  json_field(&w, "max_uses", 0);
+  json_field(&w, "target_type", nullptr);
+  json_field(&w, "temporary", false);
+  json_field(&w, "flags", 0);
+  json_end_object(&w);
 
-  ApiRequest req = {.method = "POST", .path = path, .body = w.data};
+  ApiRequest req = {
+    .method = "POST", .path = path, .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }
 
 void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   // what the client sends for "Create My Own", the code being the template
   // its new servers start from.
-  jw_object(&w);
-  jw_key(&w, "name"), jw_str(&w, name);
-  jw_key(&w, "icon"), jw_null(&w);
-  jw_key(&w, "channels"), jw_array(&w), jw_end(&w);
-  jw_key(&w, "system_channel_id"), jw_null(&w);
-  jw_key(&w, "guild_template_code"), jw_str(&w, "2TffvPucqHkN");
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "name", name);
+  json_field(&w, "icon", nullptr);
+  json_key(&w, "channels"), json_begin_array(&w), json_end_array(&w);
+  json_field(&w, "system_channel_id", nullptr);
+  json_field(&w, "guild_template_code", "2TffvPucqHkN");
+  json_end_object(&w);
 
-  ApiRequest req = {.method = "POST", .path = "/guilds", .body = w.data};
+  ApiRequest req = {
+    .method = "POST", .path = "/guilds", .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
-  jw_free(&w);
+  cima_json_writer_dispose(&w);
 }

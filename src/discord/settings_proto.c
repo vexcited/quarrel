@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "discord/util.h"
-#include "json.h"
+#include <cima/json_dsl.h>
 
 // the field numbers, from the protobuf-ts classes of the client's bundle:
 //   PreloadedUserSettings  status 11, guild_folders 14
@@ -130,24 +130,25 @@ static uint64_t wrapped_number(Reader r) {
   return 0;
 }
 
-static void write_wrapped_string(JsonWriter *w, Reader r) {
+static void write_wrapped_string(cima_json_writer *w, Reader r) {
   Field f;
 
   while (next_field(&r, &f)) {
     if (f.number == 1 && f.wire == WIRE_BYTES) {
-      jw_strn(w, (const char *)f.bytes.at, (size_t)(f.bytes.end - f.bytes.at));
+      cima_json_write_string_n(w, (const char *)f.bytes.at,
+                               (size_t)(f.bytes.end - f.bytes.at));
       return;
     }
   }
 
-  jw_str(w, "");
+  json_put(w, "");
 }
 
 // a repeated fixed64 comes packed, or one value a field from old writers.
-static void write_ids(JsonWriter *w, Reader r, uint32_t number) {
+static void write_ids(cima_json_writer *w, Reader r, uint32_t number) {
   Field f;
 
-  jw_array(w);
+  json_begin_array(w);
 
   while (next_field(&r, &f)) {
     if (f.number != number) {
@@ -155,24 +156,24 @@ static void write_ids(JsonWriter *w, Reader r, uint32_t number) {
     }
 
     if (f.wire == WIRE_FIXED64) {
-      jw_id(w, f.value);
+      snowflake_write(w, f.value);
     }
     else if (f.wire == WIRE_BYTES) {
       while (!f.bytes.bad && f.bytes.end - f.bytes.at >= 8) {
-        jw_id(w, read_fixed(&f.bytes, 8));
+        snowflake_write(w, read_fixed(&f.bytes, 8));
       }
     }
   }
 
-  jw_end(w);
+  json_end_array(w);
 }
 
-static void write_folder(JsonWriter *w, Reader r) {
+static void write_folder(cima_json_writer *w, Reader r) {
   Reader fields = r;
   Field f;
 
-  jw_object(w);
-  jw_key(w, "guild_ids"), write_ids(w, r, 1);
+  json_begin_object(w);
+  json_key(w, "guild_ids"), write_ids(w, r, 1);
 
   while (next_field(&fields, &f)) {
     if (f.wire != WIRE_BYTES) {
@@ -181,28 +182,28 @@ static void write_folder(JsonWriter *w, Reader r) {
 
     switch (f.number) {
       case 2:
-        jw_key(w, "id"), jw_id(w, wrapped_number(f.bytes));
+        json_key(w, "id"), snowflake_write(w, wrapped_number(f.bytes));
         break;
 
       case 3:
-        jw_key(w, "name"), write_wrapped_string(w, f.bytes);
+        json_key(w, "name"), write_wrapped_string(w, f.bytes);
         break;
 
       case 4:
-        jw_key(w, "color"), jw_u64(w, wrapped_number(f.bytes));
+        json_field(w, "color", wrapped_number(f.bytes));
         break;
     }
   }
 
-  jw_end(w);
+  json_end_object(w);
 }
 
-static void write_folders(JsonWriter *w, Reader r) {
+static void write_folders(cima_json_writer *w, Reader r) {
   Reader fields = r;
   Field f;
 
-  jw_key(w, "guild_folders");
-  jw_array(w);
+  json_key(w, "guild_folders");
+  json_begin_array(w);
 
   while (next_field(&fields, &f)) {
     if (f.number == 1 && f.wire == WIRE_BYTES) {
@@ -210,50 +211,52 @@ static void write_folders(JsonWriter *w, Reader r) {
     }
   }
 
-  jw_end(w);
-  jw_key(w, "guild_positions"), write_ids(w, r, 2);
+  json_end_array(w);
+  json_key(w, "guild_positions"), write_ids(w, r, 2);
 }
 
-static void write_custom_status(JsonWriter *w, Reader r) {
+static void write_custom_status(cima_json_writer *w, Reader r) {
   Field f;
 
-  jw_object(w);
+  json_begin_object(w);
 
   while (next_field(&r, &f)) {
     size_t len = (size_t)(f.bytes.end - f.bytes.at);
 
     if (f.number == 1 && f.wire == WIRE_BYTES) {
-      jw_key(w, "text"), jw_strn(w, (const char *)f.bytes.at, len);
+      json_key(w, "text"),
+        cima_json_write_string_n(w, (const char *)f.bytes.at, len);
     }
     else if (f.number == 2 && f.wire == WIRE_FIXED64) {
-      jw_key(w, "emoji_id"), jw_id(w, f.value);
+      json_key(w, "emoji_id"), snowflake_write(w, f.value);
     }
     else if (f.number == 3 && f.wire == WIRE_BYTES) {
-      jw_key(w, "emoji_name"), jw_strn(w, (const char *)f.bytes.at, len);
+      json_key(w, "emoji_name"),
+        cima_json_write_string_n(w, (const char *)f.bytes.at, len);
     }
     else if (f.number == 4 && f.wire == WIRE_FIXED64) {
-      jw_key(w, "expires_at_ms"), jw_id(w, f.value);
+      json_key(w, "expires_at_ms"), snowflake_write(w, f.value);
     }
   }
 
-  jw_end(w);
+  json_end_object(w);
 }
 
-static void write_status(JsonWriter *w, Reader r) {
+static void write_status(cima_json_writer *w, Reader r) {
   char *section = base64_encode(r.at, (size_t)(r.end - r.at));
   uint64_t expires = 0;
   bool custom = false;
   Field f;
 
-  jw_key(w, "status_proto"), jw_str(w, section);
+  json_field(w, "status_proto", section);
   free(section);
 
   while (next_field(&r, &f)) {
     if (f.number == 1 && f.wire == WIRE_BYTES) {
-      jw_key(w, "status"), write_wrapped_string(w, f.bytes);
+      json_key(w, "status"), write_wrapped_string(w, f.bytes);
     }
     else if (f.number == 2 && f.wire == WIRE_BYTES) {
-      jw_key(w, "custom_status"), write_custom_status(w, f.bytes);
+      json_key(w, "custom_status"), write_custom_status(w, f.bytes);
       custom = true;
     }
     else if (f.number == 4 && f.wire == WIRE_FIXED64) {
@@ -262,10 +265,10 @@ static void write_status(JsonWriter *w, Reader r) {
   }
 
   // both are gone when the message leaves them out.
-  jw_key(w, "status_expires_at_ms"), jw_id(w, expires);
+  json_key(w, "status_expires_at_ms"), snowflake_write(w, expires);
 
   if (!custom) {
-    jw_key(w, "custom_status"), jw_null(w);
+    json_field(w, "custom_status", nullptr);
   }
 }
 
@@ -391,10 +394,10 @@ char *settings_proto_to_json(const char *base64) {
   }
 
   Reader r = {.at = bytes, .end = bytes + len};
-  JsonWriter w = {};
+  cima_json_writer w = {};
   Field f;
 
-  jw_object(&w);
+  json_begin_object(&w);
 
   while (next_field(&r, &f)) {
     if (f.wire != WIRE_BYTES) {
@@ -409,15 +412,15 @@ char *settings_proto_to_json(const char *base64) {
     }
   }
 
-  jw_end(&w);
+  json_end_object(&w);
   free(bytes);
 
   if (r.bad) {
-    jw_free(&w);
+    cima_json_writer_dispose(&w);
     return nullptr;
   }
 
-  return jw_take(&w);
+  return cima_json_writer_finish(&w, nullptr);
 }
 
 // from the same classes:

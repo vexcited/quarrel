@@ -16,7 +16,7 @@
 #include <unistd.h>
 
 #include "discord/api.h"
-#include "json.h"
+#include <cima/json_dsl.h>
 #include "platform/platform.h"
 #include "voice/audio.h"
 #include "voice/dave.h"
@@ -641,20 +641,20 @@ static void *media_thread(void *arg) {
 /* the socket: what is sent.                                                  */
 /* ========================================================================== */
 
-static void begin(JsonWriter *w, int op) {
-  jw_object(w);
-  jw_key(w, "op"), jw_i64(w, op);
-  jw_key(w, "d");
+static void begin(cima_json_writer *w, int op) {
+  json_begin_object(w);
+  json_field(w, "op", op);
+  json_key(w, "d");
 }
 
-static void send_json(Voice *v, JsonWriter *w) {
-  jw_end(w);
+static void send_json(Voice *v, cima_json_writer *w) {
+  json_end_object(w);
 
   if (v->ws != nullptr) {
-    platform_ws_send_text(v->ws, w->data);
+    platform_ws_send_text(v->ws, cima_json_writer_text(w));
   }
 
-  jw_free(w);
+  cima_json_writer_dispose(w);
 }
 
 static void send_binary(Voice *v, uint8_t op, const uint8_t *bytes,
@@ -673,105 +673,105 @@ static void send_binary(Voice *v, uint8_t op, const uint8_t *bytes,
 }
 
 static void send_identify(Voice *v) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin(&w, OP_IDENTIFY);
-  jw_object(&w);
-  jw_key(&w, "server_id"), jw_id(&w, v->guild_id);
-  jw_key(&w, "channel_id"), jw_id(&w, v->channel_id);
-  jw_key(&w, "user_id"), jw_id(&w, v->self_id);
-  jw_key(&w, "session_id"), jw_str(&w, v->session_id);
-  jw_key(&w, "token"), jw_str(&w, v->token);
-  jw_key(&w, "max_dave_protocol_version"), jw_i64(&w, dave_max_version());
-  jw_key(&w, "video"), jw_bool(&w, false);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_key(&w, "server_id"), snowflake_write(&w, v->guild_id);
+  json_key(&w, "channel_id"), snowflake_write(&w, v->channel_id);
+  json_key(&w, "user_id"), snowflake_write(&w, v->self_id);
+  json_field(&w, "session_id", v->session_id);
+  json_field(&w, "token", v->token);
+  json_field(&w, "max_dave_protocol_version", dave_max_version());
+  json_field(&w, "video", false);
+  json_end_object(&w);
   send_json(v, &w);
 }
 
 static void send_resume(Voice *v) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin(&w, OP_RESUME);
-  jw_object(&w);
-  jw_key(&w, "server_id"), jw_id(&w, v->guild_id);
-  jw_key(&w, "session_id"), jw_str(&w, v->session_id);
-  jw_key(&w, "token"), jw_str(&w, v->token);
-  jw_key(&w, "seq_ack"), jw_i64(&w, v->seq);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_key(&w, "server_id"), snowflake_write(&w, v->guild_id);
+  json_field(&w, "session_id", v->session_id);
+  json_field(&w, "token", v->token);
+  json_field(&w, "seq_ack", v->seq);
+  json_end_object(&w);
   send_json(v, &w);
 }
 
 static void send_select_protocol(Voice *v, const char *address,
                                  uint16_t port) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
   char connection[37];
 
   platform_uuid(connection);
   begin(&w, OP_SELECT_PROTOCOL);
-  jw_object(&w);
-  jw_key(&w, "protocol"), jw_str(&w, "udp");
-  jw_key(&w, "data");
-  jw_object(&w);
-  jw_key(&w, "address"), jw_str(&w, address);
-  jw_key(&w, "port"), jw_i64(&w, port);
-  jw_key(&w, "mode"), jw_str(&w, MODE);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "protocol", "udp");
+  json_key(&w, "data");
+  json_begin_object(&w);
+  json_field(&w, "address", address);
+  json_field(&w, "port", port);
+  json_field(&w, "mode", MODE);
+  json_end_object(&w);
   // the desktop client repeats them beside `data`.
-  jw_key(&w, "address"), jw_str(&w, address);
-  jw_key(&w, "port"), jw_i64(&w, port);
-  jw_key(&w, "mode"), jw_str(&w, MODE);
-  jw_key(&w, "codecs");
-  jw_array(&w);
-  jw_object(&w);
-  jw_key(&w, "name"), jw_str(&w, "opus");
-  jw_key(&w, "type"), jw_str(&w, "audio");
-  jw_key(&w, "priority"), jw_i64(&w, 1000);
-  jw_key(&w, "payload_type"), jw_i64(&w, RTP_OPUS);
-  jw_end(&w);
-  jw_end(&w);
-  jw_key(&w, "rtc_connection_id"), jw_str(&w, connection);
-  jw_end(&w);
+  json_field(&w, "address", address);
+  json_field(&w, "port", port);
+  json_field(&w, "mode", MODE);
+  json_key(&w, "codecs");
+  json_begin_array(&w);
+  json_begin_object(&w);
+  json_field(&w, "name", "opus");
+  json_field(&w, "type", "audio");
+  json_field(&w, "priority", 1000);
+  json_field(&w, "payload_type", RTP_OPUS);
+  json_end_object(&w);
+  json_end_array(&w);
+  json_field(&w, "rtc_connection_id", connection);
+  json_end_object(&w);
   send_json(v, &w);
 }
 
 static void send_speaking(Voice *v, bool speaking) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin(&w, OP_SPEAKING);
-  jw_object(&w);
-  jw_key(&w, "speaking"), jw_i64(&w, speaking ? 1 : 0);
-  jw_key(&w, "delay"), jw_i64(&w, 0);
-  jw_key(&w, "ssrc"), jw_u64(&w, v->ssrc);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "speaking", speaking ? 1 : 0);
+  json_field(&w, "delay", 0);
+  json_field(&w, "ssrc", v->ssrc);
+  json_end_object(&w);
   send_json(v, &w);
 }
 
 // what the account sends with: sound only.
 static void send_sources(Voice *v) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin(&w, OP_VIDEO);
-  jw_object(&w);
-  jw_key(&w, "audio_ssrc"), jw_u64(&w, v->ssrc);
-  jw_key(&w, "video_ssrc"), jw_i64(&w, 0);
-  jw_key(&w, "rtx_ssrc"), jw_i64(&w, 0);
-  jw_key(&w, "streams");
-  jw_array(&w);
-  jw_end(&w);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "audio_ssrc", v->ssrc);
+  json_field(&w, "video_ssrc", 0);
+  json_field(&w, "rtx_ssrc", 0);
+  json_key(&w, "streams");
+  json_begin_array(&w);
+  json_end_array(&w);
+  json_end_object(&w);
   send_json(v, &w);
 }
 
 static void on_heartbeat(void *ctx) {
   Voice *v = ctx;
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   v->beat_at = platform_now();
   begin(&w, OP_HEARTBEAT);
-  jw_object(&w);
-  jw_key(&w, "t"), jw_u64(&w, now_ms());
-  jw_key(&w, "seq_ack"), jw_i64(&w, v->seq);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "t", now_ms());
+  json_field(&w, "seq_ack", v->seq);
+  json_end_object(&w);
   send_json(v, &w);
   v->heartbeat = platform_timer(v->heartbeat_every, on_heartbeat, v);
 }
@@ -789,12 +789,12 @@ static void dave_commit_welcome(void *ctx, const uint8_t *bytes, size_t len) {
 }
 
 static void send_transition(Voice *v, int op, uint16_t transition_id) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin(&w, op);
-  jw_object(&w);
-  jw_key(&w, "transition_id"), jw_i64(&w, transition_id);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "transition_id", transition_id);
+  json_end_object(&w);
   send_json(v, &w);
 }
 
@@ -1033,11 +1033,11 @@ static bool start_media(Voice *v, const char *ip, uint16_t port) {
   return true;
 }
 
-static void on_ready(Voice *v, const Json *d) {
+static void on_ready(Voice *v, const cima_json *d) {
   bool supported = false;
 
-  json_each(mode, json_get(d, "modes")) {
-    supported |= strcmp(json_str(mode, ""), MODE) == 0;
+  CIMA_EACH(mode, json_items(json_get(d, "modes"))) {
+    supported |= strcmp(json_or(mode, ""), MODE) == 0;
   }
 
   if (!supported) {
@@ -1045,12 +1045,13 @@ static void on_ready(Voice *v, const Json *d) {
     return;
   }
 
-  v->ssrc = (uint32_t)json_get_u64(d, "ssrc");
+  v->ssrc = (uint32_t)json_get_coerce(d, "ssrc", (uint64_t)0);
 
-  if (!start_media(v, json_get_str(d, "ip") != nullptr
-                        ? json_get_str(d, "ip")
-                        : "",
-                   (uint16_t)json_get_u64(d, "port"))) {
+  if (!start_media(v,
+                   json_get_or(d, "ip", nullptr) != nullptr
+                     ? json_get_or(d, "ip", nullptr)
+                     : "",
+                   (uint16_t)json_get_coerce(d, "port", (uint64_t)0))) {
     fail(v, "The voice server could not be reached.");
   }
 }
@@ -1170,20 +1171,22 @@ static void ask_microphone(Voice *v) {
   audio_ask(on_asked, p);
 }
 
-static void on_described(Voice *v, const Json *d) {
-  const Json *key = json_get(d, "secret_key");
+static void on_described(Voice *v, const cima_json *d) {
+  const cima_json *key = json_get(d, "secret_key");
   uint8_t secret[32] = {};
   size_t n = 0;
 
-  if (strcmp(json_get_str(d, "mode") != nullptr ? json_get_str(d, "mode") : "",
+  if (strcmp(json_get_or(d, "mode", nullptr) != nullptr
+               ? json_get_or(d, "mode", nullptr)
+               : "",
              MODE) != 0 ||
       json_len(key) != sizeof secret) {
     fail(v, "The voice server chose an encryption Quarrel does not know.");
     return;
   }
 
-  json_each(byte, key) {
-    secret[n++] = (uint8_t)json_u64(byte);
+  CIMA_EACH(byte, json_items(key)) {
+    secret[n++] = (uint8_t)snowflake_of(byte);
   }
 
   int error = 0;
@@ -1206,7 +1209,8 @@ static void on_described(Voice *v, const Json *d) {
   opus_encoder_ctl(v->encoder, OPUS_SET_PACKET_LOSS_PERC(10));
 
   dave_set_ssrc(v->dave, v->ssrc);
-  dave_selected(v->dave, (uint16_t)json_get_u64(d, "dave_protocol_version"));
+  dave_selected(v->dave, (uint16_t)json_get_coerce(d, "dave_protocol_version",
+                                                   (uint64_t)0));
   atomic_store(&v->keyed, true);
 
   platform_timer_cancel(v->watchdog);
@@ -1225,17 +1229,18 @@ static void on_described(Voice *v, const Json *d) {
 static void on_text(void *ctx, const char *data, size_t len) {
   Voice *v = ctx;
   cilo_arena arena = {};
-  const Json *message = json_parse(&arena, data, len, nullptr);
-  const Json *d = json_get(message, "d");
-  int op = (int)json_get_i64(message, "op", -1);
+  const cima_json *message = json_parse(&arena, data, len, nullptr);
+  const cima_json *d = json_get(message, "d");
+  int op = (int)json_get_coerce(message, "op", (int64_t)-1);
 
   if (json_get(message, "seq") != nullptr) {
-    v->seq = json_get_i64(message, "seq", v->seq);
+    v->seq = json_get_coerce(message, "seq", (int64_t)(v->seq));
   }
 
   switch (op) {
     case OP_HELLO:
-      v->heartbeat_every = json_get_f64(d, "heartbeat_interval", 13750) / 1000;
+      v->heartbeat_every =
+        json_get_coerce(d, "heartbeat_interval", (double)13750) / 1000;
       platform_timer_cancel(v->heartbeat);
       v->heartbeat = platform_timer(v->heartbeat_every, on_heartbeat, v);
 
@@ -1265,44 +1270,46 @@ static void on_text(void *ctx, const char *data, size_t len) {
       changed(v);
       break;
     case OP_SPEAKING:
-      assign(v, json_get_u64(d, "user_id"), (uint32_t)json_get_u64(d, "ssrc"));
-      dave_add_user(v->dave, json_get_u64(d, "user_id"));
+      assign(v, snowflake_of(json_get(d, "user_id")),
+             (uint32_t)json_get_coerce(d, "ssrc", (uint64_t)0));
+      dave_add_user(v->dave, snowflake_of(json_get(d, "user_id")));
       break;
     case OP_VIDEO:
-      assign(v, json_get_u64(d, "user_id"),
-             (uint32_t)json_get_u64(d, "audio_ssrc"));
-      dave_add_user(v->dave, json_get_u64(d, "user_id"));
+      assign(v, snowflake_of(json_get(d, "user_id")),
+             (uint32_t)json_get_coerce(d, "audio_ssrc", (uint64_t)0));
+      dave_add_user(v->dave, snowflake_of(json_get(d, "user_id")));
       break;
     case OP_CLIENTS_CONNECT:
-      json_each(user_id, json_get(d, "user_ids")) {
+      CIMA_EACH(user_id, json_items(json_get(d, "user_ids"))) {
         if (v->dave != nullptr) {
-          dave_add_user(v->dave, json_u64(user_id));
+          dave_add_user(v->dave, snowflake_of(user_id));
         }
       }
 
       break;
     case OP_CLIENT_DISCONNECT:
-      unassign(v, json_get_u64(d, "user_id"));
+      unassign(v, snowflake_of(json_get(d, "user_id")));
 
       if (v->dave != nullptr) {
-        dave_remove_user(v->dave, json_get_u64(d, "user_id"));
+        dave_remove_user(v->dave, snowflake_of(json_get(d, "user_id")));
       }
 
       changed(v);
       break;
     case OP_DAVE_PREPARE_TRANSITION:
-      dave_prepare_transition(v->dave,
-                              (uint16_t)json_get_u64(d, "transition_id"),
-                              (uint16_t)json_get_u64(d, "protocol_version"));
+      dave_prepare_transition(
+        v->dave, (uint16_t)snowflake_of(json_get(d, "transition_id")),
+        (uint16_t)json_get_coerce(d, "protocol_version", (uint64_t)0));
       break;
     case OP_DAVE_EXECUTE_TRANSITION:
-      dave_execute_transition(v->dave,
-                              (uint16_t)json_get_u64(d, "transition_id"));
+      dave_execute_transition(
+        v->dave, (uint16_t)snowflake_of(json_get(d, "transition_id")));
       changed(v);
       break;
     case OP_DAVE_PREPARE_EPOCH:
-      dave_prepare_epoch(v->dave, json_get_u64(d, "epoch"),
-                         (uint16_t)json_get_u64(d, "protocol_version"));
+      dave_prepare_epoch(
+        v->dave, json_get_coerce(d, "epoch", (uint64_t)0),
+        (uint16_t)json_get_coerce(d, "protocol_version", (uint64_t)0));
       break;
     default:
       break;

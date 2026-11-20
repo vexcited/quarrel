@@ -8,16 +8,16 @@
 
 // a versioned field is an object holding its entries, a plain one the
 // entries themselves.
-static const Json *entries_of(const Json *field) {
-  if (json_is(field, JSON_OBJECT)) {
+static const cima_json *entries_of(const cima_json *field) {
+  if (json_type(field) == CIMA_JSON_OBJECT) {
     return json_get(field, "entries");
   }
 
   return field;
 }
 
-static void put_presences(Store *s, const Json *presences) {
-  json_each(presence, presences) {
+static void put_presences(Store *s, const cima_json *presences) {
+  CIMA_EACH(presence, json_items(presences)) {
     store_put_presence(s, presence);
   }
 }
@@ -31,46 +31,42 @@ static void put_settings_proto(Store *s, const char *base64) {
   }
 
   cilo_arena arena = {};
-  const Json *settings = json_parse(&arena, text, strlen(text), nullptr);
+  const cima_json *settings = json_parse(&arena, text, strlen(text), nullptr);
 
   if (settings != nullptr) {
     store_put_user_settings(s, settings);
   }
 
   cilo_arena_drop(&arena);
-  free(text);
+  cilo_mfree(text);
 }
 
 // merged members and presences line up with the guilds of the same payload,
 // one array per guild.
-static void put_merged(Store *s, const Json *guilds, const Json *members,
-                       const Json *presences) {
-  const Json *guild_members = json_first(members);
-  const Json *guild_presences = json_first(presences);
+static void put_merged(Store *s, const cima_json *guilds,
+                       const cima_json *members, const cima_json *presences) {
+  size_t i = 0;
 
-  json_each(guild, guilds) {
-    Guild *g = store_guild(s, json_get_u64(guild, "id"));
+  CIMA_EACH(guild, json_items(guilds)) {
+    Guild *g = store_guild(s, snowflake_of(json_get(guild, "id")));
 
     if (g != nullptr) {
-      json_each(member, guild_members) {
+      CIMA_EACH(member, json_items(json_index(members, i))) {
         store_put_member(s, g, member, 0);
       }
     }
 
-    put_presences(s, guild_presences);
-
-    guild_members = guild_members != nullptr ? guild_members->next : nullptr;
-    guild_presences =
-      guild_presences != nullptr ? guild_presences->next : nullptr;
+    put_presences(s, json_index(presences, i));
+    i++;
   }
 }
 
-static void on_ready(Store *s, const Json *d) {
+static void on_ready(Store *s, const cima_json *d) {
   // a new session starts from nothing: what was missed is not replayed.
   store_reset(s);
 
   // with deduplicated users every object below only names its users.
-  json_each(user, json_get(d, "users")) {
+  CIMA_EACH(user, json_items(json_get(d, "users"))) {
     store_put_user(s, user);
   }
 
@@ -82,18 +78,18 @@ static void on_ready(Store *s, const Json *d) {
     s->self_status = STATUS_ONLINE;
   }
 
-  if (json_is(json_get(d, "user_settings"), JSON_OBJECT)) {
+  if (json_type(json_get(d, "user_settings")) == CIMA_JSON_OBJECT) {
     store_put_user_settings(s, json_get(d, "user_settings"));
   }
 
-  put_settings_proto(s, json_get_str(d, "user_settings_proto"));
-  s->notify_flags =
-    (uint32_t)json_get_u64(json_get(d, "notification_settings"), "flags");
+  put_settings_proto(s, json_get_or(d, "user_settings_proto", nullptr));
+  s->notify_flags = (uint32_t)snowflake_of(
+    json_get(json_get(d, "notification_settings"), "flags"));
 
-  const Json *guilds = json_get(d, "guilds");
-  const Json *merged = json_get(d, "merged_presences");
+  const cima_json *guilds = json_get(d, "guilds");
+  const cima_json *merged = json_get(d, "merged_presences");
 
-  json_each(guild, guilds) {
+  CIMA_EACH(guild, json_items(guilds)) {
     store_put_guild(s, guild);
   }
 
@@ -102,25 +98,26 @@ static void on_ready(Store *s, const Json *d) {
   put_presences(s, json_get(merged, "friends"));
   put_presences(s, json_get(d, "presences"));
 
-  json_each(channel, json_get(d, "private_channels")) {
+  CIMA_EACH(channel, json_items(json_get(d, "private_channels"))) {
     store_put_channel(s, channel, 0);
   }
 
-  json_each(relationship, json_get(d, "relationships")) {
+  CIMA_EACH(relationship, json_items(json_get(d, "relationships"))) {
     store_put_relationship(s, relationship);
   }
 
-  json_each(entry, entries_of(json_get(d, "read_state"))) {
+  CIMA_EACH(entry, json_items(entries_of(json_get(d, "read_state")))) {
     store_put_read_state(s, entry);
   }
 
-  json_each(entry, entries_of(json_get(d, "user_guild_settings"))) {
+  CIMA_EACH(entry, json_items(entries_of(json_get(d, "user_guild_settings")))) {
     store_put_guild_settings(s, entry);
   }
 
-  str_set(&s->session_id, json_get_str(d, "session_id"));
-  str_set(&s->resume_gateway_url, json_get_str(d, "resume_gateway_url"));
-  str_set(&s->refreshed_token, json_get_str(d, "auth_token"));
+  str_set(&s->session_id, json_get_or(d, "session_id", nullptr));
+  str_set(&s->resume_gateway_url,
+          json_get_or(d, "resume_gateway_url", nullptr));
+  str_set(&s->refreshed_token, json_get_or(d, "auth_token", nullptr));
 
   s->ready = true;
   s->guilds_version++;
@@ -128,30 +125,30 @@ static void on_ready(Store *s, const Json *d) {
   s->version++;
 }
 
-static void on_ready_supplemental(Store *s, const Json *d) {
-  const Json *merged = json_get(d, "merged_presences");
+static void on_ready_supplemental(Store *s, const cima_json *d) {
+  const cima_json *merged = json_get(d, "merged_presences");
 
   put_merged(s, json_get(d, "guilds"), json_get(d, "merged_members"),
              json_get(merged, "guilds"));
   put_presences(s, json_get(merged, "friends"));
 
-  json_each(guild, json_get(d, "guilds")) {
-    Snowflake id = json_get_u64(guild, "id");
+  CIMA_EACH(guild, json_items(json_get(d, "guilds"))) {
+    Snowflake id = snowflake_of(json_get(guild, "id"));
 
-    json_each(state, json_get(guild, "voice_states")) {
+    CIMA_EACH(state, json_items(json_get(guild, "voice_states"))) {
       store_put_voice_state(s, state, id);
     }
   }
 
-  json_each(channel, json_get(d, "lazy_private_channels")) {
+  CIMA_EACH(channel, json_items(json_get(d, "lazy_private_channels"))) {
     store_put_channel(s, channel, 0);
   }
 
   s->version++;
 }
 
-static void on_guild_delete(Store *s, const Json *d) {
-  Snowflake id = json_get_u64(d, "id");
+static void on_guild_delete(Store *s, const cima_json *d) {
+  Snowflake id = snowflake_of(json_get(d, "id"));
   Guild *g = store_guild(s, id);
 
   if (g == nullptr) {
@@ -159,7 +156,7 @@ static void on_guild_delete(Store *s, const Json *d) {
   }
 
   // an outage keeps the guild, leaving or being removed drops it.
-  if (json_get_bool(d, "unavailable", false)) {
+  if (json_get_coerce(d, "unavailable", false)) {
     g->unavailable = true;
     s->guilds_version++;
     store_touch_guild(s, g);
@@ -169,50 +166,50 @@ static void on_guild_delete(Store *s, const Json *d) {
   store_remove_guild(s, id);
 }
 
-static void on_unreads(Store *s, const Json *channels) {
-  json_each(channel, channels) {
-    store_set_last_message(s, json_get_u64(channel, "id"),
-                           json_get_u64(channel, "last_message_id"));
+static void on_unreads(Store *s, const cima_json *channels) {
+  CIMA_EACH(channel, json_items(channels)) {
+    store_set_last_message(s, snowflake_of(json_get(channel, "id")),
+                           snowflake_of(json_get(channel, "last_message_id")));
   }
 }
 
-static void on_reaction_add_many(Store *s, const Json *d) {
-  Snowflake channel_id = json_get_u64(d, "channel_id");
-  Snowflake message_id = json_get_u64(d, "message_id");
+static void on_reaction_add_many(Store *s, const cima_json *d) {
+  Snowflake channel_id = snowflake_of(json_get(d, "channel_id"));
+  Snowflake message_id = snowflake_of(json_get(d, "message_id"));
 
-  json_each(reaction, json_get(d, "reactions")) {
-    json_each(user, json_get(reaction, "users")) {
-      store_reaction_add(s, channel_id, message_id, json_u64(user),
+  CIMA_EACH(reaction, json_items(json_get(d, "reactions"))) {
+    CIMA_EACH(user, json_items(json_get(reaction, "users"))) {
+      store_reaction_add(s, channel_id, message_id, snowflake_of(user),
                          json_get(reaction, "emoji"));
     }
   }
 }
 
-static void on_thread_members(Store *s, const Json *d) {
-  Snowflake id = json_get_u64(d, "id");
+static void on_thread_members(Store *s, const cima_json *d) {
+  Snowflake id = snowflake_of(json_get(d, "id"));
 
-  json_each(member, json_get(d, "added_members")) {
-    if (json_get_u64(member, "user_id") == s->self_id) {
+  CIMA_EACH(member, json_items(json_get(d, "added_members"))) {
+    if (snowflake_of(json_get(member, "user_id")) == s->self_id) {
       store_set_thread_joined(s, id, true);
     }
   }
 
-  json_each(removed, json_get(d, "removed_member_ids")) {
-    if (json_u64(removed) == s->self_id) {
+  CIMA_EACH(removed, json_items(json_get(d, "removed_member_ids"))) {
+    if (snowflake_of(removed) == s->self_id) {
       store_set_thread_joined(s, id, false);
     }
   }
 }
 
-void events_dispatch(Store *s, const char *type, const Json *d) {
+void events_dispatch(Store *s, const char *type, const cima_json *d) {
   if (s == nullptr || type == nullptr) {
     return;
   }
 
 #define IS(name) (strcmp(type, name) == 0)
 
-  Snowflake guild_id = json_get_u64(d, "guild_id");
-  Snowflake channel_id = json_get_u64(d, "channel_id");
+  Snowflake guild_id = snowflake_of(json_get(d, "guild_id"));
+  Snowflake channel_id = snowflake_of(json_get(d, "channel_id"));
   Guild *g = store_guild(s, guild_id);
 
   if (IS("READY")) {
@@ -231,33 +228,38 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
     store_update_message(s, d);
   }
   else if (IS("MESSAGE_DELETE")) {
-    store_remove_message(s, channel_id, json_get_u64(d, "id"));
+    store_remove_message(s, channel_id, snowflake_of(json_get(d, "id")));
   }
   else if (IS("MESSAGE_DELETE_BULK")) {
-    json_each(id, json_get(d, "ids")) {
-      store_remove_message(s, channel_id, json_u64(id));
+    CIMA_EACH(id, json_items(json_get(d, "ids"))) {
+      store_remove_message(s, channel_id, snowflake_of(id));
     }
   }
   else if (IS("MESSAGE_REACTION_ADD")) {
-    if (g != nullptr && json_is(json_get(d, "member"), JSON_OBJECT)) {
-      store_put_member(s, g, json_get(d, "member"), json_get_u64(d, "user_id"));
+    if (g != nullptr &&
+        (json_type(json_get(d, "member")) == CIMA_JSON_OBJECT)) {
+      store_put_member(s, g, json_get(d, "member"),
+                       snowflake_of(json_get(d, "user_id")));
     }
 
-    store_reaction_add(s, channel_id, json_get_u64(d, "message_id"),
-                       json_get_u64(d, "user_id"), json_get(d, "emoji"));
+    store_reaction_add(s, channel_id, snowflake_of(json_get(d, "message_id")),
+                       snowflake_of(json_get(d, "user_id")),
+                       json_get(d, "emoji"));
   }
   else if (IS("MESSAGE_REACTION_ADD_MANY")) {
     on_reaction_add_many(s, d);
   }
   else if (IS("MESSAGE_REACTION_REMOVE")) {
-    store_reaction_remove(s, channel_id, json_get_u64(d, "message_id"),
-                          json_get_u64(d, "user_id"), json_get(d, "emoji"));
+    store_reaction_remove(
+      s, channel_id, snowflake_of(json_get(d, "message_id")),
+      snowflake_of(json_get(d, "user_id")), json_get(d, "emoji"));
   }
   else if (IS("MESSAGE_REACTION_REMOVE_ALL")) {
-    store_reaction_clear(s, channel_id, json_get_u64(d, "message_id"), nullptr);
+    store_reaction_clear(s, channel_id, snowflake_of(json_get(d, "message_id")),
+                         nullptr);
   }
   else if (IS("MESSAGE_REACTION_REMOVE_EMOJI")) {
-    store_reaction_clear(s, channel_id, json_get_u64(d, "message_id"),
+    store_reaction_clear(s, channel_id, snowflake_of(json_get(d, "message_id")),
                          json_get(d, "emoji"));
   }
   else if (IS("MESSAGE_ACK")) {
@@ -268,13 +270,13 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
     store_put_channel(s, d, 0);
   }
   else if (IS("CHANNEL_DELETE") || IS("THREAD_DELETE")) {
-    store_remove_channel(s, json_get_u64(d, "id"));
+    store_remove_channel(s, snowflake_of(json_get(d, "id")));
   }
   else if (IS("THREAD_LIST_SYNC")) {
     store_sync_threads(s, d);
   }
   else if (IS("THREAD_MEMBER_UPDATE")) {
-    store_set_thread_joined(s, json_get_u64(d, "id"), true);
+    store_set_thread_joined(s, snowflake_of(json_get(d, "id")), true);
   }
   else if (IS("THREAD_MEMBERS_UPDATE")) {
     on_thread_members(s, d);
@@ -284,7 +286,7 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
   }
   else if (IS("CHANNEL_RECIPIENT_REMOVE")) {
     store_recipient_remove(s, channel_id,
-                           json_get_u64(json_get(d, "user"), "id"));
+                           snowflake_of(json_get(json_get(d, "user"), "id")));
   }
   else if (IS("CHANNEL_UNREAD_UPDATE")) {
     on_unreads(s, json_get(d, "channel_unread_updates"));
@@ -295,12 +297,12 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
   else if (IS("PASSIVE_UPDATE_V2")) {
     on_unreads(s, json_get(d, "updated_channels"));
 
-    json_each(state, json_get(d, "updated_voice_states")) {
+    CIMA_EACH(state, json_items(json_get(d, "updated_voice_states"))) {
       store_put_voice_state(s, state, guild_id);
     }
 
-    json_each(user_id, json_get(d, "removed_voice_states")) {
-      store_remove_voice_state(s, json_u64(user_id), guild_id);
+    CIMA_EACH(user_id, json_items(json_get(d, "removed_voice_states"))) {
+      store_remove_voice_state(s, snowflake_of(user_id), guild_id);
     }
   }
   else if (IS("VOICE_STATE_UPDATE")) {
@@ -322,7 +324,7 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
   }
   else if (IS("GUILD_ROLE_DELETE")) {
     if (g != nullptr) {
-      store_remove_role(s, g, json_get_u64(d, "role_id"));
+      store_remove_role(s, g, snowflake_of(json_get(d, "role_id")));
     }
   }
   else if (IS("GUILD_MEMBER_ADD") || IS("GUILD_MEMBER_UPDATE")) {
@@ -330,11 +332,12 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
   }
   else if (IS("GUILD_MEMBER_REMOVE")) {
     if (g != nullptr) {
-      store_remove_member(s, g, json_get_u64(json_get(d, "user"), "id"));
+      store_remove_member(s, g,
+                          snowflake_of(json_get(json_get(d, "user"), "id")));
     }
   }
   else if (IS("GUILD_MEMBERS_CHUNK")) {
-    json_each(member, json_get(d, "members")) {
+    CIMA_EACH(member, json_items(json_get(d, "members"))) {
       store_put_member(s, g, member, 0);
     }
 
@@ -352,11 +355,13 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
     store_put_presence(s, d);
   }
   else if (IS("TYPING_START")) {
-    if (g != nullptr && json_is(json_get(d, "member"), JSON_OBJECT)) {
-      store_put_member(s, g, json_get(d, "member"), json_get_u64(d, "user_id"));
+    if (g != nullptr &&
+        (json_type(json_get(d, "member")) == CIMA_JSON_OBJECT)) {
+      store_put_member(s, g, json_get(d, "member"),
+                       snowflake_of(json_get(d, "user_id")));
     }
 
-    store_typing_start(s, channel_id, json_get_u64(d, "user_id"));
+    store_typing_start(s, channel_id, snowflake_of(json_get(d, "user_id")));
   }
   else if (IS("USER_UPDATE")) {
     store_put_user(s, d);
@@ -368,25 +373,25 @@ void events_dispatch(Store *s, const char *type, const Json *d) {
     store_put_guild_settings(s, d);
   }
   else if (IS("USER_SETTINGS_PROTO_UPDATE")) {
-    const Json *settings = json_get(d, "settings");
+    const cima_json *settings = json_get(d, "settings");
 
     // type 1 is the preloaded settings, the others hold nothing shown.
-    if (json_get_i64(settings, "type", 0) == 1) {
-      put_settings_proto(s, json_get_str(settings, "proto"));
+    if (json_get_coerce(settings, "type", (int64_t)0) == 1) {
+      put_settings_proto(s, json_get_or(settings, "proto", nullptr));
     }
   }
   else if (IS("RELATIONSHIP_ADD") || IS("RELATIONSHIP_UPDATE")) {
     store_put_relationship(s, d);
   }
   else if (IS("RELATIONSHIP_REMOVE")) {
-    store_remove_relationship(s, json_get_u64(d, "id"));
+    store_remove_relationship(s, snowflake_of(json_get(d, "id")));
   }
 
 #undef IS
 }
 
-static void feed_payload(Store *s, const Json *payload) {
-  const char *type = json_get_str(payload, "t");
+static void feed_payload(Store *s, const cima_json *payload) {
+  const char *type = json_get_or(payload, "t", nullptr);
 
   if (type != nullptr) {
     events_dispatch(s, type, json_get(payload, "d"));
@@ -395,11 +400,12 @@ static void feed_payload(Store *s, const Json *payload) {
 
 bool events_feed(Store *s, const char *text, size_t len) {
   cilo_arena arena = {};
-  const Json *doc = json_parse(&arena, text, len, nullptr);
-  bool ok = json_is(doc, JSON_ARRAY) || json_is(doc, JSON_OBJECT);
+  const cima_json *doc = json_parse(&arena, text, len, nullptr);
+  bool ok =
+    (json_type(doc) == CIMA_JSON_ARRAY) || (json_type(doc) == CIMA_JSON_OBJECT);
 
-  if (json_is(doc, JSON_ARRAY)) {
-    json_each(payload, doc) {
+  if (json_type(doc) == CIMA_JSON_ARRAY) {
+    CIMA_EACH(payload, json_items(doc)) {
       feed_payload(s, payload);
     }
   }

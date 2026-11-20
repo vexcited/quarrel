@@ -2,7 +2,7 @@
 #define QUARREL_DISCORD_API_H
 
 #include "discord/util.h"
-#include "json.h"
+#include <cima/json_dsl.h>
 
 /* ========================================================================== */
 /* discord's rest api as a user client speaks it. every call answers through  */
@@ -26,7 +26,7 @@ typedef struct Api Api;
 const char *api_user_agent(void);
 // writes the client properties object. `gateway` adds the fields only sent
 // when identifying.
-void api_write_client_properties(JsonWriter *w, bool gateway);
+void api_write_client_properties(cima_json_writer *w, bool gateway);
 
 // the id discord gave this installation, null before it gave one. it is
 // kept across launches, sent with every request and when identifying.
@@ -86,7 +86,7 @@ typedef struct {
   bool ok;
   int status;
   // the body when it is json, null otherwise. only valid during the callback.
-  const Json *json;
+  const cima_json *json;
   // when not ok.
   ApiError error;
   // not null when the request was challenged.

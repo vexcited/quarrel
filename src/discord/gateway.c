@@ -161,36 +161,37 @@ static void drop_socket(Gateway *g, int code) {
   g->message_len = 0;
 }
 
-static bool send_payload(Gateway *g, JsonWriter *w) {
+static bool send_payload(Gateway *g, cima_json_writer *w) {
   uint8_t *etf = nullptr;
   size_t len = 0;
-  bool sent = g->ws != nullptr && etf_from_json(w->data, w->len, &etf, &len) &&
+  bool sent = g->ws != nullptr &&
+              etf_from_json(cima_json_writer_text(w), w->len, &etf, &len) &&
               platform_ws_send_binary(g->ws, etf, len);
 
   free(etf);
-  jw_free(w);
+  cima_json_writer_dispose(w);
   return sent;
 }
 
-static void begin_payload(JsonWriter *w, int op) {
-  jw_object(w);
-  jw_key(w, "op"), jw_i64(w, op);
-  jw_key(w, "d");
+static void begin_payload(cima_json_writer *w, int op) {
+  json_begin_object(w);
+  json_field(w, "op", op);
+  json_key(w, "d");
 }
 
 static void send_heartbeat(Gateway *g) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin_payload(&w, OP_HEARTBEAT);
 
   if (g->seq >= 0) {
-    jw_i64(&w, g->seq);
+    json_put(&w, g->seq);
   }
   else {
-    jw_null(&w);
+    cima_json_write_null(&w);
   }
 
-  jw_end(&w);
+  json_end_object(&w);
 
   g->acked = false;
   g->heartbeat_sent_at = platform_now();
@@ -274,60 +275,61 @@ void gateway_network_changed(Gateway *g, bool online, bool returned) {
 }
 
 static void send_identify(Gateway *g) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin_payload(&w, OP_IDENTIFY);
-  jw_object(&w);
-  jw_key(&w, "token"), jw_str(&w, g->token);
-  jw_key(&w, "capabilities"), jw_u64(&w, GATEWAY_CAPABILITIES);
-  jw_key(&w, "properties");
+  json_begin_object(&w);
+  json_field(&w, "token", g->token);
+  json_field(&w, "capabilities", GATEWAY_CAPABILITIES);
+  json_key(&w, "properties");
   api_write_client_properties(&w, true);
 
   // a new session says nothing of the user's status: discord applies the
   // one in their settings.
-  jw_key(&w, "presence");
-  jw_object(&w);
-  jw_key(&w, "status"), jw_str(&w, "unknown");
-  jw_key(&w, "since"), jw_i64(&w, 0);
-  jw_key(&w, "activities");
-  jw_array(&w);
-  jw_end(&w);
-  jw_key(&w, "afk"), jw_bool(&w, false);
-  jw_end(&w);
+  json_key(&w, "presence");
+  json_begin_object(&w);
+  json_field(&w, "status", "unknown");
+  json_field(&w, "since", 0);
+  json_key(&w, "activities");
+  json_begin_array(&w);
+  json_end_array(&w);
+  json_field(&w, "afk", false);
+  json_end_object(&w);
 
-  jw_key(&w, "compress"), jw_bool(&w, false);
+  json_field(&w, "compress", false);
 
-  jw_key(&w, "client_state");
-  jw_object(&w);
-  jw_key(&w, "guild_versions");
-  jw_object(&w);
-  jw_end(&w);
-  jw_end(&w);
+  json_key(&w, "client_state");
+  json_begin_object(&w);
+  json_key(&w, "guild_versions");
+  json_begin_object(&w);
+  json_end_object(&w);
+  json_end_object(&w);
 
   // a QosToken protobuf in base64: client_provided, field 1, holding
   // is_active, field 1, set. nothing is derived on a first launch.
-  jw_key(&w, "qos_token"), jw_str(&w, "CgIIAQ==");
+  json_field(&w, "qos_token", "CgIIAQ==");
 
-  jw_end(&w);
-  jw_end(&w);
+  json_end_object(&w);
+  json_end_object(&w);
   send_payload(g, &w);
 }
 
 static void send_resume(Gateway *g) {
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin_payload(&w, OP_RESUME);
-  jw_object(&w);
-  jw_key(&w, "token"), jw_str(&w, g->token);
-  jw_key(&w, "session_id"), jw_str(&w, g->session_id);
-  jw_key(&w, "seq"), jw_i64(&w, g->seq >= 0 ? g->seq : 0);
-  jw_end(&w);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "token", g->token);
+  json_field(&w, "session_id", g->session_id);
+  json_field(&w, "seq", g->seq >= 0 ? g->seq : 0);
+  json_end_object(&w);
+  json_end_object(&w);
   send_payload(g, &w);
 }
 
-static void on_hello(Gateway *g, const Json *d) {
-  double interval = json_get_f64(d, "heartbeat_interval", 41250) / 1000;
+static void on_hello(Gateway *g, const cima_json *d) {
+  double interval =
+    json_get_coerce(d, "heartbeat_interval", (double)41250) / 1000;
 
   if (interval < 1) {
     interval = 1;
@@ -371,7 +373,7 @@ static void on_hello(Gateway *g, const Json *d) {
   g->watchdog = platform_timer(HANDSHAKE_TIMEOUT, on_watchdog, g);
 }
 
-static void on_dispatch(Gateway *g, const char *type, const Json *d) {
+static void on_dispatch(Gateway *g, const char *type, const cima_json *d) {
   if (type == nullptr) {
     return;
   }
@@ -379,12 +381,12 @@ static void on_dispatch(Gateway *g, const char *type, const Json *d) {
   bool ready = strcmp(type, "READY") == 0;
 
   if (ready) {
-    str_set(&g->session_id, json_get_str(d, "session_id"));
-    str_set(&g->resume_url, json_get_str(d, "resume_gateway_url"));
+    str_set(&g->session_id, json_get_or(d, "session_id", nullptr));
+    str_set(&g->resume_url, json_get_or(d, "resume_gateway_url", nullptr));
 
     // discord may hand out a new token, the old one stops working later.
-    if (json_get_str(d, "auth_token") != nullptr) {
-      str_set(&g->token, json_get_str(d, "auth_token"));
+    if (json_get_or(d, "auth_token", nullptr) != nullptr) {
+      str_set(&g->token, json_get_or(d, "auth_token", nullptr));
     }
   }
 
@@ -402,17 +404,17 @@ static void on_dispatch(Gateway *g, const char *type, const Json *d) {
 
 static void on_payload(Gateway *g, const char *text, size_t len) {
   cilo_arena arena = {};
-  const Json *payload = json_parse(&arena, text, len, nullptr);
-  const Json *d = json_get(payload, "d");
-  const Json *s = json_get(payload, "s");
+  const cima_json *payload = json_parse(&arena, text, len, nullptr);
+  const cima_json *d = json_get(payload, "d");
+  const cima_json *s = json_get(payload, "s");
 
-  if (json_is(s, JSON_NUMBER)) {
-    g->seq = json_i64(s, g->seq);
+  if (cima_json_is_number(s)) {
+    g->seq = json_coerce(s, (int64_t)(g->seq));
   }
 
-  switch (json_get_i64(payload, "op", -1)) {
+  switch (json_get_coerce(payload, "op", (int64_t)-1)) {
     case OP_DISPATCH: {
-      const char *type = json_get_str(payload, "t");
+      const char *type = json_get_or(payload, "t", nullptr);
 
       if (type != nullptr && g->events.snapshot != nullptr &&
           (strcmp(type, "READY") == 0 ||
@@ -441,7 +443,7 @@ static void on_payload(Gateway *g, const char *text, size_t len) {
     case OP_INVALID_SESSION: {
       // `d` tells whether the session may still be resumed. a new one is
       // asked for after a few seconds, as discord wants.
-      bool resumable = json_bool(d, false);
+      bool resumable = json_coerce(d, false);
       uint32_t random;
       platform_random(&random, sizeof random);
 
@@ -798,20 +800,20 @@ bool gateway_update_presence(Gateway *g, const char *status, bool afk) {
     return false;
   }
 
-  JsonWriter w = {};
+  cima_json_writer w = {};
   bool idle = status != nullptr && strcmp(status, "idle") == 0;
 
   begin_payload(&w, OP_PRESENCE_UPDATE);
-  jw_object(&w);
-  jw_key(&w, "status"), jw_str(&w, status != nullptr ? status : "online");
-  jw_key(&w, "since");
-  jw_i64(&w, idle ? (int64_t)(platform_now() * 1000) : 0);
-  jw_key(&w, "activities");
-  jw_array(&w);
-  jw_end(&w);
-  jw_key(&w, "afk"), jw_bool(&w, afk);
-  jw_end(&w);
-  jw_end(&w);
+  json_begin_object(&w);
+  json_field(&w, "status", status != nullptr ? status : "online");
+  json_key(&w, "since");
+  json_put(&w, idle ? (int64_t)(platform_now() * 1000) : 0);
+  json_key(&w, "activities");
+  json_begin_array(&w);
+  json_end_array(&w);
+  json_key(&w, "afk"), cima_json_write_bool(&w, afk);
+  json_end_object(&w);
+  json_end_object(&w);
   return send_payload(g, &w);
 }
 
@@ -821,33 +823,33 @@ bool gateway_voice_state(Gateway *g, Snowflake guild_id, Snowflake channel_id,
     return false;
   }
 
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin_payload(&w, OP_VOICE_STATE_UPDATE);
-  jw_object(&w);
-  jw_key(&w, "guild_id");
+  json_begin_object(&w);
+  json_key(&w, "guild_id");
 
   if (guild_id != 0) {
-    jw_id(&w, guild_id);
+    snowflake_write(&w, guild_id);
   }
   else {
-    jw_null(&w);
+    cima_json_write_null(&w);
   }
 
-  jw_key(&w, "channel_id");
+  json_key(&w, "channel_id");
 
   if (channel_id != 0) {
-    jw_id(&w, channel_id);
+    snowflake_write(&w, channel_id);
   }
   else {
-    jw_null(&w);
+    cima_json_write_null(&w);
   }
 
-  jw_key(&w, "self_mute"), jw_bool(&w, mute);
-  jw_key(&w, "self_deaf"), jw_bool(&w, deaf);
-  jw_key(&w, "self_video"), jw_bool(&w, false);
-  jw_end(&w);
-  jw_end(&w);
+  json_key(&w, "self_mute"), cima_json_write_bool(&w, mute);
+  json_key(&w, "self_deaf"), cima_json_write_bool(&w, deaf);
+  json_field(&w, "self_video", false);
+  json_end_object(&w);
+  json_end_object(&w);
   return send_payload(g, &w);
 }
 
@@ -864,40 +866,40 @@ bool gateway_subscribe(Gateway *g, Snowflake guild_id, Snowflake channel_id,
     return false;
   }
 
-  JsonWriter w = {};
+  cima_json_writer w = {};
   char id[21];
 
   begin_payload(&w, OP_GUILD_SUBSCRIPTIONS_BULK);
-  jw_object(&w);
-  jw_key(&w, "subscriptions");
-  jw_object(&w);
-  jw_key(&w, snowflake_format(guild_id, id));
-  jw_object(&w);
-  jw_key(&w, "typing"), jw_bool(&w, true);
-  jw_key(&w, "threads"), jw_bool(&w, true);
-  jw_key(&w, "activities"), jw_bool(&w, true);
+  json_begin_object(&w);
+  json_key(&w, "subscriptions");
+  json_begin_object(&w);
+  json_key(&w, snowflake_format(guild_id, id));
+  json_begin_object(&w);
+  json_field(&w, "typing", true);
+  json_field(&w, "threads", true);
+  json_field(&w, "activities", true);
 
   if (channel_id != 0 && nranges > 0) {
-    jw_key(&w, "channels");
-    jw_object(&w);
-    jw_key(&w, snowflake_format(channel_id, id));
-    jw_array(&w);
+    json_key(&w, "channels");
+    json_begin_object(&w);
+    json_key(&w, snowflake_format(channel_id, id));
+    json_begin_array(&w);
 
     for (size_t i = 0; i < nranges; i++) {
-      jw_array(&w);
-      jw_u64(&w, ranges[i].first);
-      jw_u64(&w, ranges[i].last);
-      jw_end(&w);
+      json_begin_array(&w);
+      json_put(&w, ranges[i].first);
+      json_put(&w, ranges[i].last);
+      json_end_array(&w);
     }
 
-    jw_end(&w);
-    jw_end(&w);
+    json_end_array(&w);
+    json_end_object(&w);
   }
 
-  jw_end(&w);
-  jw_end(&w);
-  jw_end(&w);
-  jw_end(&w);
+  json_end_object(&w);
+  json_end_object(&w);
+  json_end_object(&w);
+  json_end_object(&w);
   return send_payload(g, &w);
 }
 
@@ -907,24 +909,24 @@ bool gateway_request_members(Gateway *g, Snowflake guild_id,
     return false;
   }
 
-  JsonWriter w = {};
+  cima_json_writer w = {};
 
   begin_payload(&w, OP_REQUEST_GUILD_MEMBERS);
-  jw_object(&w);
-  jw_key(&w, "guild_id");
-  jw_array(&w);
-  jw_id(&w, guild_id);
-  jw_end(&w);
-  jw_key(&w, "user_ids");
-  jw_array(&w);
+  json_begin_object(&w);
+  json_key(&w, "guild_id");
+  json_begin_array(&w);
+  snowflake_write(&w, guild_id);
+  json_end_array(&w);
+  json_key(&w, "user_ids");
+  json_begin_array(&w);
 
   for (size_t i = 0; i < count && i < 100; i++) {
-    jw_id(&w, user_ids[i]);
+    snowflake_write(&w, user_ids[i]);
   }
 
-  jw_end(&w);
-  jw_key(&w, "presences"), jw_bool(&w, true);
-  jw_end(&w);
-  jw_end(&w);
+  json_end_array(&w);
+  json_field(&w, "presences", true);
+  json_end_object(&w);
+  json_end_object(&w);
   return send_payload(g, &w);
 }

@@ -3,7 +3,7 @@
 
 #include "discord/permissions.h"
 #include "discord/util.h"
-#include "json.h"
+#include <cima/json_dsl.h>
 
 /* ========================================================================== */
 /* the model the ui reads. everything lives on the main thread, without       */
@@ -811,28 +811,29 @@ void store_member_list_id(const Store *s, const Channel *c, char *out,
 // each takes an object as discord sends it, whole or partial, and survives
 // anything missing or mistyped in it. they return null when the object has no
 // usable id.
-User *store_put_user(Store *s, const Json *user);
-void store_put_presence(Store *s, const Json *presence);
+User *store_put_user(Store *s, const cima_json *user);
+void store_put_presence(Store *s, const cima_json *presence);
 // a guild as READY and GUILD_CREATE send it, its channels, threads, roles,
 // emojis and members included.
-Guild *store_put_guild(Store *s, const Json *guild);
+Guild *store_put_guild(Store *s, const cima_json *guild);
 // GUILD_UPDATE, which carries no channels.
-void store_update_guild(Store *s, const Json *guild);
+void store_update_guild(Store *s, const cima_json *guild);
 void store_remove_guild(Store *s, Snowflake id);
-Role *store_put_role(Store *s, Guild *g, const Json *role);
+Role *store_put_role(Store *s, Guild *g, const cima_json *role);
 void store_remove_role(Store *s, Guild *g, Snowflake id);
-void store_put_emojis(Store *s, Guild *g, const Json *emojis);
+void store_put_emojis(Store *s, Guild *g, const cima_json *emojis);
 // `user_id` is used when the member carries neither a user nor a user_id.
-Member *store_put_member(Store *s, Guild *g, const Json *member,
+Member *store_put_member(Store *s, Guild *g, const cima_json *member,
                          Snowflake user_id);
 void store_remove_member(Store *s, Guild *g, Snowflake user_id);
 // `guild_id` is used when the channel does not say.
-Channel *store_put_channel(Store *s, const Json *channel, Snowflake guild_id);
+Channel *store_put_channel(Store *s, const cima_json *channel,
+                           Snowflake guild_id);
 void store_remove_channel(Store *s, Snowflake id);
-void store_recipient_add(Store *s, Snowflake channel_id, const Json *user);
+void store_recipient_add(Store *s, Snowflake channel_id, const cima_json *user);
 void store_recipient_remove(Store *s, Snowflake channel_id, Snowflake user_id);
 // THREAD_LIST_SYNC.
-void store_sync_threads(Store *s, const Json *sync);
+void store_sync_threads(Store *s, const cima_json *sync);
 // whether the current user is a member of a thread.
 void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined);
 // a channel's last message as passive updates tell it.
@@ -840,9 +841,9 @@ void store_set_last_message(Store *s, Snowflake channel_id, Snowflake id);
 
 // MESSAGE_CREATE: adds the message, replaces the pending one it answers,
 // moves read states and mention counts.
-Message *store_create_message(Store *s, const Json *message);
+Message *store_create_message(Store *s, const cima_json *message);
 // MESSAGE_UPDATE, which may carry only what changed.
-void store_update_message(Store *s, const Json *message);
+void store_update_message(Store *s, const cima_json *message);
 void store_remove_message(Store *s, Snowflake channel_id, Snowflake id);
 
 typedef enum : uint8_t {
@@ -854,7 +855,7 @@ typedef enum : uint8_t {
 } HistoryKind;
 
 // the answer of a fetch of `limit` messages, in any order.
-void store_put_history(Store *s, Channel *c, const Json *messages,
+void store_put_history(Store *s, Channel *c, const cima_json *messages,
                        HistoryKind kind, uint32_t limit);
 // keeps the `keep` latest messages of a channel no longer shown.
 void store_trim_messages(Store *s, Channel *c, size_t keep);
@@ -867,31 +868,32 @@ void store_fail_pending(Store *s, Snowflake channel_id, Snowflake nonce,
 void store_remove_pending(Store *s, Snowflake channel_id, Snowflake nonce);
 
 void store_reaction_add(Store *s, Snowflake channel_id, Snowflake message_id,
-                        Snowflake user_id, const Json *emoji);
+                        Snowflake user_id, const cima_json *emoji);
 void store_reaction_remove(Store *s, Snowflake channel_id, Snowflake message_id,
-                           Snowflake user_id, const Json *emoji);
+                           Snowflake user_id, const cima_json *emoji);
 // every reaction of a message, or only the ones of `emoji` when given.
 void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
-                          const Json *emoji);
+                          const cima_json *emoji);
 
-void store_put_read_state(Store *s, const Json *read_state);
+void store_put_read_state(Store *s, const cima_json *read_state);
 // the session's own acks: read up to `message_id`, `mention_count` pings
 // left after it.
 void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
                uint32_t mention_count);
 // MESSAGE_ACK, an ack made by any of the account's clients.
-void store_put_ack(Store *s, const Json *ack);
+void store_put_ack(Store *s, const cima_json *ack);
 // one entry of user_guild_settings.
-void store_put_guild_settings(Store *s, const Json *settings);
+void store_put_guild_settings(Store *s, const cima_json *settings);
 // user_settings, whole or partial.
-void store_put_user_settings(Store *s, const Json *settings);
+void store_put_user_settings(Store *s, const cima_json *settings);
 // a voice state of `guild_id`, 0 when the state names its guild or has
 // none. one without a channel means the user left.
-void store_put_voice_state(Store *s, const Json *state, Snowflake guild_id);
+void store_put_voice_state(Store *s, const cima_json *state,
+                           Snowflake guild_id);
 void store_remove_voice_state(Store *s, Snowflake user_id, Snowflake guild_id);
 // the `user_affinities` of the affinities route, replacing the ones known.
-void store_put_affinities(Store *s, const Json *affinities);
-void store_put_relationship(Store *s, const Json *relationship);
+void store_put_affinities(Store *s, const cima_json *affinities);
+void store_put_relationship(Store *s, const cima_json *relationship);
 void store_remove_relationship(Store *s, Snowflake user_id);
 
 void store_typing_start(Store *s, Snowflake channel_id, Snowflake user_id);
@@ -900,7 +902,7 @@ void store_typing_start(Store *s, Snowflake channel_id, Snowflake user_id);
 double store_typing_expire(Store *s);
 
 // GUILD_MEMBER_LIST_UPDATE.
-void store_member_list_update(Store *s, const Json *update);
+void store_member_list_update(Store *s, const cima_json *update);
 
 // call after changing a channel or a guild by hand.
 void store_touch_channel(Store *s, Channel *c);
@@ -912,7 +914,7 @@ void store_touch_guild(Store *s, Guild *g);
 
 // applies one dispatch, `type` being its name like "MESSAGE_CREATE" and
 // `data` its payload. unknown ones are ignored.
-void events_dispatch(Store *s, const char *type, const Json *data);
+void events_dispatch(Store *s, const char *type, const cima_json *data);
 
 // applies recorded gateway payloads: one payload, or an array of them, each
 // an object with "t" and "d". false when `text` is not that.

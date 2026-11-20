@@ -2,7 +2,7 @@
 #define QUARREL_DISCORD_GATEWAY_H
 
 #include "discord/util.h"
-#include "json.h"
+#include <cima/json_dsl.h>
 
 /* ========================================================================== */
 /* the gateway connection: identifying, heartbeats, resuming after a drop     */
@@ -32,7 +32,7 @@ typedef struct {
   void *ctx;
   // a dispatch, `data` only valid during the call. READY and RESUMED come
   // through here like any other, after the gateway took what it needs.
-  void (*dispatch)(void *ctx, const char *type, const Json *data);
+  void (*dispatch)(void *ctx, const char *type, const cima_json *data);
   // the whole payload of a READY or a READY_SUPPLEMENTAL as discord wrote
   // it, before its dispatch, for who keeps it. may be null.
   void (*snapshot)(void *ctx, const char *type, const char *text, size_t len);

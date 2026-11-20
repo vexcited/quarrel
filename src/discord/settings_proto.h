@@ -7,8 +7,8 @@
 // turns a PreloadedUserSettings protobuf, in base64 as the gateway sends
 // it, into the json `user_settings` used to be, with the fields Quarrel
 // reads: `status`, `guild_folders` and `guild_positions`. a field the
-// message does not carry is left out, as in a partial update. from malloc,
-// null when `base64` is no such message.
+// message does not carry is left out, as in a partial update. freed with
+// cilo_mfree, null when `base64` is no such message.
 // the status comes with `status_expires_at_ms`, `custom_status` as an
 // object of `text`, `emoji_id`, `emoji_name` and `expires_at_ms` or null,
 // and `status_proto`, the StatusSettings itself in base64.

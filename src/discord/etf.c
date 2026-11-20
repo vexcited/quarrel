@@ -6,7 +6,7 @@
 #include <string.h>
 #include <zlib.h>
 
-#include "json.h"
+#include <cima/json_dsl.h>
 
 enum {
   ETF_VERSION = 131,
@@ -574,9 +574,11 @@ static void encode_new_float(Buffer *out, double n) {
 // 0 to 255 is a small integer, the rest of int32 an integer, the rest of
 // uint32 a big of 4 bytes, and anything else a float, as javascript numbers
 // are packed.
-static void encode_number(Buffer *out, const char *text) {
-  bool whole = strpbrk(text, ".eE") == nullptr;
-  double n = strtod(text, nullptr);
+static void encode_number(Buffer *out, const cima_json *v) {
+  bool whole = v->type != CIMA_JSON_DOUBLE;
+  double n = v->type == CIMA_JSON_INT    ? (double)v->i
+             : v->type == CIMA_JSON_UINT ? (double)v->u
+                                         : v->d;
 
   if (!whole || n < -2147483648.0 || n > 4294967295.0) {
     encode_new_float(out, n);
@@ -600,21 +602,20 @@ static void encode_number(Buffer *out, const char *text) {
   }
 }
 
-static void encode_value(Buffer *out, const Json *v) {
+static void encode_value(Buffer *out, const cima_json *v) {
   switch (v->type) {
-    case JSON_NULL:
-      encode_atom(out, "nil");
+    case CIMA_JSON_BOOL:
+      encode_atom(out, v->b ? "true" : "false");
       break;
-    case JSON_BOOL:
-      encode_atom(out, v->boolean ? "true" : "false");
+    case CIMA_JSON_INT:
+    case CIMA_JSON_UINT:
+    case CIMA_JSON_DOUBLE:
+      encode_number(out, v);
       break;
-    case JSON_NUMBER:
-      encode_number(out, v->number);
+    case CIMA_JSON_STRING:
+      encode_binary(out, v->str, v->len);
       break;
-    case JSON_STRING:
-      encode_binary(out, v->string, v->len);
-      break;
-    case JSON_ARRAY:
+    case CIMA_JSON_ARRAY:
       if (v->len == 0) {
         buffer_byte(out, ETF_NIL);
         break;
@@ -623,21 +624,24 @@ static void encode_value(Buffer *out, const Json *v) {
       buffer_byte(out, ETF_LIST);
       buffer_u32(out, v->len);
 
-      json_each(item, v) {
+      CIMA_EACH(item, json_items(v)) {
         encode_value(out, item);
       }
 
       buffer_byte(out, ETF_NIL);
       break;
-    case JSON_OBJECT:
+    case CIMA_JSON_OBJECT:
       buffer_byte(out, ETF_MAP);
       buffer_u32(out, v->len);
 
-      json_each(item, v) {
-        encode_binary(out, item->key, strlen(item->key));
-        encode_value(out, item);
+      CIMA_EACH(member, json_members(v)) {
+        encode_binary(out, member->key, cima_json_key_len(member));
+        encode_value(out, &member->value);
       }
 
+      break;
+    default:
+      encode_atom(out, "nil");
       break;
   }
 }
@@ -645,7 +649,7 @@ static void encode_value(Buffer *out, const Json *v) {
 bool etf_from_json(const char *json, size_t len, uint8_t **etf,
                    size_t *etf_len) {
   cilo_arena arena = {};
-  const Json *value = json_parse(&arena, json, len, nullptr);
+  const cima_json *value = json_parse(&arena, json, len, nullptr);
 
   if (value == nullptr) {
     cilo_arena_drop(&arena);
