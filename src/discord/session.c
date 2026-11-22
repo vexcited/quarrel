@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
 
@@ -10,6 +11,7 @@
 #include "discord/remote_auth.h"
 #include "discord/settings_proto.h"
 #include "discord/uploads.h"
+#include "discord/templates.h"
 #include "http.h"
 #include "platform/platform.h"
 #include "voice/voice.h"
@@ -1108,11 +1110,13 @@ static void clear_forum(Session *s);
 static void clear_friend(Session *s);
 static void clear_bookmarks(Session *s);
 static void qr_stop(Session *s);
+static void clear_directories(Session *s);
 
 static void end_session(Session *s, const char *error) {
   uploads_clear(s);
   qr_stop(s);
   clear_forum(s);
+  clear_directories(s);
   clear_mentions(s);
   clear_bookmarks(s);
   clear_frecency(s);
@@ -1603,6 +1607,7 @@ static void session_free(Session *s) {
   clear_login(s);
   uploads_clear(s);
   clear_forum(s);
+  clear_directories(s);
   clear_mentions(s);
   clear_bookmarks(s);
   clear_frecency(s);
@@ -3389,7 +3394,9 @@ void session_create_invite(Session *s, Snowflake guild_id) {
   }
   else {
     s->invite_loading = true;
-    api_create_invite(s->api, c->id, on_invite, call_new(s, 0, guild_id));
+    // a hub's invites never expire, as the client makes them.
+    api_create_invite(s->api, c->id, g->hub ? 0 : 604800, on_invite,
+                      call_new(s, 0, guild_id));
   }
 
   changed(s);
@@ -4718,5 +4725,926 @@ void session_update_post(Session *s, Snowflake post_id, bool pinned,
   }
 
   apply_local(s, "THREAD_UPDATE", &w);
+  changed(s);
+}
+
+/* ========================================================================== */
+/* directories.                                                               */
+/* ========================================================================== */
+
+static void clear_directory_search(Session *s) {
+  SessionDirectorySearch *search = &s->directory_search;
+
+  free(search->query);
+  free(search->results);
+  free(search->error);
+  *search = (SessionDirectorySearch){.asked = search->asked + 1,
+                                     .category = -1};
+}
+
+static void clear_schools(SessionHubJoin *hub);
+
+static void clear_directories(Session *s) {
+  clear_directory_search(s);
+  clear_schools(&s->hub);
+  free(s->hub.email);
+  free(s->hub.error);
+  s->hub = (SessionHubJoin){};
+  s->leaving_guild = 0;
+  s->directory_checking = false;
+  str_set(&s->directory_join_error, nullptr);
+  str_set(&s->directory_error, nullptr);
+  s->directory_joining = 0;
+  s->directory_saving = false;
+  s->directory_saved = 0;
+  s->directory_pending_channel = 0;
+  str_set(&s->directory_pending_description, nullptr);
+}
+
+static void on_directory_entries(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Directory *d = store_open_directory(s->store, call->channel_id);
+
+  call_end(call);
+  d->loading = false;
+
+  // a listing that failed shows empty until the next connection asks again,
+  // rather than being asked for on every frame.
+  if (res->ok) {
+    store_put_directory(s->store, d->channel_id, res->json);
+  }
+  else {
+    d->loaded = true;
+  }
+
+  d->version++;
+  changed(s);
+}
+
+static void on_directory_counts(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (res->ok) {
+    store_put_directory_counts(s->store, call->channel_id, res->json);
+  }
+
+  changed(s);
+}
+
+void session_directory_open(Session *s, Snowflake channel_id) {
+  const Channel *c = store_channel(s->store, channel_id);
+
+  if (c == nullptr || c->type != CHANNEL_GUILD_DIRECTORY) {
+    return;
+  }
+
+  Directory *d = store_open_directory(s->store, channel_id);
+
+  if (d->loaded || d->loading) {
+    return;
+  }
+
+  // without a connection, what the fixture announced is all there is.
+  if (!online(s)) {
+    memset(d->counts, 0, sizeof d->counts);
+
+    for (size_t i = 0; i < d->nentries; i++) {
+      d->counts[d->entries[i]->category]++;
+    }
+
+    d->counted = true;
+    d->loaded = true;
+    d->version++;
+    changed(s);
+    return;
+  }
+
+  char path[96], counts[112];
+
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/directory-entries",
+           channel_id);
+  snprintf(counts, sizeof counts, "%s/counts", path);
+
+  d->loading = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "GET",
+                            .path = path,
+                            .route = "/channels/:id/directory-entries"},
+              on_directory_entries, call_new(s, channel_id, 0));
+  api_request(s->api,
+              &(ApiRequest){.method = "GET",
+                            .path = counts,
+                            .route = "/channels/:id/directory-entries/counts"},
+              on_directory_counts, call_new(s, channel_id, 0));
+  changed(s);
+}
+
+static void on_directory_search(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  SessionDirectorySearch *search = &s->directory_search;
+
+  call_end(call);
+
+  // another search was made since.
+  if (call->id != search->asked) {
+    return;
+  }
+
+  search->loading = false;
+  search->done = true;
+
+  if (!res->ok || json_type(res->json) != CIMA_JSON_ARRAY) {
+    str_set(&search->error, res->ok ? "Discord sent no results."
+                                    : res->error.message);
+    changed(s);
+    return;
+  }
+
+  search->results = calloc(json_len(res->json) + 1, sizeof *search->results);
+
+  if (search->results == nullptr) {
+    cilo_oom(json_len(res->json) * sizeof *search->results);
+  }
+
+  CIMA_EACH(entry, json_items(res->json)) {
+    const DirectoryEntry *e = store_put_directory_entry(s->store, entry);
+
+    if (e != nullptr) {
+      search->results[search->nresults++] = e->entity_id;
+    }
+  }
+
+  changed(s);
+}
+
+void session_directory_search(Session *s, Snowflake channel_id,
+                              const char *query, int category) {
+  SessionDirectorySearch *search = &s->directory_search;
+  size_t len = query != nullptr ? strlen(query) : 0;
+
+  clear_directory_search(s);
+
+  if (len == 0) {
+    changed(s);
+    return;
+  }
+
+  search->channel_id = channel_id;
+  search->query = str_dup_n(query, len > 100 ? 100 : len);
+  search->category =
+    category >= 0 && category < (int)DIRECTORY_CATEGORIES ? (int8_t)category
+                                                          : -1;
+
+  // without a connection, the entries known stand for discord's search.
+  if (!online(s)) {
+    const Directory *d = store_directory(s->store, channel_id);
+
+    search->done = true;
+    search->results = calloc(d ? d->nentries + 1 : 1, sizeof *search->results);
+
+    if (search->results == nullptr) {
+      cilo_oom(sizeof *search->results);
+    }
+
+    for (size_t i = 0; d != nullptr && i < d->nentries; i++) {
+      const DirectoryEntry *e = d->entries[i];
+      bool named = e->name && strcasestr(e->name, search->query);
+      bool told = e->description && strcasestr(e->description, search->query);
+
+      if (named || told) {
+        search->results[search->nresults++] = e->entity_id;
+      }
+    }
+
+    changed(s);
+    return;
+  }
+
+  char *words = url_encode(search->query);
+  char path[512];
+  int n = snprintf(path, sizeof path,
+                   "/channels/%" PRIu64 "/directory-entries/search?query=%s",
+                   channel_id, words);
+
+  free(words);
+
+  if (search->category >= 0 && n > 0 && (size_t)n < sizeof path) {
+    snprintf(path + n, sizeof path - (size_t)n, "&category_id=%d",
+             search->category);
+  }
+
+  search->loading = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "GET",
+                            .path = path,
+                            .route = "/channels/:id/directory-entries/search"},
+              on_directory_search, call_new(s, channel_id, search->asked));
+  changed(s);
+}
+
+static void on_directory_join(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (s->directory_joining != call->id) {
+    return;
+  }
+
+  // the guild itself comes through the gateway's GUILD_CREATE.
+  if (!res->ok) {
+    s->directory_joining = 0;
+    str_set(&s->directory_join_error, res->error.message);
+  }
+
+  changed(s);
+}
+
+void session_directory_join(Session *s, Snowflake channel_id,
+                            Snowflake guild_id) {
+  if (guild_id == 0 || store_guild(s->store, guild_id) != nullptr ||
+      s->directory_joining == guild_id) {
+    return;
+  }
+
+  str_set(&s->directory_join_error, nullptr);
+
+  if (!online(s)) {
+    str_set(&s->directory_join_error, "Joining needs a connection.");
+    changed(s);
+    return;
+  }
+
+  char path[160];
+
+  snprintf(path, sizeof path,
+           "/guilds/%" PRIu64 "/members/@me?lurker=false&from_directory=true",
+           guild_id);
+
+  s->directory_joining = guild_id;
+  api_request(s->api,
+              &(ApiRequest){.method = "PUT",
+                            .path = path,
+                            .route = "/guilds/:id/members/@me",
+                            .body = "{}",
+                            .context =
+                              "{\"source\":\"Directory Channel Entry\"}"},
+              on_directory_join, call_new(s, channel_id, guild_id));
+  changed(s);
+}
+
+static void on_directory_saved(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+  s->directory_saving = false;
+
+  if (!res->ok) {
+    str_set(&s->directory_error, res->error.message);
+    changed(s);
+    return;
+  }
+
+  // the gateway tells the same, which may come first or not at all.
+  if (json_type(res->json) == CIMA_JSON_OBJECT) {
+    store_put_directory_entry(s->store, res->json);
+  }
+  else {
+    store_remove_directory_entry(s->store, call->channel_id, call->id);
+  }
+
+  s->directory_saved = call->id;
+  changed(s);
+}
+
+// an entry as discord would answer it, applied to the store of a session
+// without a connection.
+static void put_local_entry(Session *s, Snowflake channel_id,
+                            Snowflake entity_id, const char *body) {
+  cilo_arena arena = {};
+  const cima_json *fields = json_parse(&arena, body, strlen(body), nullptr);
+  const Guild *g = store_guild(s->store, entity_id);
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_key(&w, "directory_channel_id"), snowflake_write(&w, channel_id);
+  json_key(&w, "entity_id"), snowflake_write(&w, entity_id);
+  json_key(&w, "author_id"), snowflake_write(&w, s->store->self_id);
+  json_field(&w, "type", (int)DIRECTORY_ENTRY_GUILD);
+  json_field(&w, "description",
+             json_get_or(fields, "description", (const char *)nullptr));
+  json_field(&w, "primary_category_id",
+             (int)json_get_coerce(fields, "primary_category_id", (int64_t)0));
+
+  if (g != nullptr) {
+    json_key(&w, "guild");
+    json_begin_object(&w);
+    json_field(&w, "name", g->name);
+    json_field(&w, "icon", g->icon);
+    json_field(&w, "splash", g->splash);
+    json_field(&w, "approximate_member_count", (int64_t)g->member_count);
+    json_end_object(&w);
+  }
+
+  json_end_object(&w);
+
+  const char *text = cima_json_writer_text(&w);
+  const cima_json *entry = json_parse(&arena, text, strlen(text), nullptr);
+
+  store_put_directory_entry(s->store, entry);
+  cima_json_writer_dispose(&w);
+  cilo_arena_drop(&arena);
+}
+
+static void save_entry(Session *s, const char *method, Snowflake channel_id,
+                       Snowflake entity_id, const char *body) {
+  if (s->directory_saving || entity_id == 0) {
+    return;
+  }
+
+  str_set(&s->directory_error, nullptr);
+  s->directory_saved = 0;
+
+  // the client takes an entry out before discord answers.
+  if (body == nullptr) {
+    store_remove_directory_entry(s->store, channel_id, entity_id);
+  }
+
+  if (!online(s)) {
+    if (body != nullptr) {
+      put_local_entry(s, channel_id, entity_id, body);
+    }
+
+    s->directory_saved = entity_id;
+    changed(s);
+    return;
+  }
+
+  char path[128];
+
+  snprintf(path, sizeof path,
+           "/channels/%" PRIu64 "/directory-entry/%" PRIu64, channel_id,
+           entity_id);
+
+  s->directory_saving = true;
+  api_request(s->api,
+              &(ApiRequest){.method = method,
+                            .path = path,
+                            .route = "/channels/:id/directory-entry",
+                            .body = body},
+              on_directory_saved, call_new(s, channel_id, entity_id));
+  changed(s);
+}
+
+static char *entry_body(DirectoryCategory category, const char *description) {
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "description", description != nullptr ? description : "");
+  json_field(&w, "primary_category_id", (int)category);
+  json_end_object(&w);
+
+  char *body = str_dup(cima_json_writer_text(&w));
+
+  cima_json_writer_dispose(&w);
+  return body;
+}
+
+void session_directory_add(Session *s, Snowflake channel_id,
+                           Snowflake guild_id, DirectoryCategory category,
+                           const char *description) {
+  char *body = entry_body(category, description);
+
+  save_entry(s, "POST", channel_id, guild_id, body);
+  free(body);
+}
+
+void session_directory_edit(Session *s, Snowflake channel_id,
+                            Snowflake entity_id, DirectoryCategory category,
+                            const char *description) {
+  char *body = entry_body(category, description);
+
+  save_entry(s, "PATCH", channel_id, entity_id, body);
+  free(body);
+}
+
+void session_directory_remove(Session *s, Snowflake channel_id,
+                              Snowflake entity_id) {
+  save_entry(s, "DELETE", channel_id, entity_id, nullptr);
+}
+
+static void on_directory_check(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+  s->directory_checking = false;
+
+  if (res->ok) {
+    CIMA_EACH(entry, json_items(res->json)) {
+      store_put_directory_entry(s->store, entry);
+    }
+  }
+
+  changed(s);
+}
+
+void session_directory_check(Session *s, Snowflake channel_id,
+                             const Snowflake *guild_ids, size_t count) {
+  if (count == 0 || !online(s) || s->directory_checking) {
+    return;
+  }
+
+  // up to a hundred ids of twenty digits, each behind its key.
+  constexpr size_t MOST = 100;
+  size_t cap = 96 + (count < MOST ? count : MOST) * 34;
+  char *path = malloc(cap);
+
+  if (path == nullptr) {
+    cilo_oom(cap);
+  }
+
+  size_t n = (size_t)snprintf(
+    path, cap, "/channels/%" PRIu64 "/directory-entries/list", channel_id);
+
+  for (size_t i = 0; i < count && i < MOST; i++) {
+    n += (size_t)snprintf(path + n, cap - n, "%sentity_ids=%" PRIu64,
+                          i ? "&" : "?", guild_ids[i]);
+  }
+
+  s->directory_checking = true;
+  s->directory_checked_channel = channel_id;
+  api_request(s->api,
+              &(ApiRequest){.method = "GET",
+                            .path = path,
+                            .route = "/channels/:id/directory-entries/list"},
+              on_directory_check, call_new(s, channel_id, 0));
+  free(path);
+  changed(s);
+}
+
+/* ========================================================================== */
+/* student hubs.                                                              */
+/* ========================================================================== */
+
+static void clear_schools(SessionHubJoin *hub) {
+  for (size_t i = 0; i < hub->nschools; i++) {
+    free(hub->schools[i].name);
+    free(hub->schools[i].icon);
+  }
+
+  free(hub->schools);
+  hub->schools = nullptr;
+  hub->nschools = 0;
+}
+
+void session_hub_reset(Session *s) {
+  SessionHubJoin *hub = &s->hub;
+
+  clear_schools(hub);
+  free(hub->email);
+  free(hub->error);
+  *hub = (SessionHubJoin){};
+  changed(s);
+}
+
+// a hub's step failed: `error` says why, the step stays.
+static bool hub_failed(Session *s, const ApiResponse *res) {
+  s->hub.loading = false;
+
+  if (res->ok) {
+    return false;
+  }
+
+  str_set(&s->hub.error, res->error.message);
+  changed(s);
+  return true;
+}
+
+static void on_hub_lookup(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  SessionHubJoin *hub = &s->hub;
+
+  call_end(call);
+
+  if (hub_failed(s, res)) {
+    return;
+  }
+
+  const cima_json *schools = json_get(res->json, "guilds_info");
+
+  if (json_get_coerce(res->json, "has_matching_guild", false) &&
+      call->id != 0) {
+    hub->guild_id = call->id;
+    hub->step = HUB_JOIN_CODE;
+    changed(s);
+    return;
+  }
+
+  clear_schools(hub);
+  hub->schools = calloc(json_len(schools) + 1, sizeof *hub->schools);
+
+  if (hub->schools == nullptr) {
+    cilo_oom(json_len(schools) * sizeof *hub->schools);
+  }
+
+  CIMA_EACH(school, json_items(schools)) {
+    Snowflake id = snowflake_of(json_get(school, "id"));
+
+    // a guild discord's client takes for no hub at all.
+    if (id == 0 || id == 884924873015689226) {
+      continue;
+    }
+
+    hub->schools[hub->nschools++] = (SessionHubSchool){
+      .id = id,
+      .name = str_dup(json_get_or(school, "name", "")),
+      .icon = str_dup(json_get_or(school, "icon", (const char *)nullptr)),
+    };
+  }
+
+  if (hub->nschools == 0) {
+    hub->step = HUB_JOIN_WAITLIST;
+    changed(s);
+  }
+  else if (hub->nschools == 1) {
+    // the only school: its code is asked for at once.
+    session_hub_lookup(s, hub->email, hub->schools[0].id);
+  }
+  else {
+    hub->step = HUB_JOIN_SCHOOL;
+    changed(s);
+  }
+}
+
+void session_hub_lookup(Session *s, const char *email, Snowflake guild_id) {
+  SessionHubJoin *hub = &s->hub;
+
+  if (hub->loading || email == nullptr || *email == '\0') {
+    return;
+  }
+
+  if (hub->email != email) {
+    str_set(&hub->email, email);
+  }
+
+  str_set(&hub->error, nullptr);
+
+  if (!online(s)) {
+    str_set(&hub->error, "Joining a hub needs a connection.");
+    changed(s);
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "email", hub->email);
+
+  if (guild_id != 0) {
+    json_key(&w, "guild_id"), snowflake_write(&w, guild_id);
+  }
+  else {
+    json_field(&w, "guild_id", nullptr);
+  }
+
+  json_field(&w, "allow_multiple_guilds", true);
+  json_field(&w, "use_verification_code", true);
+  json_end_object(&w);
+
+  hub->loading = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "POST",
+                            .path = "/guilds/automations/email-domain-lookup",
+                            .body = cima_json_writer_text(&w)},
+              on_hub_lookup, call_new(s, 0, guild_id));
+  cima_json_writer_dispose(&w);
+  changed(s);
+}
+
+static void on_hub_verify(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (hub_failed(s, res)) {
+    return;
+  }
+
+  Snowflake id = snowflake_of(json_get(json_get(res->json, "guild"), "id"));
+
+  s->hub.guild_id = id != 0 ? id : s->hub.guild_id;
+  s->hub.step = HUB_JOIN_JOINED;
+  changed(s);
+}
+
+void session_hub_verify(Session *s, const char *code) {
+  SessionHubJoin *hub = &s->hub;
+
+  if (hub->loading || hub->step != HUB_JOIN_CODE || code == nullptr ||
+      *code == '\0') {
+    return;
+  }
+
+  str_set(&hub->error, nullptr);
+
+  if (!online(s)) {
+    str_set(&hub->error, "Joining a hub needs a connection.");
+    changed(s);
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "code", code);
+  json_key(&w, "guild_id"), snowflake_write(&w, hub->guild_id);
+  json_field(&w, "email", hub->email);
+  json_end_object(&w);
+
+  hub->loading = true;
+  api_request(
+    s->api,
+    &(ApiRequest){.method = "POST",
+                  .path = "/guilds/automations/email-domain-lookup/verify-code",
+                  .body = cima_json_writer_text(&w)},
+    on_hub_verify, call_new(s, 0, 0));
+  cima_json_writer_dispose(&w);
+  changed(s);
+}
+
+static void on_hub_waitlist(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (!hub_failed(s, res)) {
+    s->hub.step = HUB_JOIN_WAITING;
+    changed(s);
+  }
+}
+
+void session_hub_waitlist(Session *s, const char *school) {
+  SessionHubJoin *hub = &s->hub;
+
+  if (hub->loading || hub->email == nullptr || school == nullptr ||
+      *school == '\0') {
+    return;
+  }
+
+  str_set(&hub->error, nullptr);
+
+  if (!online(s)) {
+    str_set(&hub->error, "Joining the waitlist needs a connection.");
+    changed(s);
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "email", hub->email);
+  json_field(&w, "school", school);
+  json_end_object(&w);
+
+  hub->loading = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "POST",
+                            .path = "/hub-waitlist/signup",
+                            .body = cima_json_writer_text(&w)},
+              on_hub_waitlist, call_new(s, 0, 0));
+  cima_json_writer_dispose(&w);
+  changed(s);
+}
+
+/* ========================================================================== */
+/* membership.                                                                */
+/* ========================================================================== */
+
+static void on_left(void *ctx, [[maybe_unused]] const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (s->leaving_guild != call->id) {
+    return;
+  }
+
+  // the guild goes with the gateway's GUILD_DELETE, or stays when discord
+  // refused.
+  s->leaving_guild = 0;
+  changed(s);
+}
+
+void session_leave_guild(Session *s, Snowflake guild_id) {
+  const Guild *g = store_guild(s->store, guild_id);
+
+  if (g == nullptr || g->owner_id == s->store->self_id ||
+      s->leaving_guild != 0) {
+    return;
+  }
+
+  if (!online(s)) {
+    store_remove_guild(s->store, guild_id);
+    changed(s);
+    return;
+  }
+
+  char path[64];
+
+  snprintf(path, sizeof path, "/users/@me/guilds/%" PRIu64, guild_id);
+
+  s->leaving_guild = guild_id;
+  api_request(s->api,
+              &(ApiRequest){.method = "DELETE",
+                            .path = path,
+                            .route = "/users/@me/guilds/:id",
+                            .body = "{\"lurking\":false}"},
+              on_left, call_new(s, 0, guild_id));
+  changed(s);
+}
+
+void session_set_nick(Session *s, Snowflake guild_id, const char *nick) {
+  Guild *g = store_guild(s->store, guild_id);
+
+  if (g == nullptr) {
+    return;
+  }
+
+  bool none = nick == nullptr || *nick == '\0';
+  Member *me = store_member(g, s->store->self_id);
+
+  // shown at once, the gateway's GUILD_MEMBER_UPDATE confirms it.
+  if (me != nullptr) {
+    str_set(&me->nick, none ? nullptr : nick);
+    g->members_version++;
+    store_touch_guild(s->store, g);
+  }
+
+  if (online(s)) {
+    cima_json_writer w = {};
+    char path[64];
+
+    snprintf(path, sizeof path, "/guilds/%" PRIu64 "/members/@me", guild_id);
+    json_begin_object(&w);
+
+    if (none) {
+      json_field(&w, "nick", nullptr);
+    }
+    else {
+      json_field(&w, "nick", nick);
+    }
+
+    json_end_object(&w);
+    api_request(s->api,
+                &(ApiRequest){.method = "PATCH",
+                              .path = path,
+                              .route = "/guilds/:id/members/@me",
+                              .body = cima_json_writer_text(&w)},
+                nullptr, nullptr);
+    cima_json_writer_dispose(&w);
+  }
+
+  changed(s);
+}
+
+static void on_directory_created(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake id = snowflake_of(json_get(res->json, "id"));
+
+  call_end(call);
+  s->directory_saving = false;
+
+  if (!res->ok || id == 0) {
+    str_set(&s->directory_error,
+            res->ok ? "Discord sent no server." : res->error.message);
+    changed(s);
+    return;
+  }
+
+  // the server exists, it is listed next. the guild itself comes through
+  // the gateway's GUILD_CREATE.
+  char *description = s->directory_pending_description;
+
+  s->directory_pending_description = nullptr;
+  session_directory_add(s, s->directory_pending_channel, id,
+                        s->directory_pending_category, description);
+  free(description);
+}
+
+void session_directory_create(Session *s, Snowflake channel_id,
+                              size_t template_index, const char *name,
+                              DirectoryCategory category,
+                              const char *description) {
+  if (s->directory_saving || template_index >= hub_template_count ||
+      name == nullptr || *name == '\0') {
+    return;
+  }
+
+  str_set(&s->directory_error, nullptr);
+  s->directory_saved = 0;
+
+  if (!online(s)) {
+    str_set(&s->directory_error, "Creating a server needs a connection.");
+    changed(s);
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "name", name);
+  json_end_object(&w);
+
+  // the name, then the template's own fields.
+  const char *named = cima_json_writer_text(&w);
+  const char *rest = hub_templates[template_index].body + 1;
+  size_t len = strlen(named);
+  char *body = malloc(len + strlen(rest) + 1);
+
+  if (body == nullptr) {
+    cilo_oom(len + strlen(rest) + 1);
+  }
+
+  memcpy(body, named, len - 1);
+  body[len - 1] = ',';
+  strcpy(body + len, rest);
+  cima_json_writer_dispose(&w);
+
+  s->directory_pending_channel = channel_id;
+  s->directory_pending_category = category;
+  str_set(&s->directory_pending_description, description);
+  s->directory_saving = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "POST", .path = "/guilds", .body = body},
+              on_directory_created, call_new(s, channel_id, 0));
+  free(body);
   changed(s);
 }

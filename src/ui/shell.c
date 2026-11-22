@@ -81,6 +81,21 @@ static void account_switch(App *app) {
   account_switcher(app, anchor);
 }
 
+// discord's badge of a student hub, a cap on a grey disc.
+static void hub_badge(App *app) {
+  const Look *k = &app->look;
+  civue_id id = id("hub-badge");
+
+  div(key(id), flex, items_center, justify_center, size(4), flex_shrink_0,
+      rounded(full), bg(k->border_strong)) {
+    civue_response hovered = civue_interact(civue_ui_current(), id, here(),
+                                            CIVUE_SENSE_HOVER);
+
+    glyph(CIVUE_ICON(lucide, graduation_cap), 11, CIVUE_WHITE);
+    hint(app, id, &hovered, "Student Hub", CIVUE_TOOLTIP_BELOW);
+  }
+}
+
 static void guild_switch(App *app) {
   const Look *k = &app->look;
   const Guild *guild = app_guild(app);
@@ -117,6 +132,11 @@ static void guild_switch(App *app) {
 
     text(name, flex_1, min_w(0), truncate, font_weight(semibold),
          text_color(k->strong));
+
+    if (guild && guild->hub) {
+      hub_badge(app);
+    }
+
     icon(lucide, chevrons_up_down, size(px(14)), flex_shrink_0,
          text_color(k->faint));
   }

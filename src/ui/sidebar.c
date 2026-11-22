@@ -23,6 +23,8 @@ static civue_icon channel_icon(const Channel *c) {
       return CIVUE_ICON(lucide, messages_square);
     case CHANNEL_GUILD_MEDIA:
       return CIVUE_ICON(lucide, image);
+    case CHANNEL_GUILD_DIRECTORY:
+      return CIVUE_ICON(lucide, compass);
     case CHANNEL_ANNOUNCEMENT_THREAD:
     case CHANNEL_PUBLIC_THREAD:
     case CHANNEL_PRIVATE_THREAD:
@@ -86,7 +88,8 @@ static void channel_row(App *app, Channel *c, bool thread) {
         app->voice_chat = false;
         app_select_channel(app, c->id);
       }
-      else if (channel_has_text(c) || channel_is_forum(c)) {
+      else if (channel_has_text(c) || channel_is_forum(c) ||
+               c->type == CHANNEL_GUILD_DIRECTORY) {
         app_select_channel(app, c->id);
       }
     }
@@ -116,8 +119,17 @@ void channel_list(App *app, Guild *guild) {
       scrollbars(&app->thin_bars), pb(4)) {
     guild_banner(app, guild);
 
+    if (guild->hub) {
+      hub_rows(app, guild);
+    }
+
     for (size_t i = 0; i < count; i++) {
       Channel *c = rows[i].channel;
+
+      // a hub's directory is its "Join Servers" row.
+      if (guild->hub && c->type == CHANNEL_GUILD_DIRECTORY) {
+        continue;
+      }
 
       if (rows[i].kind == CHANNEL_ROW_CATEGORY) {
         folded = c->collapsed;

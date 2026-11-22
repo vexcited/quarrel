@@ -16,6 +16,9 @@ constexpr size_t MAX_SUBJECT_ROLES = 256;
   CILO_MAP_PUT(quarrel_libc, map, key __VA_OPT__(, ) __VA_ARGS__)
 #define MAP_DROP(map) CILO_MAP_DROP(quarrel_libc, map)
 
+// directory.c's, which keeps the directories.
+void store_drop_directories(Store *s);
+
 static void *xcalloc(size_t count, size_t size) {
   void *p = calloc(count != 0 ? count : 1, size);
 
@@ -2460,6 +2463,7 @@ static void fill_guild(Guild *g, const cima_json *guild) {
 
     g->community = false;
     g->upload_feature = 0;
+    g->hub = false;
 
     CIMA_EACH(feature, json_items(v)) {
       const char *name = json_or(feature, "");
@@ -2472,7 +2476,13 @@ static void fill_guild(Guild *g, const cima_json *guild) {
           g->upload_feature = uploads[i].bytes;
         }
       }
+
+      g->hub = g->hub || strcmp(name, "HUB") == 0;
     }
+  }
+
+  if ((v = json_get(props, "hub_type")) != nullptr) {
+    g->hub_type = (uint8_t)snowflake_of(v);
   }
 
   // the guild's default stands until the user picks a level of their own.
@@ -3492,6 +3502,51 @@ size_t store_typing(const Store *s, const Channel *c, Snowflake *out,
 /* permissions and unread states.                                             */
 /* ========================================================================== */
 
+// the roles of a subject live in arrays the caller holds.
+typedef struct {
+  Snowflake ids[MAX_SUBJECT_ROLES];
+  Permissions granted[MAX_SUBJECT_ROLES];
+} SubjectRoles;
+
+static PermissionSubject subject_of(Store *s, const Guild *g,
+                                    SubjectRoles *roles) {
+  const Member *me = store_member(g, s->self_id);
+  const Role *everyone = store_role(g, g->id);
+  size_t nroles = 0;
+
+  for (size_t i = 0; me != nullptr && i < me->nroles; i++) {
+    const Role *role = store_role(g, me->roles[i]);
+
+    if (role != nullptr && nroles < MAX_SUBJECT_ROLES) {
+      roles->ids[nroles] = role->id;
+      roles->granted[nroles] = role->permissions;
+      nroles++;
+    }
+  }
+
+  return (PermissionSubject){
+    .guild_id = g->id,
+    .owner_id = g->owner_id,
+    .user_id = s->self_id,
+    .everyone = everyone != nullptr ? everyone->permissions : 0,
+    .role_ids = roles->ids,
+    .role_permissions = roles->granted,
+    .nroles = nroles,
+    .timed_out = me != nullptr && me->timeout_until > now_ms(s),
+  };
+}
+
+Permissions store_guild_permissions(Store *s, const Guild *g) {
+  if (g == nullptr) {
+    return 0;
+  }
+
+  SubjectRoles roles;
+  PermissionSubject who = subject_of(s, g, &roles);
+
+  return permissions_base(&who);
+}
+
 Permissions store_permissions(Store *s, const Channel *c) {
   if (c == nullptr) {
     return 0;
@@ -3511,32 +3566,8 @@ Permissions store_permissions(Store *s, const Channel *c) {
     return c->perms;
   }
 
-  const Member *me = store_member(g, s->self_id);
-  const Role *everyone = store_role(g, g->id);
-  Snowflake ids[MAX_SUBJECT_ROLES];
-  Permissions granted[MAX_SUBJECT_ROLES];
-  size_t nroles = 0;
-
-  for (size_t i = 0; me != nullptr && i < me->nroles; i++) {
-    const Role *role = store_role(g, me->roles[i]);
-
-    if (role != nullptr && nroles < MAX_SUBJECT_ROLES) {
-      ids[nroles] = role->id;
-      granted[nroles] = role->permissions;
-      nroles++;
-    }
-  }
-
-  PermissionSubject who = {
-    .guild_id = g->id,
-    .owner_id = g->owner_id,
-    .user_id = s->self_id,
-    .everyone = everyone != nullptr ? everyone->permissions : 0,
-    .role_ids = ids,
-    .role_permissions = granted,
-    .nroles = nroles,
-    .timed_out = me != nullptr && me->timeout_until > now_ms(s),
-  };
+  SubjectRoles roles;
+  PermissionSubject who = subject_of(s, g, &roles);
 
   // a thread has no overwrites of its own, its channel's apply.
   const Channel *source = c;
@@ -4475,6 +4506,7 @@ void store_reset(Store *s) {
   free_folders(s);
   free_stored_folders(s);
   free_bookmarks(s);
+  store_drop_directories(s);
 
   MAP_DROP(&s->guilds);
   MAP_DROP(&s->channels);

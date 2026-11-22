@@ -116,6 +116,56 @@ typedef struct {
   char *content;
 } SessionMention;
 
+// what a search of a directory found.
+typedef struct {
+  Snowflake channel_id;
+  // the words searched, and the DirectoryCategory it kept to, -1 for all.
+  char *query;
+  int8_t category;
+  // the entities found, in discord's order, each an entry of the store's
+  // directory.
+  Snowflake *results;
+  size_t nresults;
+  bool loading, done;
+  // why it failed, null when it did not.
+  char *error;
+
+  // the session's own, counting searches so a late answer is dropped.
+  uint64_t asked;
+} SessionDirectorySearch;
+
+// a school whose hub the email may join.
+typedef struct {
+  Snowflake id;
+  char *name, *icon;
+} SessionHubSchool;
+
+typedef enum : uint8_t {
+  // asks for the email.
+  HUB_JOIN_EMAIL,
+  // the email fits several schools, one is to be picked.
+  HUB_JOIN_SCHOOL,
+  // a code was emailed for `guild_id`.
+  HUB_JOIN_CODE,
+  // no school has a hub for the email yet.
+  HUB_JOIN_WAITLIST,
+  // signed up to the waitlist.
+  HUB_JOIN_WAITING,
+  // joined `guild_id`, which comes through the gateway.
+  HUB_JOIN_JOINED,
+} SessionHubStep;
+
+typedef struct {
+  SessionHubStep step;
+  char *email;
+  Snowflake guild_id;
+  SessionHubSchool *schools;
+  size_t nschools;
+  bool loading;
+  // why the last step failed, null when it did not.
+  char *error;
+} SessionHubJoin;
+
 typedef struct {
   // called on the main thread after the state or the store changed.
   // civue_window_wake fits as it is.
@@ -295,6 +345,29 @@ struct Session {
   bool post_creating;
   char *post_error;
   Snowflake post_created;
+  // the last search of a directory, see session_directory_search.
+  SessionDirectorySearch directory_search;
+  // the guild of a directory being joined, and why the last join failed.
+  Snowflake directory_joining;
+  char *directory_join_error;
+  // an entry being listed, changed or taken out of a directory, and why the
+  // last such change failed. `directory_saved` is the entity of the last
+  // one that went through, which the ui takes and zeroes.
+  bool directory_saving;
+  char *directory_error;
+  Snowflake directory_saved;
+  // what session_directory_create lists once its server exists.
+  Snowflake directory_pending_channel;
+  DirectoryCategory directory_pending_category;
+  char *directory_pending_description;
+  // the guilds the add-server dialog asked about that the directory
+  // already lists, see session_directory_check.
+  Snowflake directory_checked_channel;
+  bool directory_checking;
+  // the student hub being joined by email, see session_hub_lookup.
+  SessionHubJoin hub;
+  // the guild session_leave_guild is leaving.
+  Snowflake leaving_guild;
   // the account connected or connecting, 0 on the login form.
   Snowflake account_id;
   // bumped with every change of the fields above.
@@ -510,7 +583,8 @@ void session_mark_unread(Session *s, Snowflake channel_id,
 // sends the message of `from_channel_id` to `channel_id` as a forward.
 void session_forward(Session *s, Snowflake channel_id,
                      Snowflake from_channel_id, Snowflake message_id);
-// asks for an invite link to the guild that lasts a week, see `invite_code`.
+// asks for an invite link to the guild that lasts a week, or for ever in a
+// hub, see `invite_code`.
 // the same guild is not asked twice while its code is known.
 void session_create_invite(Session *s, Snowflake guild_id);
 // the status others see, kept for `seconds` before it goes back to online,
@@ -563,6 +637,64 @@ void session_set_post_tags(Session *s, Snowflake post_id, const Snowflake *tags,
 // pins a post, which unpins the forum's other one, closes it or locks it.
 void session_update_post(Session *s, Snowflake post_id, bool pinned,
                          bool archived, bool locked);
+
+/* ========================================================================== */
+/* directories, the channels of a hub that list servers.                     */
+/* ========================================================================== */
+
+// fetches a directory's entries and how many each category holds, once
+// for each connection: the gateway keeps them in sync after. see
+// store_directory.
+void session_directory_open(Session *s, Snowflake channel_id);
+// searches a directory for `query`, 1 to 100 bytes, in one DirectoryCategory
+// or in all with -1. see `directory_search`. an empty query clears it.
+void session_directory_search(Session *s, Snowflake channel_id,
+                              const char *query, int category);
+// joins the guild an entry of the directory lists, which then comes through
+// the gateway. see `directory_joining`.
+void session_directory_join(Session *s, Snowflake channel_id,
+                            Snowflake guild_id);
+// lists a guild the user manages in the directory, `description` up to 200
+// bytes or null. see `directory_saving`.
+void session_directory_add(Session *s, Snowflake channel_id,
+                           Snowflake guild_id, DirectoryCategory category,
+                           const char *description);
+// makes a server from one of `hub_templates`, named `name`, then lists it
+// in the directory like session_directory_add.
+void session_directory_create(Session *s, Snowflake channel_id,
+                              size_t template_index, const char *name,
+                              DirectoryCategory category,
+                              const char *description);
+// changes the category and the description of an entry.
+void session_directory_edit(Session *s, Snowflake channel_id,
+                            Snowflake entity_id, DirectoryCategory category,
+                            const char *description);
+// takes an entry out of the directory.
+void session_directory_remove(Session *s, Snowflake channel_id,
+                              Snowflake entity_id);
+
+// asks discord which of `count` guilds the directory lists, as the
+// add-server dialog does when it opens. the ones listed come into the
+// store's directory, without their guild.
+void session_directory_check(Session *s, Snowflake channel_id,
+                             const Snowflake *guild_ids, size_t count);
+
+// the email of a student, to join their school's hub with: a code is
+// emailed when one school fits, `hub.schools` lists them when several do,
+// and the waitlist is offered when none does. `guild_id` is 0 at first,
+// then the school picked.
+void session_hub_lookup(Session *s, const char *email, Snowflake guild_id);
+// the code emailed, which joins the hub.
+void session_hub_verify(Session *s, const char *code);
+// signs the email up to hear when its school gets a hub.
+void session_hub_waitlist(Session *s, const char *school);
+// back to asking for an email.
+void session_hub_reset(Session *s);
+
+// leaves a guild the user does not own. see `leaving_guild`.
+void session_leave_guild(Session *s, Snowflake guild_id);
+// the user's nickname in a guild, null or empty for none.
+void session_set_nick(Session *s, Snowflake guild_id, const char *nick);
 
 typedef enum : uint8_t {
   SESSION_LINK_UP,

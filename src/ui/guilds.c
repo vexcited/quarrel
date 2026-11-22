@@ -25,9 +25,7 @@ constexpr float FOOTER = 1 + 2 * CARD_PAD + 32;
 constexpr float HEADER = 2 * CARD_PAD + ROW_HEIGHT + 1;
 constexpr float HEIGHT_MIN = 100 + HEADER + FOOTER;
 
-// the first letter of each word, what discord shows for a guild without an
-// icon.
-static void acronym_of(const char *name, char *out, size_t cap) {
+void guild_acronym(const char *name, char *out, size_t cap) {
   size_t n = 0;
   bool start = true;
 
@@ -61,7 +59,7 @@ void guild_icon(App *app, const Guild *guild, float size, bool lit) {
   }
 
   char acronym[32];
-  acronym_of(guild->name ? guild->name : "?", acronym, sizeof acronym);
+  guild_acronym(guild->name ? guild->name : "?", acronym, sizeof acronym);
 
   fill(here(), lit ? k->brand : k->hover, size * .3f);
 
@@ -578,7 +576,9 @@ void guild_menu(App *app, civue_rect anchor) {
 
   const Look *k = &app->look;
   bool hides = ids_has(&app->hide_muted, guild->id);
-  bool invite = false, hide = false, copy = false;
+  bool owner = guild->owner_id == app->session->store->self_id;
+  bool invite = false, hide = false, copy = false, profile = false,
+       leave = false;
   civue_rect card = {};
 
   overlay() {
@@ -589,7 +589,15 @@ void guild_menu(App *app, civue_rect anchor) {
       card = here();
 
       invite = menu_row(app, id("menu-invite"), CIVUE_ICON(lucide, user_plus),
-                        "Invite to Server", k->text);
+                        guild->hub ? "Invite People" : "Invite to Server",
+                        k->text);
+
+      if (guild->hub) {
+        profile =
+          menu_row(app, id("menu-hub-profile"), CIVUE_ICON(lucide, id_card),
+                   "Edit Hub Profile", k->text);
+      }
+
       hide = menu_row(
         app, id("menu-hide-muted"),
         hides ? CIVUE_ICON(lucide, eye) : CIVUE_ICON(lucide, eye_off),
@@ -599,12 +607,24 @@ void guild_menu(App *app, civue_rect anchor) {
 
       copy = menu_row(app, id("menu-copy-id"), CIVUE_ICON(lucide, copy),
                       "Copy Server ID", k->text);
+
+      if (guild->hub && !owner) {
+        leave = menu_row(app, id("menu-leave-hub"),
+                         CIVUE_ICON(lucide, log_out), "Leave Hub",
+                         k->critical_text);
+      }
     }
   }
 
   dismiss(app, card, anchor);
 
-  if (invite) {
+  if (profile) {
+    hub_nick_open(app, guild->id);
+  }
+  else if (leave) {
+    hub_leave_open(app, guild->id);
+  }
+  else if (invite) {
     app->popover = POPOVER_INVITE;
     app->invite_copied = false;
     session_create_invite(app->session, guild->id);
@@ -641,8 +661,15 @@ void invite_card(App *app, civue_rect anchor) {
     snprintf(link, sizeof link, "https://discord.gg/%s", code);
   }
 
-  snprintf(title, sizeof title, "Invite people to %s",
-           guild->name ? guild->name : "this server");
+  // a hub is joined with a student email, its invites never expire.
+  if (guild->hub) {
+    snprintf(title, sizeof title,
+             "Invite friends to the Student Hub for your school");
+  }
+  else {
+    snprintf(title, sizeof title, "Invite people to %s",
+             guild->name ? guild->name : "this server");
+  }
 
   overlay() {
     div(key(id("invite-card")), flex, flex_col, gap(2), w(px(320)),
@@ -652,8 +679,13 @@ void invite_card(App *app, civue_rect anchor) {
         line_height(px(18))) {
       card = here();
 
-      text(title, truncate, text_size(px(16)), line_height(px(22)),
+      text(title, text_size(px(16)), line_height(px(22)),
            font_weight(semibold), text_color(k->strong));
+
+      if (guild->hub) {
+        text("A student email address is required to join.",
+             text_color(k->subtle));
+      }
 
       if (code) {
         div(flex, items_center, gap(2), h(10), pl(3), pr(1), rounded(lg),
@@ -669,7 +701,9 @@ void invite_card(App *app, civue_rect anchor) {
           }
         }
 
-        text("This link expires in 7 days.", text_size(px(12)),
+        text(guild->hub ? "This link never expires."
+                        : "This link expires in 7 days.",
+             text_size(px(12)),
              line_height(px(16)), text_color(k->faint));
       }
       else if (mine && session->invite_error) {
@@ -687,6 +721,22 @@ void invite_card(App *app, civue_rect anchor) {
     civue_clipboard_set_text(link, strlen(link));
     app->invite_copied = true;
   }
+}
+
+// the user is in a student hub already.
+static bool in_hub(Store *store) {
+  size_t count = 0;
+  const GuildFolder *folders = store_guild_folders(store, &count);
+
+  for (size_t i = 0; i < count; i++) {
+    for (size_t j = 0; j < folders[i].nguilds; j++) {
+      if (folders[i].guilds[j]->hub) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 void new_guild(App *app, civue_rect anchor) {
@@ -715,7 +765,7 @@ void new_guild(App *app, civue_rect anchor) {
   const Look *k = &app->look;
   bool named = app->guild_name && *app->guild_name;
   bool ready = named && !session->guild_creating;
-  bool create = false;
+  bool create = false, join_hub = false;
   civue_rect card = {};
 
   overlay() {
@@ -749,12 +799,26 @@ void new_guild(App *app, civue_rect anchor) {
         create |= button().activated;
         text(session->guild_creating ? "Creating..." : "Create");
       }
+
+      div(flex_shrink_0, h(px(1)), bg(k->border)) {}
+
+      // discord offers this in its discovery's student hubs.
+      join_hub = menu_row(app, id("new-guild-hub"),
+                          CIVUE_ICON(lucide, graduation_cap),
+                          in_hub(session->store)
+                            ? "Join Another Hub"
+                            : "Join the Student Hub for your school",
+                          k->text);
     }
   }
 
   dismiss(app, card, anchor);
 
-  if (create && ready) {
+  if (join_hub) {
+    app->popover = POPOVER_NONE;
+    hub_join_open(app);
+  }
+  else if (create && ready) {
     session_create_guild(session, app->guild_name);
   }
 }

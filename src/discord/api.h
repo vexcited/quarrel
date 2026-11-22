@@ -284,8 +284,9 @@ void api_send_friend_request(Api *api, const char *username,
                              int32_t discriminator, const char *note,
                              const ApiCaptchaSolution *captcha, ApiDone done,
                              void *ctx);
-// creates an invite to the channel's guild that lasts a week, or finds the
-// one made before. the answer holds its `code`.
-void api_create_invite(Api *api, Snowflake channel_id, ApiDone done, void *ctx);
+// creates an invite to the channel's guild that lasts `max_age` seconds, 0
+// for ever, or finds the one made before. the answer holds its `code`.
+void api_create_invite(Api *api, Snowflake channel_id, uint32_t max_age,
+                       ApiDone done, void *ctx);
 
 #endif

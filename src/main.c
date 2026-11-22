@@ -96,6 +96,9 @@ static void shell(App *app) {
         if (channel && channel_is_forum(channel)) {
           forum_page(app, channel);
         }
+        else if (channel && channel->type == CHANNEL_GUILD_DIRECTORY) {
+          directory_page(app, channel);
+        }
         else if (channel) {
           chat(app, channel);
         }
@@ -150,6 +153,7 @@ static void frame(void *ctx, civue_ui *ui) {
       profile_modal(app);
       settings_dialog(app);
       voice_switch_dialog(app);
+      hub_dialogs(app);
       media_viewer(app);
       notice_toast(app);
       break;
@@ -190,7 +194,7 @@ static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
 }
 
 int main() {
-  App app = {.look = look_dark(), .stick = true};
+  App app = {.look = look_dark(), .stick = true, .directory_tab = -1};
   char *width = platform_pref_get(SIDEBAR_KEY);
 
   app.sidebar_width = width ? (float)atof(width) : SIDEBAR_WIDTH;
@@ -250,6 +254,15 @@ int main() {
   free(app.post_body);
   free(app.forum_tags.v);
   free(app.post_tags.v);
+  free(app.directory_field);
+  free(app.directory_query);
+  free(app.new_server_name);
+  free(app.entry_description);
+  free(app.hub_email);
+  free(app.hub_code);
+  free(app.hub_school);
+  free(app.hub_search);
+  free(app.nick);
   free(app.hide_muted.v);
   free(app.picks.v);
   platform_timer_cancel(app.friends_tick);

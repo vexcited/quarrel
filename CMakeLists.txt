@@ -64,6 +64,7 @@ set(QUARREL_CORE_SOURCES
   src/images.c
   src/discord/api.c
   src/discord/cdn.c
+  src/discord/directory.c
   src/discord/emoji.c
   src/discord/emoji_table.c
   src/discord/etf.c
@@ -74,6 +75,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/permissions.c
   src/discord/remote_auth.c
   src/discord/settings_proto.c
+  src/discord/templates.c
   src/discord/session.c
   src/discord/store.c
   src/discord/uploads.c
@@ -149,6 +151,7 @@ add_executable(quarrel
   src/ui/friends.c
   src/ui/gifs.c
   src/ui/guilds.c
+  src/ui/hub.c
   src/ui/login.c
   src/ui/look.c
   src/ui/markup.c

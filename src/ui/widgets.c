@@ -430,6 +430,21 @@ bool menu_row(App *app, civue_id id, civue_icon icon, const char *label,
   return pressed;
 }
 
+bool dialog_button(const Look *k, civue_id id, const char *label,
+                   bool primary) {
+  bool pressed = false;
+
+  div(key(id), flex, items_center, justify_center, flex_1, h(10), px(4),
+      rounded(lg), style(.bg = primary ? k->brand : k->surface_high),
+      hover(bg(primary ? k->brand_hover : k->hover)),
+      text_color(primary ? CIVUE_WHITE : k->strong), cursor_pointer) {
+    pressed = button().activated;
+    text(label, font_weight(medium));
+  }
+
+  return pressed;
+}
+
 void window_handle(civue_id id) {
   civue_ui *ui = civue_ui_current();
   // a region counts as pressed wherever the pointer is over it, so the one

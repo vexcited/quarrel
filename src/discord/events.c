@@ -389,6 +389,15 @@ void events_dispatch(Store *s, const char *type, const cima_json *d) {
       put_settings_proto(s, json_get_or(settings, "proto", nullptr));
     }
   }
+  else if (IS("GUILD_DIRECTORY_ENTRY_CREATE") ||
+           IS("GUILD_DIRECTORY_ENTRY_UPDATE")) {
+    store_put_directory_entry(s, d);
+  }
+  else if (IS("GUILD_DIRECTORY_ENTRY_DELETE")) {
+    store_remove_directory_entry(
+      s, snowflake_of(json_get(d, "directory_channel_id")),
+      snowflake_of(json_get(d, "entity_id")));
+  }
   else if (IS("RELATIONSHIP_ADD") || IS("RELATIONSHIP_UPDATE")) {
     store_put_relationship(s, d);
   }

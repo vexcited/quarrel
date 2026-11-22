@@ -642,14 +642,14 @@ static Request *enqueue(Api *api, const ApiRequest *req, ApiDone done,
 
   snprintf(r->url, url_len, "%s%s", API_BASE, req->path);
 
+  if (req->context != nullptr) {
+    r->context = base64_encode(req->context, strlen(req->context));
+  }
+
   if (req->captcha != nullptr) {
     r->captcha_key = str_dup(req->captcha->key);
     r->captcha_session = str_dup(req->captcha->session_id);
     r->captcha_rqtoken = str_dup(req->captcha->rqtoken);
-  }
-
-  if (req->context != nullptr) {
-    r->context = base64_encode(req->context, strlen(req->context));
   }
 
   // the method is part of what is limited.
@@ -1321,8 +1321,8 @@ void api_open_group(Api *api, const Snowflake *user_ids, size_t count,
   cima_json_writer_dispose(&w);
 }
 
-void api_create_invite(Api *api, Snowflake channel_id, ApiDone done,
-                       void *ctx) {
+void api_create_invite(Api *api, Snowflake channel_id, uint32_t max_age,
+                       ApiDone done, void *ctx) {
   char path[96];
   cima_json_writer w = {};
 
@@ -1330,7 +1330,7 @@ void api_create_invite(Api *api, Snowflake channel_id, ApiDone done,
 
   // what the client sends for the link of its invite dialog.
   json_begin_object(&w);
-  json_field(&w, "max_age", 604800);
+  json_field(&w, "max_age", (int64_t)max_age);
   json_field(&w, "max_uses", 0);
   json_field(&w, "target_type", nullptr);
   json_field(&w, "temporary", false);

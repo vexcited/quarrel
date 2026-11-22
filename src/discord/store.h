@@ -319,6 +319,11 @@ struct Guild {
   bool has_settings;
   // the guild has the COMMUNITY feature.
   bool community;
+  // the guild is a student hub, with HUB, and lists servers in its
+  // directory channels.
+  bool hub;
+  // a HubType, what kind of school the hub is for.
+  uint8_t hub_type;
 
   uint64_t version, members_version;
 
@@ -506,6 +511,70 @@ struct Channel {
   size_t nposts;
   uint64_t posts_stamp;
 };
+
+/* ========================================================================== */
+/* directories: the channels of a hub that list servers and events, which     */
+/* the store holds apart from the channel itself.                             */
+/* ========================================================================== */
+
+typedef enum : uint8_t {
+  DIRECTORY_ENTRY_GUILD = 0,
+  DIRECTORY_ENTRY_EVENT = 1,
+} DirectoryEntryType;
+
+// discord no longer offers DIRECTORY_SUBJECT_MAJOR.
+typedef enum : uint8_t {
+  DIRECTORY_UNCATEGORIZED = 0,
+  DIRECTORY_SCHOOL_CLUB = 1,
+  DIRECTORY_CLASS = 2,
+  DIRECTORY_STUDY_SOCIAL = 3,
+  DIRECTORY_SUBJECT_MAJOR = 4,
+  DIRECTORY_MISC = 5,
+} DirectoryCategory;
+
+constexpr size_t DIRECTORY_CATEGORIES = 6;
+
+typedef struct {
+  // the guild or the event listed.
+  Snowflake entity_id;
+  DirectoryEntryType type;
+  DirectoryCategory category;
+  // what whoever listed it wrote, null for nothing.
+  char *description;
+  Snowflake author_id;
+  // unix milliseconds.
+  int64_t created_at;
+
+  // the guild listed, or the one of the event.
+  Snowflake guild_id;
+  char *name, *icon, *splash, *banner;
+  uint32_t member_count, presence_count;
+  bool featurable;
+
+  // an event: what it is called, its cover, when it starts and ends in
+  // unix milliseconds, 0 for no end, who is interested and whether the
+  // current user is.
+  char *event_name, *event_description, *event_image;
+  int64_t starts_at, ends_at;
+  uint32_t user_count;
+  bool rsvp;
+} DirectoryEntry;
+
+typedef struct {
+  Snowflake channel_id;
+  // newest first.
+  DirectoryEntry **entries;
+  size_t nentries;
+  // the entries of each DirectoryCategory, once discord counted them.
+  uint32_t counts[DIRECTORY_CATEGORIES];
+  bool counted;
+  // every entry was fetched once, and a fetch is running.
+  bool loaded, loading;
+  uint64_t version;
+
+  // the store's own.
+  size_t entries_cap;
+} Directory;
 
 /* ========================================================================== */
 /* messages.                                                                  */
@@ -754,6 +823,7 @@ struct Store {
   CILO_MAP(Snowflake, Guild *) guilds;
   CILO_MAP(Snowflake, Channel *) channels;
   CILO_MAP(Snowflake, ReadState) read_states;
+  CILO_MAP(Snowflake, Directory *) directories;
   // the guilds in the order READY gave them, new ones first.
   Snowflake *guild_order;
   size_t nguild_order;
@@ -927,6 +997,18 @@ const MemberList *store_member_list(Store *s, const Channel *c);
 void store_member_list_id(const Store *s, const Channel *c, char *out,
                           size_t cap);
 
+// what the current user may do in the guild, before any channel. PERM_ALL
+// for its owner and its administrators.
+Permissions store_guild_permissions(Store *s, const Guild *g);
+
+// the listing of a directory channel, null until something of it was
+// fetched or announced.
+Directory *store_directory(const Store *s, Snowflake channel_id);
+// an entry of it by the guild or the event it lists, null when unknown.
+DirectoryEntry *store_directory_entry(const Directory *d, Snowflake entity_id);
+// the first directory channel of a guild the user may view, null for none.
+Channel *store_guild_directory(Store *s, const Guild *g);
+
 /* ========================================================================== */
 /* writing. for events.c and session.c, the ui never calls these.             */
 /* ========================================================================== */
@@ -1045,6 +1127,20 @@ double store_typing_expire(Store *s);
 
 // GUILD_MEMBER_LIST_UPDATE.
 void store_member_list_update(Store *s, const cima_json *update);
+
+// the directory of a channel, made empty the first time it is asked for.
+Directory *store_open_directory(Store *s, Snowflake channel_id);
+// an entry as the directory routes and GUILD_DIRECTORY_ENTRY_CREATE and
+// _UPDATE send it, counted in its category when it is new.
+DirectoryEntry *store_put_directory_entry(Store *s, const cima_json *entry);
+// a directory's whole listing, replacing the entries known.
+void store_put_directory(Store *s, Snowflake channel_id,
+                         const cima_json *entries);
+// the counts route's answer, an object of categories to counts.
+void store_put_directory_counts(Store *s, Snowflake channel_id,
+                                const cima_json *counts);
+void store_remove_directory_entry(Store *s, Snowflake channel_id,
+                                  Snowflake entity_id);
 
 // call after changing a channel or a guild by hand.
 void store_touch_channel(Store *s, Channel *c);

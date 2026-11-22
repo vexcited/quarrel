@@ -38,6 +38,10 @@ bool icon_button(App *app, civue_id id, civue_icon icon, float size,
 // a row of a menu, 40 points high, true when pressed.
 bool menu_row(App *app, civue_id id, civue_icon icon, const char *label,
               civue_color color);
+// a button of a dialog's foot, as wide as it may be, true when pressed. the
+// primary one is the brand's.
+bool dialog_button(const Look *k, civue_id id, const char *label,
+                   bool primary);
 civue_icon activity_icon(ActivityType type);
 civue_field_look field_look(const Look *k);
 civue_scrollbar_look scrollbars_of(App *app, float size);

@@ -10,6 +10,9 @@ void top_bar(App *app);
 // under it: the guilds' switcher, then the way to the friends or what the
 // open guild offers.
 void place_bar(App *app);
+// the first letter of each word, what discord shows for a guild without an
+// icon.
+void guild_acronym(const char *name, char *out, size_t cap);
 // the guild's icon or its acronym over the open node, `size` points square.
 void guild_icon(App *app, const Guild *guild, float size, bool lit);
 // the guilds under `anchor`, while the app shows POPOVER_GUILDS. a press on
@@ -142,6 +145,19 @@ bool profile_name_trigger(App *app, Snowflake user_id, Snowflake guild_id);
 void profile_popout(App *app);
 // the full profile of `app->modal_user` over the whole window.
 void profile_modal(App *app);
+// a hub's ways in over its channels: joining the servers it lists, adding
+// one and inviting people.
+void hub_rows(App *app, Guild *guild);
+// the servers a directory channel lists, in place of a chat.
+void directory_page(App *app, Channel *channel);
+// the dialog a hub has open over the window, see `app->hub_dialog`.
+void hub_dialogs(App *app);
+// asks for the email that joins a school's hub.
+void hub_join_open(App *app);
+// asks for the name the user goes by in a hub.
+void hub_nick_open(App *app, Snowflake guild_id);
+// asks before leaving a hub.
+void hub_leave_open(App *app, Snowflake guild_id);
 void friends_page(App *app);
 
 // the composer's files: the plus and its menu, the tray over the field, the

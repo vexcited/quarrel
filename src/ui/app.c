@@ -121,6 +121,21 @@ void app_reset(App *app) {
     app->friend_captcha = nullptr;
   }
 
+  drop(&app->directory_field);
+  drop(&app->directory_query);
+  drop(&app->new_server_name);
+  drop(&app->entry_description);
+  drop(&app->hub_email);
+  drop(&app->hub_code);
+  drop(&app->hub_school);
+  drop(&app->hub_search);
+  drop(&app->nick);
+
+  app->directory_tab = -1;
+  app->directory_join = 0;
+  app->hub_dialog = HUB_DIALOG_NONE;
+  app->nick_guild = 0;
+
   app->reply_to = 0;
   app->editing = 0;
   app->list_channel = 0;
@@ -157,6 +172,16 @@ void app_select_channel(App *app, Snowflake channel_id) {
   }
 
   leave_composer(app);
+
+  // a directory opens on its home, its search forgotten.
+  if (channel_id != app->session->selected_channel_id) {
+    free(app->directory_query);
+    free(app->directory_field);
+    app->directory_query = nullptr;
+    app->directory_field = nullptr;
+    app->directory_tab = -1;
+  }
+
   app->guild_id = channel ? channel->guild_id : 0;
   last_of(app, app->guild_id)->channel_id = channel_id;
   app->focus_composer = channel_id != 0;
@@ -189,6 +214,13 @@ void app_select_guild(App *app, Snowflake guild_id) {
 
   if (guild_id && !guild) {
     return;
+  }
+
+  // a hub opens on the servers it lists.
+  if (!store_channel(store, channel_id) && guild && guild->hub) {
+    Channel *directory = store_guild_directory(store, guild);
+
+    channel_id = directory ? directory->id : 0;
   }
 
   if (!store_channel(store, channel_id)) {

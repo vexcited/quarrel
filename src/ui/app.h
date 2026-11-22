@@ -54,6 +54,7 @@ typedef enum : uint8_t {
   POPOVER_POST_TAGS,
   POPOVER_POST_MENU,
   POPOVER_PROFILE,
+  POPOVER_DIRECTORY_MENU,
 } Popover;
 
 // the side of what was clicked a profile card opens on.
@@ -69,6 +70,32 @@ typedef enum : uint8_t {
   PROFILE_TAB_GUILDS,
   PROFILE_TAB_FRIENDS,
 } ProfileTab;
+
+// what a student hub has open over the window, one at a time.
+typedef enum : uint8_t {
+  HUB_DIALOG_NONE,
+  // a server to list in the directory.
+  HUB_DIALOG_ADD,
+  // the category and description of an entry.
+  HUB_DIALOG_EDIT,
+  // asks before taking an entry out.
+  HUB_DIALOG_REMOVE,
+  // asks before leaving the hub.
+  HUB_DIALOG_LEAVE,
+  // the email that joins a school's hub.
+  HUB_DIALOG_JOIN,
+  // the name a new member goes by in the hub.
+  HUB_DIALOG_NICK,
+} HubDialog;
+
+// the steps of the dialog that adds a server, as discord's.
+typedef enum : uint8_t {
+  ADD_CHOOSE,
+  ADD_TEMPLATES,
+  ADD_CUSTOMIZE,
+  ADD_DETAILS,
+  ADD_DONE,
+} AddStep;
 
 typedef enum : uint8_t {
   INBOX_UNREADS,
@@ -228,6 +255,41 @@ typedef struct {
   uint8_t settings_part;
   int8_t settings_select;
   civue_rect settings_select_rect;
+
+  // the directory shown: its tab, a DirectoryCategory or -1 for its home,
+  // what its search field holds, and the words searched, null for none.
+  int8_t directory_tab;
+  char *directory_field;
+  char *directory_query;
+  // the guild of the card whose menu is open, and its button.
+  Snowflake directory_entity;
+  civue_rect directory_anchor;
+  // a guild joined from a directory, opened once it arrives.
+  Snowflake directory_join;
+
+  // the hub's dialog, the directory it is about, and the guild it adds,
+  // edits or removes, or the hub it leaves.
+  HubDialog hub_dialog;
+  Snowflake hub_channel, hub_entity;
+  AddStep add_step;
+  // the add dialog shows the servers already added, and the template the
+  // new server starts from, -1 for none.
+  bool add_listed;
+  int8_t add_template;
+  // the server added is made by the dialog.
+  bool add_new;
+  char *new_server_name;
+  // what the entry says and its DirectoryCategory, 0 before one is picked,
+  // and whether the list of categories is open.
+  char *entry_description;
+  uint8_t entry_category;
+  bool category_open;
+  // the student hub join: the email, the code, the school for the
+  // waitlist, and the search over the schools.
+  char *hub_email, *hub_code, *hub_school, *hub_search;
+  // the nickname asked for in a hub just joined.
+  char *nick;
+  Snowflake nick_guild;
 
   // the spoilers the user clicked.
   CIVUE_VEC(civue_id) revealed;

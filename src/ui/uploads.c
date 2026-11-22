@@ -643,21 +643,6 @@ void upload_progress(App *app, Channel *c, const Message *m) {
 /* the dialogs.                                                               */
 /* ========================================================================== */
 
-static bool dialog_button(const Look *k, civue_id id, const char *label,
-                          bool primary) {
-  bool pressed = false;
-
-  div(key(id), flex, items_center, justify_center, flex_1, h(10), px(4),
-      rounded(lg), style(.bg = primary ? k->brand : k->surface_high),
-      hover(bg(primary ? k->brand_hover : k->hover)),
-      text_color(primary ? CIVUE_WHITE : k->strong), cursor_pointer) {
-    pressed = button().activated;
-    text(label, font_weight(medium));
-  }
-
-  return pressed;
-}
-
 static void field_label(const Look *k, const char *label) {
   text(label, mt(2), text_size(px(14)), line_height(px(18)),
        font_weight(medium), text_color(k->strong));
