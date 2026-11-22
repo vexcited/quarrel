@@ -368,6 +368,8 @@ struct Session {
   SessionHubJoin hub;
   // the guild session_leave_guild is leaving.
   Snowflake leaving_guild;
+  // what managing a guild needs, see discord/admin.h. null until used.
+  struct Admin *admin;
   // the account connected or connecting, 0 on the login form.
   Snowflake account_id;
   // bumped with every change of the fields above.

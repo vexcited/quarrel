@@ -160,11 +160,18 @@ typedef struct {
   char *name;
   // 0xrrggbb, 0 for no color.
   uint32_t color;
+  // the other ends of a gradient, 0 for a plain color. a holographic role
+  // has a tertiary color.
+  uint32_t secondary_color, tertiary_color;
   int32_t position;
   Permissions permissions;
   // shown apart in the member list.
   bool hoist, mentionable, managed;
   char *icon, *unicode_emoji;
+  // the role a bot, a boost or a subscription comes with, which nobody
+  // hands out. 0 for none.
+  Snowflake bot_id, integration_id;
+  bool premium_subscriber;
 } Role;
 
 typedef struct {
@@ -280,10 +287,56 @@ typedef struct {
   Channel *channel;
 } ChannelRow;
 
+typedef enum : uint8_t {
+  VERIFICATION_NONE = 0,
+  VERIFICATION_LOW = 1,
+  VERIFICATION_MEDIUM = 2,
+  VERIFICATION_HIGH = 3,
+  VERIFICATION_VERY_HIGH = 4,
+} VerificationLevel;
+
+typedef enum : uint8_t {
+  CONTENT_FILTER_DISABLED = 0,
+  CONTENT_FILTER_MEMBERS_WITHOUT_ROLES = 1,
+  CONTENT_FILTER_ALL_MEMBERS = 2,
+} ContentFilter;
+
+// what the system channel does not say, the flags being the ones that
+// silence it.
+constexpr uint32_t SYSTEM_SUPPRESS_JOIN = 1u << 0;
+constexpr uint32_t SYSTEM_SUPPRESS_BOOSTS = 1u << 1;
+constexpr uint32_t SYSTEM_SUPPRESS_SETUP_TIPS = 1u << 2;
+constexpr uint32_t SYSTEM_SUPPRESS_JOIN_REPLIES = 1u << 3;
+constexpr uint32_t SYSTEM_SUPPRESS_ROLE_SUBSCRIPTION = 1u << 4;
+constexpr uint32_t SYSTEM_SUPPRESS_ROLE_SUBSCRIPTION_REPLIES = 1u << 5;
+
 struct Guild {
   Snowflake id;
   char *name, *icon, *banner, *splash, *description;
   Snowflake owner_id, system_channel_id, rules_channel_id;
+  // where members go once idle in voice for `afk_timeout` seconds, 0 for
+  // nowhere.
+  Snowflake afk_channel_id;
+  uint32_t afk_timeout;
+  // a community's: where discord posts what moderators should know, and
+  // its safety alerts.
+  Snowflake public_updates_channel_id, safety_alerts_channel_id;
+  // SYSTEM_SUPPRESS_ flags.
+  uint32_t system_channel_flags;
+  // the level new members get unless they set their own, which `community`
+  // wants at NOTIFY_ONLY_MENTIONS.
+  NotifyLevel default_notifications;
+  VerificationLevel verification_level;
+  ContentFilter content_filter;
+  // moderators need two factors to moderate.
+  bool mfa_required;
+  bool premium_progress_bar;
+  // like "en-US".
+  char *preferred_locale;
+  // the guild's features as discord names them, like "COMMUNITY".
+  char **features;
+  size_t nfeatures;
+  char *vanity_code;
   uint32_t member_count;
   uint8_t premium_tier;
   uint32_t premium_subscription_count;
@@ -948,6 +1001,12 @@ const GuildFolder *store_guild_folders(Store *s, size_t *count);
 //   size_t n;
 //   const ChannelRow *rows = store_guild_channels(store, guild, &n);
 const ChannelRow *store_guild_channels(Store *s, Guild *g, size_t *count);
+
+// whether the guild has a feature, like "COMMUNITY" or "BANNER".
+bool store_guild_has(const Guild *g, const char *feature);
+// the position of the current user's highest role, which only roles under
+// it may be managed from. INT32_MAX for the owner.
+int32_t store_highest_position(Store *s, const Guild *g);
 
 // dms and group dms, the latest message first.
 Channel *const *store_private_channels(Store *s, size_t *count);

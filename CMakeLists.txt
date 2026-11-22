@@ -62,6 +62,7 @@ endif()
 set(QUARREL_CORE_SOURCES
   src/http.c
   src/images.c
+  src/discord/admin.c
   src/discord/api.c
   src/discord/cdn.c
   src/discord/directory.c
@@ -141,6 +142,8 @@ endif()
 add_executable(quarrel
   src/main.c
   src/ui/accounts.c
+  src/ui/channels.c
+  src/ui/forms.c
   src/ui/inbox.c
   src/ui/messagemenu.c
   src/ui/newdm.c
@@ -160,6 +163,8 @@ add_executable(quarrel
   src/ui/messages.c
   src/ui/profile.c
   src/ui/shell.c
+  src/ui/roles.c
+  src/ui/server.c
   src/ui/settings.c
   src/ui/sidebar.c
   src/ui/stage.c

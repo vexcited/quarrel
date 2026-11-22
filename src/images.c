@@ -1,6 +1,9 @@
 #include "images.h"
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "http.h"
 
@@ -25,7 +28,43 @@ static void on_fetched(void *ctx, const HttpResponse *res) {
                        later ? CIVUE_FETCH_LATER : CIVUE_FETCH_NEVER);
 }
 
+// an image picked on the disk, shown before it is uploaded. answered at
+// once, which civue allows.
+static uint64_t read_file(uint64_t load, const char *path) {
+  FILE *file = fopen(path, "rb");
+  long size = 0;
+  void *bytes = nullptr;
+
+  if (file != nullptr && fseek(file, 0, SEEK_END) == 0) {
+    size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+  }
+
+  if (size > 0 && (size_t)size <= IMAGES_MAX_DOWNLOAD) {
+    bytes = malloc((size_t)size);
+  }
+
+  if (bytes != nullptr && fread(bytes, 1, (size_t)size, file) == (size_t)size) {
+    civue_images_fetched(images, load, bytes, (size_t)size, CIVUE_FETCH_OK);
+  }
+  else {
+    civue_images_fetched(images, load, nullptr, 0, CIVUE_FETCH_NEVER);
+  }
+
+  free(bytes);
+
+  if (file != nullptr) {
+    fclose(file);
+  }
+
+  return 0;
+}
+
 static uint64_t fetch(void *, uint64_t load, const char *url) {
+  if (strncmp(url, "file://", 7) == 0) {
+    return read_file(load, url + 7);
+  }
+
   HttpHeader headers[] = {
     {"Accept", "image/webp,image/png,image/jpeg,image/gif,*/*;q=0.8"},
   };

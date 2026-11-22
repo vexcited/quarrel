@@ -2200,8 +2200,26 @@ static Role *put_role(Guild *g, const cima_json *role) {
   put_bool(&r->mentionable, role, "mentionable");
   put_bool(&r->managed, role, "managed");
 
-  if ((v = json_get(role, "color")) != nullptr) {
+  const cima_json *colors = json_get(role, "colors");
+
+  // the newer gradient colors carry the plain one as their first.
+  if (json_type(colors) == CIMA_JSON_OBJECT) {
+    r->color =
+      (uint32_t)snowflake_of(json_get(colors, "primary_color")) & 0xffffff;
+    r->secondary_color =
+      (uint32_t)snowflake_of(json_get(colors, "secondary_color")) & 0xffffff;
+    r->tertiary_color =
+      (uint32_t)snowflake_of(json_get(colors, "tertiary_color")) & 0xffffff;
+  }
+  else if ((v = json_get(role, "color")) != nullptr) {
     r->color = (uint32_t)snowflake_of(v) & 0xffffff;
+  }
+
+  if ((v = json_get(role, "tags")) != nullptr) {
+    r->bot_id = snowflake_of(json_get(v, "bot_id"));
+    r->integration_id = snowflake_of(json_get(v, "integration_id"));
+    // discord sends a null for true.
+    r->premium_subscriber = json_get(v, "premium_subscriber") != nullptr;
   }
 
   if ((v = json_get(role, "position")) != nullptr) {
@@ -2376,6 +2394,16 @@ static void free_folders(Store *s) {
   s->nfolders = 0;
 }
 
+static void free_features(Guild *g) {
+  for (size_t i = 0; i < g->nfeatures; i++) {
+    free(g->features[i]);
+  }
+
+  free(g->features);
+  g->features = nullptr;
+  g->nfeatures = 0;
+}
+
 static void free_guild(Store *s, Guild *g) {
   for (size_t i = 0; i < g->nchannels; i++) {
     CILO_MAP_DEL(&s->channels, g->channels[i]->id);
@@ -2405,6 +2433,9 @@ static void free_guild(Store *s, Guild *g) {
   free(g->banner);
   free(g->splash);
   free(g->description);
+  free(g->preferred_locale);
+  free(g->vanity_code);
+  free_features(g);
   free(g);
 }
 
@@ -2426,6 +2457,32 @@ static void fill_guild(Guild *g, const cima_json *guild) {
   put_id(&g->owner_id, props, "owner_id");
   put_id(&g->system_channel_id, props, "system_channel_id");
   put_id(&g->rules_channel_id, props, "rules_channel_id");
+  put_id(&g->afk_channel_id, props, "afk_channel_id");
+  put_id(&g->public_updates_channel_id, props, "public_updates_channel_id");
+  put_id(&g->safety_alerts_channel_id, props, "safety_alerts_channel_id");
+  put_str(&g->preferred_locale, props, "preferred_locale");
+  put_str(&g->vanity_code, props, "vanity_url_code");
+  put_bool(&g->premium_progress_bar, props, "premium_progress_bar_enabled");
+
+  if ((v = json_get(props, "afk_timeout")) != nullptr) {
+    g->afk_timeout = (uint32_t)snowflake_of(v);
+  }
+
+  if ((v = json_get(props, "system_channel_flags")) != nullptr) {
+    g->system_channel_flags = (uint32_t)snowflake_of(v);
+  }
+
+  if ((v = json_get(props, "verification_level")) != nullptr) {
+    g->verification_level = (VerificationLevel)snowflake_of(v);
+  }
+
+  if ((v = json_get(props, "explicit_content_filter")) != nullptr) {
+    g->content_filter = (ContentFilter)snowflake_of(v);
+  }
+
+  if ((v = json_get(props, "mfa_level")) != nullptr) {
+    g->mfa_required = snowflake_of(v) != 0;
+  }
 
   if ((v = json_get(props, "premium_tier")) != nullptr) {
     g->premium_tier = (uint8_t)snowflake_of(v);
@@ -2461,14 +2518,21 @@ static void fill_guild(Guild *g, const cima_json *guild) {
       {"MAX_FILE_SIZE_250_MB", 250ull << 20},
     };
 
-    g->community = false;
+    free_features(g);
     g->upload_feature = 0;
-    g->hub = false;
+
+    if (json_type(v) == CIMA_JSON_ARRAY && json_len(v) != 0) {
+      g->features = xcalloc(json_len(v), sizeof *g->features);
+    }
 
     CIMA_EACH(feature, json_items(v)) {
-      const char *name = json_or(feature, "");
+      const char *name = json_or(feature, nullptr);
 
-      g->community = g->community || strcmp(name, "COMMUNITY") == 0;
+      if (name == nullptr) {
+        continue;
+      }
+
+      g->features[g->nfeatures++] = str_dup(name);
 
       for (size_t i = 0; i < sizeof uploads / sizeof uploads[0]; i++) {
         if (strcmp(name, uploads[i].name) == 0 &&
@@ -2476,18 +2540,23 @@ static void fill_guild(Guild *g, const cima_json *guild) {
           g->upload_feature = uploads[i].bytes;
         }
       }
-
-      g->hub = g->hub || strcmp(name, "HUB") == 0;
     }
+
+    g->community = store_guild_has(g, "COMMUNITY");
+    g->hub = store_guild_has(g, "HUB");
   }
 
   if ((v = json_get(props, "hub_type")) != nullptr) {
     g->hub_type = (uint8_t)snowflake_of(v);
   }
 
-  // the guild's default stands until the user picks a level of their own.
   v = json_get(props, "default_message_notifications");
 
+  if (v != nullptr) {
+    g->default_notifications = (NotifyLevel)snowflake_of(v);
+  }
+
+  // the guild's default stands until the user picks a level of their own.
   if (v != nullptr && !g->has_settings) {
     g->notifications = (NotifyLevel)snowflake_of(v);
   }
@@ -3502,6 +3571,16 @@ size_t store_typing(const Store *s, const Channel *c, Snowflake *out,
 /* permissions and unread states.                                             */
 /* ========================================================================== */
 
+bool store_guild_has(const Guild *g, const char *feature) {
+  for (size_t i = 0; g != nullptr && i < g->nfeatures; i++) {
+    if (strcmp(g->features[i], feature) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // the roles of a subject live in arrays the caller holds.
 typedef struct {
   Snowflake ids[MAX_SUBJECT_ROLES];
@@ -3545,6 +3624,29 @@ Permissions store_guild_permissions(Store *s, const Guild *g) {
   PermissionSubject who = subject_of(s, g, &roles);
 
   return permissions_base(&who);
+}
+
+int32_t store_highest_position(Store *s, const Guild *g) {
+  if (g == nullptr) {
+    return 0;
+  }
+
+  if (g->owner_id == s->self_id) {
+    return INT32_MAX;
+  }
+
+  const Member *me = store_member(g, s->self_id);
+  int32_t highest = 0;
+
+  for (size_t i = 0; me != nullptr && i < me->nroles; i++) {
+    const Role *role = store_role(g, me->roles[i]);
+
+    if (role != nullptr && role->position > highest) {
+      highest = role->position;
+    }
+  }
+
+  return highest;
 }
 
 Permissions store_permissions(Store *s, const Channel *c) {

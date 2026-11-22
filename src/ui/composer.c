@@ -8,6 +8,7 @@
 
 #include "discord/uploads.h"
 #include "media.h"
+#include "server.h"
 #include "widgets.h"
 
 constexpr float LINE = 22;
@@ -164,7 +165,7 @@ static void catch_typing(App *app) {
   civue_bytes *typed = &ui->input.text;
 
   if (ui->focus || !typed->len || (ui->input.mods & CIVUE_MOD_CMD) ||
-      media_viewing(app)) {
+      media_viewing(app) || server_covers(app)) {
     return;
   }
 

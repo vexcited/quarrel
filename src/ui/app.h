@@ -328,6 +328,9 @@ typedef struct {
   bool post_tried;
   char *post_title, *post_body;
   Ids post_tags;
+
+  // a guild's settings and its channels being made or moved, see server.h.
+  struct ServerUi *server;
 } App;
 
 // forgets what was shown and typed, for another account.

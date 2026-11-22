@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <time.h>
 
+#include "discord/admin.h"
 #include "discord/api.h"
 #include "discord/gateway.h"
 #include "discord/remote_auth.h"
@@ -1596,6 +1597,7 @@ static void session_free(Session *s) {
   api_free(s->api);
   // after the api, whose answers it would wait for.
   gifs_free(s->gifs);
+  admin_free(s->admin);
   platform_timer_cancel(s->typing_timer);
 
   for (Call *call = s->calls; call != nullptr;) {

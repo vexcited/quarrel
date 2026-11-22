@@ -9,6 +9,7 @@
 #include <civue/dsl.h>
 
 #include "discord/cdn.h"
+#include "server.h"
 #include "widgets.h"
 
 static civue_icon channel_icon(const Channel *c) {
@@ -39,14 +40,21 @@ static void unread_mark(const Look *k) {
       bg(k->strong)) {}
 }
 
-static void category_row(App *app, Channel *category) {
+static void category_row(App *app, Guild *guild, Channel *category) {
   const Look *k = &app->look;
+  bool manages = store_can(app->session->store, category,
+                           PERM_MANAGE_CHANNELS);
+  bool create = false;
 
   div(key(id_at(id("category"), category->id)), flex, items_center, gap(1),
       h(8), mt(3), px(2), mx(2), text_color(k->faint),
       hover(text_color(k->text)), text_size(px(14)), line_height(px(18)),
       font_weight(medium), cursor_pointer) {
-    if (button().activated) {
+    civue_button_state state = button();
+
+    channel_drag_row(app, guild, category, here(), &state.response);
+
+    if (state.activated && !channel_dragging(app)) {
       category->collapsed = !category->collapsed;
     }
 
@@ -58,10 +66,30 @@ static void category_row(App *app, Channel *category) {
     else {
       icon(lucide, chevron_down, size(3), flex_shrink_0);
     }
+
+    div(flex_1) {}
+
+    // discord's "+" of a category, while the pointer is over it.
+    if (manages && state.response.hovered && !channel_dragging(app)) {
+      civue_id plus = id_at(id("category-create"), category->id);
+
+      div(key(plus), flex, items_center, justify_center, size(5),
+          flex_shrink_0, text_color(k->subtle), hover(text_color(k->strong))) {
+        civue_button_state add = button();
+
+        create = add.activated;
+        hint(app, plus, &add.response, "Create Channel", CIVUE_TOOLTIP_ABOVE);
+        icon(lucide, plus, size(4));
+      }
+    }
+  }
+
+  if (create) {
+    channel_create_open(app, guild->id, category->id, false);
   }
 }
 
-static void channel_row(App *app, Channel *c, bool thread) {
+static void channel_row(App *app, Guild *guild, Channel *c, bool thread) {
   const Look *k = &app->look;
   Store *store = app->session->store;
   bool selected = app->session->selected_channel_id == c->id;
@@ -71,6 +99,8 @@ static void channel_row(App *app, Channel *c, bool thread) {
                       : unread.muted  ? rgb(0x4f505a)
                                       : k->faint;
 
+  color = civue_alpha(color, color.a * channel_drag_alpha(app, c));
+
   div(key(id_at(id("channel"), c->id)), relative, flex, items_center, gap(2),
       h(8), my(px(1)), mx(2), px(2), rounded(lg), text_color(color),
       style(.bg = selected ? k->selected : CIVUE_CLEAR,
@@ -78,7 +108,17 @@ static void channel_row(App *app, Channel *c, bool thread) {
       hover(bg(selected ? k->selected : k->hover),
             text_color(selected || lit ? k->strong : k->text)),
       cursor_pointer) {
-    if (button().activated) {
+    civue_button_state state = button();
+
+    // threads stay where their channel is.
+    if (!thread) {
+      channel_drag_row(app, guild, c, here(), &state.response);
+    }
+    else if (state.response.right_clicked) {
+      channel_menu_open(app, c->id, civue_ui_current()->input.mouse);
+    }
+
+    if (state.activated && !channel_dragging(app)) {
       // a voice channel is joined and shows its call.
       if (channel_is_voice(c)) {
         if (store_can(store, c, PERM_CONNECT)) {
@@ -117,6 +157,11 @@ void channel_list(App *app, Guild *guild) {
 
   div(key(id("channels")), flex_1, min_h(0), overflow_y_scroll,
       scrollbars(&app->thin_bars), pb(4)) {
+    // a right click where no row is offers to make channels.
+    if (button().response.right_clicked) {
+      channel_menu_open(app, 0, civue_ui_current()->input.mouse);
+    }
+
     guild_banner(app, guild);
 
     if (guild->hub) {
@@ -133,7 +178,7 @@ void channel_list(App *app, Guild *guild) {
 
       if (rows[i].kind == CHANNEL_ROW_CATEGORY) {
         folded = c->collapsed;
-        category_row(app, c);
+        category_row(app, guild, c);
         continue;
       }
 
@@ -155,12 +200,14 @@ void channel_list(App *app, Guild *guild) {
         }
       }
 
-      channel_row(app, c, rows[i].kind == CHANNEL_ROW_THREAD);
+      channel_row(app, guild, c, rows[i].kind == CHANNEL_ROW_THREAD);
 
       if (channel_is_voice(c)) {
         voice_members(app, c);
       }
     }
+
+    channel_drag_end(app, guild);
   }
 }
 

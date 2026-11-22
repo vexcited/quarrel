@@ -962,3 +962,25 @@ bool gateway_request_members(Gateway *g, Snowflake guild_id,
   json_end_object(&w);
   return send_payload(g, &w);
 }
+
+bool gateway_search_members(Gateway *g, Snowflake guild_id, const char *query,
+                            uint32_t limit) {
+  if (g->status != GATEWAY_READY || guild_id == 0 || query == nullptr) {
+    return false;
+  }
+
+  cima_json_writer w = {};
+
+  begin_payload(&w, OP_REQUEST_GUILD_MEMBERS);
+  json_begin_object(&w);
+  json_key(&w, "guild_id");
+  json_begin_array(&w);
+  snowflake_write(&w, guild_id);
+  json_end_array(&w);
+  json_field(&w, "query", query);
+  json_field(&w, "limit", (int64_t)limit);
+  json_field(&w, "presences", false);
+  json_end_object(&w);
+  json_end_object(&w);
+  return send_payload(g, &w);
+}

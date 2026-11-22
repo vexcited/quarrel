@@ -7,6 +7,7 @@
 #include <civue/dsl.h>
 
 #include "discord/cdn.h"
+#include "server.h"
 #include "widgets.h"
 
 // a row of the switcher is the button that opens it: as high, its icon as
@@ -575,10 +576,13 @@ void guild_menu(App *app, civue_rect anchor) {
   }
 
   const Look *k = &app->look;
+  Store *store = app->session->store;
   bool hides = ids_has(&app->hide_muted, guild->id);
-  bool owner = guild->owner_id == app->session->store->self_id;
-  bool invite = false, hide = false, copy = false, profile = false,
-       leave = false;
+  bool owner = guild->owner_id == store->self_id;
+  bool manages = store_guild_permissions(store, guild) & PERM_MANAGE_CHANNELS;
+  bool invite = false, hide = false, copy = false, settings = false,
+       channel = false, category = false, profile = false, leave = false,
+       leave_hub = false;
   civue_rect card = {};
 
   overlay() {
@@ -590,7 +594,7 @@ void guild_menu(App *app, civue_rect anchor) {
 
       invite = menu_row(app, id("menu-invite"), CIVUE_ICON(lucide, user_plus),
                         guild->hub ? "Invite People" : "Invite to Server",
-                        k->text);
+                        k->link);
 
       if (guild->hub) {
         profile =
@@ -598,10 +602,34 @@ void guild_menu(App *app, civue_rect anchor) {
                    "Edit Hub Profile", k->text);
       }
 
+      if (server_can_manage(app, guild)) {
+        settings = menu_row(app, id("menu-settings"),
+                            CIVUE_ICON(lucide, settings), "Server Settings",
+                            k->text);
+      }
+
+      if (manages) {
+        channel = menu_row(app, id("menu-create-channel"),
+                           CIVUE_ICON(lucide, circle_plus), "Create Channel",
+                           k->text);
+        category = menu_row(app, id("menu-create-category"),
+                            CIVUE_ICON(lucide, folder_plus), "Create Category",
+                            k->text);
+      }
+
+      div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
+
       hide = menu_row(
         app, id("menu-hide-muted"),
         hides ? CIVUE_ICON(lucide, eye) : CIVUE_ICON(lucide, eye_off),
         hides ? "Show Muted Channels" : "Hide Muted Channels", k->text);
+
+      if (!owner && !guild->hub) {
+        div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
+
+        leave = menu_row(app, id("menu-leave"), CIVUE_ICON(lucide, door_open),
+                         "Leave Server", k->critical_text);
+      }
 
       div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
 
@@ -609,20 +637,29 @@ void guild_menu(App *app, civue_rect anchor) {
                       "Copy Server ID", k->text);
 
       if (guild->hub && !owner) {
-        leave = menu_row(app, id("menu-leave-hub"),
-                         CIVUE_ICON(lucide, log_out), "Leave Hub",
-                         k->critical_text);
+        leave_hub = menu_row(app, id("menu-leave-hub"),
+                             CIVUE_ICON(lucide, log_out), "Leave Hub",
+                             k->critical_text);
       }
     }
   }
 
   dismiss(app, card, anchor);
 
-  if (profile) {
+  if (settings) {
+    server_settings_open(app, guild->id, SERVER_PROFILE);
+  }
+  else if (channel || category) {
+    channel_create_open(app, guild->id, 0, category);
+  }
+  else if (profile) {
     hub_nick_open(app, guild->id);
   }
-  else if (leave) {
+  else if (leave_hub) {
     hub_leave_open(app, guild->id);
+  }
+  else if (leave) {
+    server_leave_ask(app, guild->id);
   }
   else if (invite) {
     app->popover = POPOVER_INVITE;

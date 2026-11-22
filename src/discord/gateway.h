@@ -109,6 +109,10 @@ bool gateway_request_forum_unreads(Gateway *g, Snowflake guild_id,
 // asks for the members of up to 100 users, answered by GUILD_MEMBERS_CHUNK.
 bool gateway_request_members(Gateway *g, Snowflake guild_id,
                              const Snowflake *user_ids, size_t count);
+// asks for up to `limit` members whose names start with `query`, answered
+// by GUILD_MEMBERS_CHUNK. what pickers of members ask while the user types.
+bool gateway_search_members(Gateway *g, Snowflake guild_id, const char *query,
+                            uint32_t limit);
 
 /* ========================================================================== */
 /* for tests.                                                                 */

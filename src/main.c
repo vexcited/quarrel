@@ -6,6 +6,7 @@
 #include "http.h"
 #include "ui/components.h"
 #include "ui/media.h"
+#include "ui/server.h"
 #include "ui/widgets.h"
 
 #define SIDEBAR_KEY "sidebar_width"
@@ -151,6 +152,8 @@ static void frame(void *ctx, civue_ui *ui) {
       shell(app);
       profile_popout(app);
       profile_modal(app);
+      server_settings(app);
+      channel_dialogs(app);
       settings_dialog(app);
       voice_switch_dialog(app);
       hub_dialogs(app);
@@ -229,6 +232,7 @@ int main() {
 
   media_free(&app);
   gif_players_free(&app);
+  server_ui_free(&app);
   roster_free(app.roster);
   civue_images_free(app.images);
   http_shutdown();
