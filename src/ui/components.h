@@ -81,6 +81,16 @@ void message_list(App *app, Channel *channel);
 void message_preview(App *app, const Channel *c, const Message *m,
                      float width);
 void composer(App *app, Channel *channel);
+// the gifs to send to the channel over the composer, while the app shows
+// POPOVER_GIFS. lets go of their players once it does not.
+void gif_picker(App *app, Channel *channel);
+// opens the picker over `anchor`, the composer, or closes it.
+void gif_picker_toggle(App *app, civue_rect anchor);
+// lets go of the players of the gifs no frame drew lately. once a frame.
+void gif_players_sweep(App *app);
+void gif_players_free(App *app);
+// adds `text` at the end of what the composer holds, a space between.
+void composer_append(App *app, const char *text);
 
 // an emoji to react with: one of a guild by its id and name, or one of
 // unicode, `name` its utf-8 and `id` 0.

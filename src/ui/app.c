@@ -98,6 +98,8 @@ void app_reset(App *app) {
   app->upload_menu = false;
   app->long_message = false;
   app->upload_title[0] = 0;
+  drop(&app->gif_search);
+  drop(&app->gif_title);
   drop(&app->profile_message);
   drop(&app->profile_note);
 

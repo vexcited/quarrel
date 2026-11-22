@@ -48,6 +48,7 @@ typedef enum : uint8_t {
   POPOVER_FORWARD,
   POPOVER_VOICE_SOUND,
   POPOVER_VOICE_CAMERA,
+  POPOVER_GIFS,
   POPOVER_PROFILE,
 } Popover;
 
@@ -145,6 +146,16 @@ typedef struct {
   char upload_title[64], upload_body[160];
   // the message typed is longer than discord takes.
   bool long_message;
+  // the gif picker: the composer it opens over and the button that opens
+  // it, the page it shows and the title of a page of results, what its
+  // search holds and since when, and the players of the gifs in view.
+  civue_rect gif_anchor, gif_button;
+  uint8_t gif_page;
+  char *gif_title;
+  char *gif_search;
+  double gif_typed_at;
+  bool gif_focus;
+  struct GifPlayers *gif_players;
 
   // the message list: whether it follows its end, and what it held last
   // frame, to stay put when history arrives over it.

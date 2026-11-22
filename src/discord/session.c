@@ -905,11 +905,35 @@ static void on_snapshot(void *ctx, const char *type, const char *text,
   s->ready_text = nullptr;
 }
 
+// the favorites another client changed. the frecency settings are type 2,
+// and an update only carries the fields that changed.
+static void on_settings_update(Session *s, const cima_json *settings) {
+  if (json_get_coerce(settings, "type", (int64_t)0) != 2 ||
+      !s->favorite_gifs.present) {
+    return;
+  }
+
+  FavoriteGifs favorites =
+    settings_proto_favorite_gifs(json_get_or(settings, "proto", nullptr));
+
+  if (!favorites.present) {
+    return;
+  }
+
+  settings_proto_free_favorites(&s->favorite_gifs);
+  s->favorite_gifs = favorites;
+  changed(s);
+}
+
 static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   Session *s = ctx;
 
   events_dispatch(s->store, type, data);
   watch_status(s);
+
+  if (strcmp(type, "USER_SETTINGS_PROTO_UPDATE") == 0) {
+    on_settings_update(s, json_get(data, "settings"));
+  }
 
   if (strcmp(type, "VOICE_STATE_UPDATE") == 0) {
     on_voice_state(s, data);
@@ -1019,6 +1043,7 @@ static void clear_frecency(Session *s) {
   free(s->frecent_reactions);
   s->frecent_reactions = nullptr;
   s->nfrecent_reactions = 0;
+  settings_proto_free_favorites(&s->favorite_gifs);
   s->frecency_loading = false;
   s->frecency_loaded = false;
 }
@@ -1563,6 +1588,8 @@ static void session_free(Session *s) {
   voice_free(s->voice);
   gateway_free(s->gateway);
   api_free(s->api);
+  // after the api, whose answers it would wait for.
+  gifs_free(s->gifs);
   platform_timer_cancel(s->typing_timer);
 
   for (Call *call = s->calls; call != nullptr;) {
@@ -2594,7 +2621,11 @@ static void on_frecency(void *ctx, const ApiResponse *res) {
 
     if (settings != nullptr) {
       uses = settings_proto_reaction_uses(settings, &count);
+      s->favorite_gifs = settings_proto_favorite_gifs(settings);
     }
+
+    // none starred is known too, and only then may a star be saved.
+    s->favorite_gifs.present = true;
   }
 
   rank_reactions(s, uses, count);
@@ -2688,6 +2719,129 @@ void session_fetch_frecency(Session *s) {
 
   s->frecency_loading = true;
   api_request(s->api, &req, on_frecency, call_new(s, 0, 0));
+}
+
+Gifs *session_gifs(Session *s) {
+  if (s->api == nullptr) {
+    s->api = api_new();
+  }
+
+  if (s->gifs == nullptr) {
+    s->gifs = gifs_new(s->api, s->options.on_change);
+  }
+
+  return s->gifs;
+}
+
+const FavoriteGif *session_favorite_gif(const Session *s, const char *url) {
+  for (size_t i = 0; url != nullptr && i < s->favorite_gifs.count; i++) {
+    if (strcmp(s->favorite_gifs.gifs[i].url, url) == 0) {
+      return &s->favorite_gifs.gifs[i];
+    }
+  }
+
+  return nullptr;
+}
+
+static void on_favorites_saved(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  // discord answers with the settings as they are now. a failure fetches
+  // them again, so what shows is what discord keeps.
+  FavoriteGifs favorites = settings_proto_favorite_gifs(
+    res->ok ? json_get_or(res->json, "settings", nullptr) : nullptr);
+
+  if (favorites.present) {
+    settings_proto_free_favorites(&s->favorite_gifs);
+    s->favorite_gifs = favorites;
+  }
+  else if (!res->ok) {
+    clear_frecency(s);
+    session_fetch_frecency(s);
+  }
+
+  changed(s);
+}
+
+void session_set_favorite_gif(Session *s, const FavoriteGif *gif,
+                              bool favorite) {
+  FavoriteGifs *list = &s->favorite_gifs;
+  const FavoriteGif *found = session_favorite_gif(s, gif->url);
+
+  // saving replaces them all, never before they are known.
+  if (!online(s) || !list->present || favorite == (found != nullptr)) {
+    return;
+  }
+
+  if (favorite) {
+    uint32_t order = 0;
+
+    for (size_t i = 0; i < list->count; i++) {
+      order = list->gifs[i].order > order ? list->gifs[i].order : order;
+    }
+
+    list->gifs = realloc(list->gifs, (list->count + 1) * sizeof *list->gifs);
+
+    if (list->gifs == nullptr) {
+      cilo_oom((list->count + 1) * sizeof *list->gifs);
+    }
+
+    list->gifs[list->count++] = (FavoriteGif){
+      .url = str_dup(gif->url),
+      .src = str_dup(gif->src),
+      .format = gif->format,
+      .width = gif->width,
+      .height = gif->height,
+      .order = order + 1,
+    };
+
+    // the client stops explaining the star past the second one.
+    list->hide_tooltip |= list->count > 2;
+  }
+  else {
+    size_t at = (size_t)(found - list->gifs);
+
+    free(list->gifs[at].url);
+    free(list->gifs[at].src);
+    list->gifs[at] = list->gifs[--list->count];
+  }
+
+  char *settings = settings_proto_with_favorite_gifs(list);
+
+  // too many to save, as the client says.
+  if (settings == nullptr) {
+    FavoriteGif added = list->gifs[--list->count];
+
+    free(added.url);
+    free(added.src);
+    changed(s);
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "settings", settings);
+  json_end_object(&w);
+
+  ApiRequest req = {
+    .method = "PATCH",
+    .path = "/users/@me/settings-proto/2",
+    .body = cima_json_writer_text(&w),
+  };
+
+  api_request(s->api, &req, on_favorites_saved, call_new(s, 0, 0));
+  cima_json_writer_dispose(&w);
+  free(settings);
+  changed(s);
 }
 
 void session_pin(Session *s, Snowflake channel_id, Snowflake message_id,

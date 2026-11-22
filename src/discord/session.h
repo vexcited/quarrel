@@ -1,6 +1,8 @@
 #ifndef QUARREL_DISCORD_SESSION_H
 #define QUARREL_DISCORD_SESSION_H
 
+#include "discord/gifs.h"
+#include "discord/settings_proto.h"
 #include "discord/store.h"
 
 /* ========================================================================== */
@@ -238,6 +240,11 @@ struct Session {
   // session_fetch_frecency.
   char **frecent_reactions;
   size_t nfrecent_reactions;
+  // the gifs the user starred, in no order, which come with the same
+  // settings and follow the other clients' changes. `present` once known.
+  FavoriteGifs favorite_gifs;
+  // the picker's gifs, see session_gifs.
+  Gifs *gifs;
   bool frecency_loading, frecency_loaded;
   // the applications asked about, see session_application_icon.
   struct SessionApplication *applications;
@@ -447,6 +454,13 @@ void session_add_friend_clear(Session *s);
 const char *session_application_icon(Session *s, Snowflake application_id);
 // asks once for what the user uses the most, see `frecent_reactions`.
 void session_fetch_frecency(Session *s);
+// the gifs of the picker, made as they are first asked for.
+Gifs *session_gifs(Session *s);
+// the favorite starred under `url`, null when it is not one.
+const FavoriteGif *session_favorite_gif(const Session *s, const char *url);
+// stars a gif, newest first, or takes its star away. `gif` is copied.
+void session_set_favorite_gif(Session *s, const FavoriteGif *gif,
+                              bool favorite);
 // pins the message or takes its pin away.
 void session_pin(Session *s, Snowflake channel_id, Snowflake message_id,
                  bool pin);

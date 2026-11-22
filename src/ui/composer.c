@@ -28,6 +28,22 @@ static void set_draft(App *app, const char *value) {
   app->draft = held ? held : strdup(value);
 }
 
+void composer_append(App *app, const char *text) {
+  const char *draft = app->draft ? app->draft : "";
+  size_t had = strlen(draft);
+  bool spaced = had == 0 || draft[had - 1] == ' ' || draft[had - 1] == '\n';
+  char *joined = malloc(had + strlen(text) + 3);
+
+  sprintf(joined, "%s%s%s ", draft, spaced ? "" : " ", text);
+  set_draft(app, joined);
+  free(joined);
+  app->focus_composer = true;
+}
+
+void upload_clear_draft(App *app) {
+  set_draft(app, "");
+}
+
 static void stop_editing(App *app) {
   char *kept = app->kept_draft;
 
@@ -207,6 +223,36 @@ static void context_bar(App *app, Channel *c) {
       else {
         app->reply_to = 0;
       }
+    }
+  }
+}
+
+// discord's: the letters in a box with round corners.
+static void gif_button(App *app, civue_rect box) {
+  const Look *k = &app->look;
+  civue_id id = id("composer-gif");
+  bool open = app->popover == POPOVER_GIFS;
+
+  div(key(id), flex, items_center, justify_center, flex_shrink_0, self_start,
+      w(px(28)), h(px(24)), cursor_pointer) {
+    civue_button_state state = button();
+    civue_color color =
+      open || state.response.hovered ? k->strong : k->subtle;
+
+    app->gif_button = here();
+
+    if (state.activated) {
+      gif_picker_toggle(app, box);
+    }
+
+    div(flex, items_center, justify_center, h(px(17)), px(px(3)),
+        rounded(px(4)), border(2), border_color(color)) {
+      text("GIF", text_size(px(10)), line_height(px(12)), font_weight(bold),
+           text_color(color));
+    }
+
+    if (!open) {
+      hint(app, id, &state.response, "Send a GIF", CIVUE_TOOLTIP_ABOVE);
     }
   }
 }

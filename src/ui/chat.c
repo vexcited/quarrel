@@ -125,6 +125,7 @@ void chat(App *app, Channel *c) {
           composer(app, c);
           typing_line(app, c);
           message_popovers(app, c);
+          gif_picker(app, c);
         }
 
         if (members) {

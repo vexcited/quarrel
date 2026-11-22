@@ -69,6 +69,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/etf.c
   src/discord/events.c
   src/discord/gateway.c
+  src/discord/gifs.c
   src/discord/markdown.c
   src/discord/permissions.c
   src/discord/remote_auth.c
@@ -145,6 +146,7 @@ add_executable(quarrel
   src/ui/chat.c
   src/ui/composer.c
   src/ui/friends.c
+  src/ui/gifs.c
   src/ui/guilds.c
   src/ui/login.c
   src/ui/look.c

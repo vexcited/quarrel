@@ -37,4 +37,43 @@ typedef struct {
 // from malloc with its keys, null when it has none.
 FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count);
 
+typedef enum : uint8_t {
+  GIF_FORMAT_NONE = 0,
+  // an image the system shows itself, a gif or a webp.
+  GIF_FORMAT_IMAGE = 1,
+  // an mp4 or a webm.
+  GIF_FORMAT_VIDEO = 2,
+} GifFormat;
+
+// a gif the user starred, as the client keeps it.
+typedef struct {
+  // what the message sends, the key of the favorite.
+  char *url;
+  // what the picker shows.
+  char *src;
+  GifFormat format;
+  uint32_t width, height;
+  // the newest has the highest.
+  uint32_t order;
+} FavoriteGif;
+
+typedef struct {
+  FavoriteGif *gifs;
+  size_t count;
+  // the client stops explaining the star once three were starred.
+  bool hide_tooltip;
+  // the message carries favorites, the only time they replace the ones known.
+  bool present;
+} FavoriteGifs;
+
+// the favorite gifs of a FrecencyUserSettings protobuf in base64, its
+// strings from malloc. freed with settings_proto_free_favorites.
+FavoriteGifs settings_proto_favorite_gifs(const char *base64);
+void settings_proto_free_favorites(FavoriteGifs *favorites);
+
+// a FrecencyUserSettings holding only these favorites in base64 from malloc,
+// which replace all of the user's once saved. null when they outgrow what
+// the client allows.
+char *settings_proto_with_favorite_gifs(const FavoriteGifs *favorites);
+
 #endif

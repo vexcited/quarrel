@@ -537,3 +537,179 @@ FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count) {
   free(bytes);
   return uses;
 }
+
+// from the same classes:
+//   FrecencyUserSettings  favorite_gifs 2, a FavoriteGIFs
+//   FavoriteGIFs          gifs 1, a map from the url to a FavoriteGIF,
+//                         hide_tooltip 2
+//   FavoriteGIF           format 1, src 2, width 3, height 4, order 5
+// the client refuses to save favorites that take more than this.
+constexpr size_t FAVORITES_MAX_BYTES = 762880;
+
+static char *copy_bytes(Reader r) {
+  return str_dup_n((const char *)r.at, (size_t)(r.end - r.at));
+}
+
+static void read_favorite(Reader r, FavoriteGif *gif) {
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.wire == WIRE_BYTES && f.number == 2) {
+      free(gif->src);
+      gif->src = copy_bytes(f.bytes);
+    }
+    else if (f.wire == WIRE_VARINT) {
+      switch (f.number) {
+        case 1:
+          gif->format = f.value <= GIF_FORMAT_VIDEO ? (GifFormat)f.value
+                                                    : GIF_FORMAT_NONE;
+          break;
+
+        case 3:
+          gif->width = (uint32_t)f.value;
+          break;
+
+        case 4:
+          gif->height = (uint32_t)f.value;
+          break;
+
+        case 5:
+          gif->order = (uint32_t)f.value;
+          break;
+      }
+    }
+  }
+}
+
+static void read_favorites(Reader r, FavoriteGifs *out) {
+  size_t cap = 0;
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number == 2 && f.wire == WIRE_VARINT) {
+      out->hide_tooltip = f.value != 0;
+      continue;
+    }
+
+    if (f.number != 1 || f.wire != WIRE_BYTES) {
+      continue;
+    }
+
+    FavoriteGif gif = {};
+    Reader entry = f.bytes;
+    Field e;
+
+    while (next_field(&entry, &e)) {
+      if (e.wire != WIRE_BYTES) {
+        continue;
+      }
+
+      if (e.number == 1) {
+        free(gif.url);
+        gif.url = copy_bytes(e.bytes);
+      }
+      else if (e.number == 2) {
+        read_favorite(e.bytes, &gif);
+      }
+    }
+
+    if (gif.url == nullptr || *gif.url == '\0' || gif.src == nullptr) {
+      free(gif.url);
+      free(gif.src);
+      continue;
+    }
+
+    if (out->count == cap) {
+      cap = cap ? cap * 2 : 32;
+      out->gifs = realloc(out->gifs, cap * sizeof *out->gifs);
+
+      if (out->gifs == nullptr) {
+        cilo_oom(cap * sizeof *out->gifs);
+      }
+    }
+
+    out->gifs[out->count++] = gif;
+  }
+}
+
+FavoriteGifs settings_proto_favorite_gifs(const char *base64) {
+  FavoriteGifs out = {};
+  size_t len = 0;
+  uint8_t *bytes = base64_decode(base64, &len);
+
+  if (bytes == nullptr) {
+    return out;
+  }
+
+  Reader r = {.at = bytes, .end = bytes + len};
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number == 2 && f.wire == WIRE_BYTES) {
+      settings_proto_free_favorites(&out);
+      read_favorites(f.bytes, &out);
+      out.present = true;
+    }
+  }
+
+  free(bytes);
+  return out;
+}
+
+void settings_proto_free_favorites(FavoriteGifs *favorites) {
+  for (size_t i = 0; i < favorites->count; i++) {
+    free(favorites->gifs[i].url);
+    free(favorites->gifs[i].src);
+  }
+
+  free(favorites->gifs);
+  *favorites = (FavoriteGifs){};
+}
+
+static void put_string(Bytes *b, uint32_t number, const char *s) {
+  put_tag(b, number, WIRE_BYTES);
+  put_varint(b, strlen(s));
+  put_bytes(b, s, strlen(s));
+}
+
+static void put_number(Bytes *b, uint32_t number, uint64_t value) {
+  // proto3 leaves out what is 0.
+  if (value != 0) {
+    put_tag(b, number, WIRE_VARINT);
+    put_varint(b, value);
+  }
+}
+
+char *settings_proto_with_favorite_gifs(const FavoriteGifs *favorites) {
+  Bytes list = {}, entry = {}, value = {}, whole = {};
+
+  for (size_t i = 0; i < favorites->count; i++) {
+    const FavoriteGif *gif = &favorites->gifs[i];
+
+    entry.len = value.len = 0;
+    put_number(&value, 1, gif->format);
+    put_string(&value, 2, gif->src);
+    put_number(&value, 3, gif->width);
+    put_number(&value, 4, gif->height);
+    put_number(&value, 5, gif->order);
+
+    put_string(&entry, 1, gif->url);
+    put_message(&entry, 2, &value);
+    put_message(&list, 1, &entry);
+  }
+
+  put_number(&list, 2, favorites->hide_tooltip);
+
+  char *text = nullptr;
+
+  if (list.len <= FAVORITES_MAX_BYTES) {
+    put_message(&whole, 2, &list);
+    text = base64_encode(whole.data, whole.len);
+  }
+
+  free(list.data);
+  free(entry.data);
+  free(value.data);
+  free(whole.data);
+  return text;
+}

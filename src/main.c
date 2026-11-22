@@ -159,6 +159,7 @@ static void frame(void *ctx, civue_ui *ui) {
   }
 
   media_sweep(app);
+  gif_players_sweep(app);
 
   if (app->covers_buttons != app->buttons_hidden) {
     app->buttons_hidden = app->covers_buttons;
@@ -220,6 +221,7 @@ int main() {
   }
 
   media_free(&app);
+  gif_players_free(&app);
   roster_free(app.roster);
   civue_images_free(app.images);
   http_shutdown();
@@ -228,6 +230,8 @@ int main() {
   free(app.password);
   free(app.code);
   free(app.draft);
+  free(app.gif_search);
+  free(app.gif_title);
   free(app.kept_draft);
   free(app.profile_message);
   free(app.profile_note);
