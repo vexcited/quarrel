@@ -61,6 +61,7 @@ enum {
   OP_INVALID_SESSION = 9,
   OP_HELLO = 10,
   OP_HEARTBEAT_ACK = 11,
+  OP_REQUEST_FORUM_UNREADS = 28,
   OP_GUILD_SUBSCRIPTIONS_BULK = 37,
 };
 
@@ -898,6 +899,37 @@ bool gateway_subscribe(Gateway *g, Snowflake guild_id, Snowflake channel_id,
 
   json_end_object(&w);
   json_end_object(&w);
+  json_end_object(&w);
+  json_end_object(&w);
+  return send_payload(g, &w);
+}
+
+// learned from the web client: at most 180 posts a request, answered by the
+// FORUM_UNREADS dispatch.
+bool gateway_request_forum_unreads(Gateway *g, Snowflake guild_id,
+                                   Snowflake forum_id,
+                                   const GatewayForumAck *acks, size_t count) {
+  if (g->status != GATEWAY_READY || guild_id == 0 || count == 0) {
+    return false;
+  }
+
+  cima_json_writer w = {};
+
+  begin_payload(&w, OP_REQUEST_FORUM_UNREADS);
+  json_begin_object(&w);
+  json_key(&w, "guild_id"), snowflake_write(&w, guild_id);
+  json_key(&w, "channel_id"), snowflake_write(&w, forum_id);
+  json_key(&w, "threads");
+  json_begin_array(&w);
+
+  for (size_t i = 0; i < count && i < 180; i++) {
+    json_begin_object(&w);
+    json_key(&w, "thread_id"), snowflake_write(&w, acks[i].thread_id);
+    json_key(&w, "ack_message_id"), snowflake_write(&w, acks[i].ack_id);
+    json_end_object(&w);
+  }
+
+  json_end_array(&w);
   json_end_object(&w);
   json_end_object(&w);
   return send_payload(g, &w);

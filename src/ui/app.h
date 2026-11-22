@@ -49,6 +49,10 @@ typedef enum : uint8_t {
   POPOVER_VOICE_SOUND,
   POPOVER_VOICE_CAMERA,
   POPOVER_GIFS,
+  POPOVER_FORUM_VIEW,
+  POPOVER_FORUM_TAGS,
+  POPOVER_POST_TAGS,
+  POPOVER_POST_MENU,
   POPOVER_PROFILE,
 } Popover;
 
@@ -247,6 +251,21 @@ typedef struct {
   // the videos playing and the media open over the window, see media.h.
   struct Media *media;
 
+  // the forum shown: the one what follows is about, what its search holds
+  // and since when, the tags it filters by, and the order and the layout
+  // the user chose over the forum's, -1 for its own.
+  Snowflake forum_id;
+  char *forum_search;
+  double forum_typed_at;
+  Ids forum_tags;
+  int8_t forum_sort, forum_layout;
+  bool forum_match_all;
+  // the post being written in it, and the tags it will wear.
+  bool post_open, post_focus;
+  // posting was tried, so what it lacks is said.
+  bool post_tried;
+  char *post_title, *post_body;
+  Ids post_tags;
 } App;
 
 // forgets what was shown and typed, for another account.

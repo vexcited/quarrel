@@ -278,6 +278,9 @@ void events_dispatch(Store *s, const char *type, const cima_json *d) {
   else if (IS("CHANNEL_DELETE") || IS("THREAD_DELETE")) {
     store_remove_channel(s, snowflake_of(json_get(d, "id")));
   }
+  else if (IS("FORUM_UNREADS")) {
+    store_put_forum_unreads(s, d);
+  }
   else if (IS("THREAD_LIST_SYNC")) {
     store_sync_threads(s, d);
   }

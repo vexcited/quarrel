@@ -75,6 +75,16 @@ void notice_toast(App *app);
 void account_choices(App *app);
 
 void chat(App *app, Channel *channel);
+// the posts of a forum or a media channel, and the way to write one.
+void forum_page(App *app, Channel *forum);
+// the tags a post wears, as a row of small pills, `most` of them and a
+// count of the others. nothing when it wears none.
+void post_tags(App *app, const Channel *post, size_t most);
+// a tag as a pill, small or not.
+void tag_pill(App *app, const ForumTag *tag, bool small);
+// what can be done with a post, under `anchor`, while the app shows
+// POPOVER_POST_MENU.
+void post_menu(App *app, Channel *post, civue_rect anchor);
 void message_list(App *app, Channel *channel);
 // a message of `c` alone, under its author and without its toolbar, in a
 // node `width` points wide.

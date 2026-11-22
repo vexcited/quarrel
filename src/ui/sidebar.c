@@ -86,7 +86,7 @@ static void channel_row(App *app, Channel *c, bool thread) {
         app->voice_chat = false;
         app_select_channel(app, c->id);
       }
-      else if (channel_has_text(c)) {
+      else if (channel_has_text(c) || channel_is_forum(c)) {
         app_select_channel(app, c->id);
       }
     }

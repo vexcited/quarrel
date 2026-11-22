@@ -191,6 +191,36 @@ typedef struct {
   bool note_loaded;
 } Profile;
 
+// how the posts of a forum are looked for.
+typedef struct {
+  ForumSort sort;
+  // posts wearing these tags, all of them when `match_all`, else any.
+  Snowflake *tags;
+  size_t ntags;
+  bool match_all;
+  // words of their titles, null for none.
+  char *query;
+} ForumQuery;
+
+// the posts of the forum the ui shows that discord was asked for, see
+// session_forum_query. the active ones come with the forum, through the
+// gateway, and are not listed here unless the query has words.
+typedef struct {
+  Snowflake channel_id;
+  ForumQuery query;
+  // what discord answered, in its order, without duplicates.
+  Snowflake *posts;
+  size_t nposts;
+  // all the posts matching, as discord counts them.
+  uint32_t total;
+  bool loading, has_more;
+  // why the last page did not come.
+  char *error;
+
+  // the session's own, bumped with every new query.
+  uint64_t generation;
+} SessionForum;
+
 struct Session {
   SessionState state;
   // never null, and the same store for the session's whole life.
@@ -258,6 +288,13 @@ struct Session {
   bool voice_mute, voice_deaf;
   // why discord did not open the call, null when it did or may still.
   char *voice_error;
+  // the forum the ui shows, see session_forum_query.
+  SessionForum forum;
+  // the post session_create_post made: on its way, why it failed, or its
+  // id once discord made it. the ui takes the id and zeroes it.
+  bool post_creating;
+  char *post_error;
+  Snowflake post_created;
   // the account connected or connecting, 0 on the login form.
   Snowflake account_id;
   // bumped with every change of the fields above.
@@ -320,6 +357,9 @@ struct Session {
   // next page comes before. bumped with every new list of them.
   char *bookmarks_before;
   uint64_t bookmarks_generation;
+  // the posts whose first message was asked for.
+  Snowflake *starters_asked;
+  size_t nstarters_asked, starters_cap;
   void *voice_timer;
   // discord confirmed the channel for this gateway session, the call was
   // started with what is known, and a new gateway session has to join again.
@@ -496,6 +536,33 @@ void session_put_note(Session *s, Snowflake user_id, const char *note);
 // first when there is none yet.
 void session_message_user(Session *s, Snowflake user_id, const char *content);
 
+/* ========================================================================== */
+/* forums.                                                                    */
+/* ========================================================================== */
+
+// the posts of a forum the ui lists, see `forum`. a query like the one
+// asked last does nothing, another starts the list over.
+void session_forum_query(Session *s, Snowflake forum_id,
+                         const ForumQuery *query);
+// the next page of the list, when it has more and nothing is loading.
+void session_forum_more(Session *s);
+// asks for the first message of these posts of the forum, the ones known or
+// asked for already left out. see channel->starter.
+void session_fetch_starters(Session *s, Snowflake forum_id,
+                            const Snowflake *post_ids, size_t count);
+// a new post titled `title` that begins with `content`, wearing `tags`. see
+// `post_created`.
+void session_create_post(Session *s, Snowflake forum_id, const char *title,
+                         const char *content, const Snowflake *tags,
+                         size_t ntags);
+// follows a post, which then tells of its new messages, or stops.
+void session_follow(Session *s, Snowflake thread_id, bool follow);
+// the tags a post wears.
+void session_set_post_tags(Session *s, Snowflake post_id, const Snowflake *tags,
+                           size_t ntags);
+// pins a post, which unpins the forum's other one, closes it or locks it.
+void session_update_post(Session *s, Snowflake post_id, bool pinned,
+                         bool archived, bool locked);
 
 typedef enum : uint8_t {
   SESSION_LINK_UP,

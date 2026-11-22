@@ -279,6 +279,13 @@ Message *store_message(const Channel *c, Snowflake id) {
   return nullptr;
 }
 
+// the copy of a post's first message, which the list of its forum shows.
+static Message *starter_of(const Channel *c, Snowflake id) {
+  return c != nullptr && c->starter != nullptr && c->starter->id == id
+           ? c->starter
+           : nullptr;
+}
+
 const Relationship *store_relationship(const Store *s, Snowflake user_id) {
   for (size_t i = 0; i < s->nrelationships; i++) {
     if (s->relationships[i].user_id == user_id) {
@@ -1711,10 +1718,27 @@ Message *store_create_message(Store *s, const cima_json *message) {
     }
   }
 
+  Snowflake id = snowflake_of(json_get(message, "id"));
+  bool fresh = store_message(c, id) == nullptr && id > c->last_message_id;
   Message *m = upsert_message(s, c, message);
 
   if (m == nullptr) {
     return nullptr;
+  }
+
+  // a thread counts its messages, the first one of a post aside, as the
+  // client does.
+  if (fresh && channel_is_thread(c) && m->id != c->id) {
+    c->message_count++;
+
+    if (c->new_known && m->author_id != s->self_id) {
+      c->new_messages++;
+    }
+  }
+
+  // a post begins with the message whose id is its own.
+  if (m->id == c->id && channel_is_thread(c)) {
+    store_put_starter(s, c, message);
   }
 
   if (m->id > c->last_message_id) {
@@ -1795,6 +1819,12 @@ void store_remove_message(Store *s, Snowflake channel_id, Snowflake id) {
 
   if (slot < c->nmessages && c->messages[slot]->id == id) {
     remove_at(c, slot);
+    changed = true;
+  }
+
+  if (starter_of(c, id) != nullptr) {
+    free_message(c->starter);
+    c->starter = nullptr;
     changed = true;
   }
 
@@ -1936,21 +1966,8 @@ static bool same_emoji(const Reaction *r, Snowflake id, const char *name) {
   return r->name != nullptr && name != nullptr && strcmp(r->name, name) == 0;
 }
 
-static Message *reaction_target(Store *s, Snowflake channel_id,
-                                Snowflake message_id, Channel **channel) {
-  *channel = store_channel(s, channel_id);
-  return store_message(*channel, message_id);
-}
-
-void store_reaction_add(Store *s, Snowflake channel_id, Snowflake message_id,
-                        Snowflake user_id, const cima_json *emoji) {
-  Channel *c;
-  Message *m = reaction_target(s, channel_id, message_id, &c);
-
-  if (m == nullptr) {
-    return;
-  }
-
+static void add_reaction(Store *s, Message *m, Snowflake user_id,
+                         const cima_json *emoji) {
   Snowflake id = snowflake_of(json_get(emoji, "id"));
   const char *name = json_get_or(emoji, "name", nullptr);
   Reaction *r = nullptr;
@@ -1983,19 +2000,10 @@ void store_reaction_add(Store *s, Snowflake channel_id, Snowflake message_id,
   else {
     r->count++;
   }
-
-  store_touch_channel(s, c);
 }
 
-void store_reaction_remove(Store *s, Snowflake channel_id, Snowflake message_id,
-                           Snowflake user_id, const cima_json *emoji) {
-  Channel *c;
-  Message *m = reaction_target(s, channel_id, message_id, &c);
-
-  if (m == nullptr) {
-    return;
-  }
-
+static void remove_reaction(Store *s, Message *m, Snowflake user_id,
+                            const cima_json *emoji) {
   Snowflake id = snowflake_of(json_get(emoji, "id"));
   const char *name = json_get_or(emoji, "name", nullptr);
 
@@ -2024,23 +2032,13 @@ void store_reaction_remove(Store *s, Snowflake channel_id, Snowflake message_id,
       m->nreactions--;
     }
 
-    store_touch_channel(s, c);
     return;
   }
 }
 
-void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
-                          const cima_json *emoji) {
-  Channel *c;
-  Message *m = reaction_target(s, channel_id, message_id, &c);
-
-  if (m == nullptr) {
-    return;
-  }
-
+static void clear_reactions(Message *m, const cima_json *emoji) {
   if (json_type(emoji) != CIMA_JSON_OBJECT) {
     free_reactions(m);
-    store_touch_channel(s, c);
     return;
   }
 
@@ -2057,8 +2055,75 @@ void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
       break;
     }
   }
+}
 
-  store_touch_channel(s, c);
+// the message as loaded in its channel, as its post's first message and as
+// a bookmark keeps it.
+typedef struct {
+  Channel *channel;
+  Message *found[3];
+} ReactionTargets;
+
+static ReactionTargets reaction_targets(Store *s, Snowflake channel_id,
+                                        Snowflake message_id) {
+  Channel *c = store_channel(s, channel_id);
+
+  return (ReactionTargets){
+    .channel = c,
+    .found =
+      {
+        store_message(c, message_id),
+        starter_of(c, message_id),
+        bookmark_copy(s, message_id),
+      },
+  };
+}
+
+// after a change of the reactions of `found[i]`.
+static void touch_target(Store *s, const ReactionTargets *t, size_t i) {
+  if (i == 2) {
+    s->bookmarks_version++;
+    s->version++;
+  }
+  else {
+    store_touch_channel(s, t->channel);
+  }
+}
+
+void store_reaction_add(Store *s, Snowflake channel_id, Snowflake message_id,
+                        Snowflake user_id, const cima_json *emoji) {
+  ReactionTargets t = reaction_targets(s, channel_id, message_id);
+
+  for (size_t i = 0; i < 3; i++) {
+    if (t.found[i] != nullptr) {
+      add_reaction(s, t.found[i], user_id, emoji);
+      touch_target(s, &t, i);
+    }
+  }
+}
+
+void store_reaction_remove(Store *s, Snowflake channel_id, Snowflake message_id,
+                           Snowflake user_id, const cima_json *emoji) {
+  ReactionTargets t = reaction_targets(s, channel_id, message_id);
+
+  for (size_t i = 0; i < 3; i++) {
+    if (t.found[i] != nullptr) {
+      remove_reaction(s, t.found[i], user_id, emoji);
+      touch_target(s, &t, i);
+    }
+  }
+}
+
+void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
+                          const cima_json *emoji) {
+  ReactionTargets t = reaction_targets(s, channel_id, message_id);
+
+  for (size_t i = 0; i < 3; i++) {
+    if (t.found[i] != nullptr) {
+      clear_reactions(t.found[i], emoji);
+      touch_target(s, &t, i);
+    }
+  }
 }
 
 /* ========================================================================== */
@@ -2589,11 +2654,28 @@ void store_remove_guild(Store *s, Snowflake id) {
 /* channels.                                                                  */
 /* ========================================================================== */
 
+static void free_tags(Channel *c) {
+  for (size_t i = 0; i < c->ntags; i++) {
+    free(c->tags[i].name);
+    free(c->tags[i].emoji_name);
+  }
+
+  free(c->tags);
+  c->tags = nullptr;
+  c->ntags = 0;
+}
+
 static void free_channel(Channel *c) {
   for (size_t i = 0; i < c->nmessages; i++) {
     free_message(c->messages[i]);
   }
 
+  free_tags(c);
+  free_message(c->starter);
+  free(c->applied_tags);
+  free(c->default_reaction_name);
+  free(c->template);
+  free(c->posts);
   free(c->messages);
   free(c->name);
   free(c->topic);
@@ -2602,6 +2684,41 @@ static void free_channel(Channel *c) {
   free(c->recipients);
   free(c->typing);
   free(c);
+}
+
+static void fill_tags(Channel *c, const cima_json *tags) {
+  free_tags(c);
+
+  size_t n = json_type(tags) == CIMA_JSON_ARRAY ? json_len(tags) : 0;
+
+  c->tags = n != 0 ? xcalloc(n, sizeof *c->tags) : nullptr;
+
+  CIMA_EACH(item, json_items(tags)) {
+    Snowflake id = snowflake_of(json_get(item, "id"));
+
+    if (id == 0) {
+      continue;
+    }
+
+    ForumTag *t = &c->tags[c->ntags++];
+
+    *t = (ForumTag){.id = id};
+    put_str(&t->name, item, "name");
+    put_str(&t->emoji_name, item, "emoji_name");
+    put_id(&t->emoji_id, item, "emoji_id");
+    put_bool(&t->moderated, item, "moderated");
+  }
+}
+
+// the emoji of a forum's posts, null to take it away.
+static void fill_default_reaction(Channel *c, const cima_json *emoji) {
+  c->default_reaction_id = 0;
+  str_set(&c->default_reaction_name, nullptr);
+
+  if (json_type(emoji) == CIMA_JSON_OBJECT) {
+    put_id(&c->default_reaction_id, emoji, "emoji_id");
+    put_str(&c->default_reaction_name, emoji, "emoji_name");
+  }
 }
 
 static void fill_overwrites(Channel *c, const cima_json *overwrites) {
@@ -2691,6 +2808,37 @@ Channel *store_put_channel(Store *s, const cima_json *channel,
     fill_overwrites(c, v);
   }
 
+  if ((v = json_get(channel, "available_tags")) != nullptr) {
+    fill_tags(c, v);
+  }
+
+  if ((v = json_get(channel, "applied_tags")) != nullptr) {
+    free(c->applied_tags);
+    c->applied_tags = id_array(v, nullptr, &c->napplied_tags);
+  }
+
+  if ((v = json_get(channel, "default_reaction_emoji")) != nullptr) {
+    fill_default_reaction(c, v);
+  }
+
+  // a null order is the latest activity, the layout's 0 the list.
+  if ((v = json_get(channel, "default_sort_order")) != nullptr) {
+    c->default_sort = json_coerce(v, (int64_t)0) == 1 ? FORUM_SORT_CREATION
+                                                      : FORUM_SORT_ACTIVITY;
+  }
+
+  if ((v = json_get(channel, "default_forum_layout")) != nullptr) {
+    c->default_layout = (ForumLayout)json_coerce(v, (int64_t)0);
+  }
+
+  put_str(&c->template, channel, "template");
+
+  if ((v = json_get(channel, "default_tag_setting")) != nullptr) {
+    const char *setting = json_or(v, nullptr);
+
+    c->tags_match_all = setting != nullptr && strcmp(setting, "match_all") == 0;
+  }
+
   // an update never moves the last message back.
   Snowflake last = snowflake_of(json_get(channel, "last_message_id"));
 
@@ -2724,6 +2872,10 @@ Channel *store_put_channel(Store *s, const cima_json *channel,
     if ((v = json_get(thread, "archive_timestamp")) != nullptr) {
       c->thread_archived_at = iso8601_parse_ms(json_or(v, nullptr));
     }
+
+    if ((v = json_get(thread, "create_timestamp")) != nullptr) {
+      c->thread_created_at = iso8601_parse_ms(json_or(v, nullptr));
+    }
   }
 
   // a thread comes with the current user's membership when they joined it.
@@ -2752,6 +2904,16 @@ Channel *store_put_channel(Store *s, const cima_json *channel,
 
   if ((v = json_get(channel, "member_count")) != nullptr) {
     c->member_count = (uint32_t)snowflake_of(v);
+  }
+
+  // a new post is its forum's last message.
+  Channel *parent =
+    created && channel_is_thread(c) ? store_channel(s, c->parent_id) : nullptr;
+
+  if (parent != nullptr && channel_is_forum(parent) &&
+      c->id > parent->last_message_id) {
+    parent->last_message_id = c->id;
+    store_touch_channel(s, parent);
   }
 
   if (g != nullptr) {
@@ -2859,7 +3021,9 @@ void store_sync_threads(Store *s, const cima_json *sync) {
   for (size_t i = g->nchannels; i > 0; i--) {
     Channel *c = g->channels[i - 1];
 
-    if (!channel_is_thread(c) || array_has_id(threads, c->id)) {
+    // archived threads are not listed, the ones a search found stay.
+    if (!channel_is_thread(c) || c->thread_archived ||
+        array_has_id(threads, c->id)) {
       continue;
     }
 
@@ -2910,6 +3074,54 @@ void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined) {
   }
 
   store_touch_channel(s, c);
+}
+
+void store_put_forum_unreads(Store *s, const cima_json *unreads) {
+  if (json_coerce(json_get(unreads, "permission_denied"), false)) {
+    return;
+  }
+
+  CIMA_EACH(thread, json_items(json_get(unreads, "threads"))) {
+    Channel *c = store_channel(s, snowflake_of(json_get(thread, "thread_id")));
+
+    if (c == nullptr || json_coerce(json_get(thread, "missing"), false)) {
+      continue;
+    }
+
+    c->new_messages = (uint32_t)json_get_coerce(thread, "count", (int64_t)0);
+    c->new_known = true;
+    store_touch_channel(s, c);
+  }
+}
+
+bool store_has_read_state(const Store *s, Snowflake channel_id) {
+  const ReadState *rs = CILO_MAP_GET(&s->read_states, channel_id);
+
+  return rs != nullptr && rs->known && rs->last_acked_id != 0;
+}
+
+void store_put_starter(Store *s, Channel *post, const cima_json *message) {
+  Snowflake id = snowflake_of(json_get(message, "id"));
+
+  post->starter_known = true;
+
+  if (id == 0) {
+    free_message(post->starter);
+    post->starter = nullptr;
+    store_touch_channel(s, post);
+    return;
+  }
+
+  if (post->starter == nullptr || post->starter->id != id) {
+    free_message(post->starter);
+    post->starter = xcalloc(1, sizeof *post->starter);
+    post->starter->id = id;
+    post->starter->channel_id = post->id;
+    post->starter->content = str_dup("");
+  }
+
+  fill_message(s, post->starter, message, store_guild(s, post->guild_id), 0);
+  store_touch_channel(s, post);
 }
 
 void store_set_last_message(Store *s, Snowflake channel_id, Snowflake id) {
@@ -2979,6 +3191,7 @@ void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
   Channel *c = store_channel(s, channel_id);
 
   if (c != nullptr) {
+    c->new_messages = 0;
     store_touch_channel(s, c);
   }
   else {
@@ -3474,7 +3687,9 @@ constexpr int64_t DAY_MS = 86400000;
 Unread store_channel_unread(Store *s, const Channel *c) {
   Unread unread = {};
 
-  if (c == nullptr || !channel_has_text(c)) {
+  // a forum's last message is its latest post, so it is unread while posts
+  // came since it was last looked at.
+  if (c == nullptr || (!channel_has_text(c) && !channel_is_forum(c))) {
     return unread;
   }
 
@@ -3786,6 +4001,59 @@ const ChannelRow *store_guild_channels(Store *s, Guild *g, size_t *count) {
   g->rows_stamp = g->layout_version + 1;
   *count = g->nrows;
   return g->rows;
+}
+
+const ForumTag *store_forum_tag(const Channel *forum, Snowflake id) {
+  for (size_t i = 0; forum != nullptr && i < forum->ntags; i++) {
+    if (forum->tags[i].id == id) {
+      return &forum->tags[i];
+    }
+  }
+
+  return nullptr;
+}
+
+bool store_is_post(const Store *s, const Channel *c) {
+  const Channel *parent =
+    c != nullptr && channel_is_thread(c) ? store_channel(s, c->parent_id)
+                                         : nullptr;
+
+  return parent != nullptr && channel_is_forum(parent);
+}
+
+Channel *const *store_forum_posts(Store *s, const Channel *forum,
+                                  size_t *count) {
+  Guild *g = forum != nullptr ? store_guild(s, forum->guild_id) : nullptr;
+
+  if (g == nullptr) {
+    *count = 0;
+    return nullptr;
+  }
+
+  // the cache is the store's own, behind a pointer the reader may not write
+  // through.
+  Channel *cached = store_channel(s, forum->id);
+
+  if (cached->posts_stamp != g->layout_version + 1) {
+    size_t cap = 0;
+
+    cached->nposts = 0;
+
+    for (size_t i = 0; i < g->nchannels; i++) {
+      Channel *c = g->channels[i];
+
+      if (channel_is_thread(c) && c->parent_id == forum->id) {
+        reserve(&cached->posts, &cap, cached->nposts + 1,
+                sizeof *cached->posts);
+        cached->posts[cached->nposts++] = c;
+      }
+    }
+
+    cached->posts_stamp = g->layout_version + 1;
+  }
+
+  *count = cached->nposts;
+  return cached->posts;
 }
 
 static int compare_private(const void *a, const void *b) {

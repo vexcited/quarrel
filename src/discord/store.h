@@ -367,6 +367,34 @@ typedef enum : uint8_t {
   CHANNEL_GUILD_MEDIA = 16,
 } ChannelType;
 
+// pinned to the top of its forum, for a post.
+constexpr uint32_t CHANNEL_FLAG_PINNED = 1u << 1;
+// a forum whose posts need a tag.
+constexpr uint32_t CHANNEL_FLAG_REQUIRE_TAG = 1u << 4;
+
+// a tag of a forum, that its posts wear.
+typedef struct {
+  Snowflake id;
+  char *name;
+  // the emoji before the name: a guild's by its id, else the utf-8 of
+  // `emoji_name`. 0 and null for none.
+  Snowflake emoji_id;
+  char *emoji_name;
+  // only who manages threads may put it on a post.
+  bool moderated;
+} ForumTag;
+
+typedef enum : uint8_t {
+  FORUM_SORT_ACTIVITY = 0,
+  FORUM_SORT_CREATION = 1,
+} ForumSort;
+
+typedef enum : uint8_t {
+  FORUM_LAYOUT_DEFAULT = 0,
+  FORUM_LAYOUT_LIST = 1,
+  FORUM_LAYOUT_GALLERY = 2,
+} ForumLayout;
+
 typedef struct {
   Snowflake user_id;
   // unix seconds the indicator goes away at.
@@ -414,6 +442,34 @@ struct Channel {
   // was archived at, 0 when unknown.
   int64_t thread_joined_at, thread_archived_at;
   uint32_t message_count, member_count;
+  // unix milliseconds a thread was made at, 0 when discord did not say.
+  int64_t thread_created_at;
+
+  // forums and media channels: the tags their posts may wear, the emoji
+  // their posts are reacted with from the list, 0 and null for none, and
+  // how the user sees them until they choose.
+  ForumTag *tags;
+  size_t ntags;
+  Snowflake default_reaction_id;
+  char *default_reaction_name;
+  ForumSort default_sort;
+  ForumLayout default_layout;
+  // a filter of several tags wants posts wearing all of them.
+  bool tags_match_all;
+  // what a new post's message starts with, null for nothing.
+  char *template;
+  // a post: the tags it wears, and its first message, whose id is the
+  // post's. `starter_known` once discord said, `starter` staying null when
+  // the message was deleted.
+  Snowflake *applied_tags;
+  size_t napplied_tags;
+  Message *starter;
+  bool starter_known;
+  // the messages of a post the user opened before that came since, as
+  // FORUM_UNREADS counts them. `new_known` once it said.
+  uint32_t new_messages;
+  bool new_known;
+
   // a dm waiting as a message request, or one discord holds for spam.
   bool request;
 
@@ -446,6 +502,9 @@ struct Channel {
   size_t messages_cap;
   Permissions perms;
   uint64_t perms_stamp;
+  Channel **posts;
+  size_t nposts;
+  uint64_t posts_stamp;
 };
 
 /* ========================================================================== */
@@ -786,6 +845,21 @@ static inline bool channel_has_text(const Channel *c) {
          c->type != CHANNEL_GUILD_MEDIA;
 }
 
+// a channel of posts rather than messages.
+static inline bool channel_is_forum(const Channel *c) {
+  return c->type == CHANNEL_GUILD_FORUM || c->type == CHANNEL_GUILD_MEDIA;
+}
+
+// a tag of the forum by its id, null when it has none such.
+const ForumTag *store_forum_tag(const Channel *forum, Snowflake id);
+// a thread of a forum, a post.
+bool store_is_post(const Store *s, const Channel *c);
+
+// the posts of a forum the store knows of, in no order. a cache good until
+// the next change.
+Channel *const *store_forum_posts(Store *s, const Channel *forum,
+                                  size_t *count);
+
 // the guild bar: folders and lone guilds in the user's order, guilds they
 // never placed first. the order READY gave when discord sent no folders.
 //
@@ -885,6 +959,12 @@ void store_recipient_remove(Store *s, Snowflake channel_id, Snowflake user_id);
 void store_sync_threads(Store *s, const cima_json *sync);
 // whether the current user is a member of a thread.
 void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined);
+// the first message of a post, null when it was deleted.
+void store_put_starter(Store *s, Channel *post, const cima_json *message);
+// FORUM_UNREADS, the new messages of posts of a forum.
+void store_put_forum_unreads(Store *s, const cima_json *unreads);
+// whether discord holds a read state of the channel.
+bool store_has_read_state(const Store *s, Snowflake channel_id);
 // a channel's last message as passive updates tell it.
 void store_set_last_message(Store *s, Snowflake channel_id, Snowflake id);
 

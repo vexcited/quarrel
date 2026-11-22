@@ -145,6 +145,7 @@ add_executable(quarrel
   src/ui/app.c
   src/ui/chat.c
   src/ui/composer.c
+  src/ui/forum.c
   src/ui/friends.c
   src/ui/gifs.c
   src/ui/guilds.c

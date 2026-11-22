@@ -96,6 +96,16 @@ typedef struct {
 bool gateway_subscribe(Gateway *g, Snowflake guild_id, Snowflake channel_id,
                        const GatewayRange *ranges, size_t nranges);
 
+typedef struct {
+  Snowflake thread_id, ack_id;
+} GatewayForumAck;
+
+// asks how many messages came in up to 180 posts of a forum since they were
+// read up to `ack_id`, answered by FORUM_UNREADS.
+bool gateway_request_forum_unreads(Gateway *g, Snowflake guild_id,
+                                   Snowflake forum_id,
+                                   const GatewayForumAck *acks, size_t count);
+
 // asks for the members of up to 100 users, answered by GUILD_MEMBERS_CHUNK.
 bool gateway_request_members(Gateway *g, Snowflake guild_id,
                              const Snowflake *user_ids, size_t count);

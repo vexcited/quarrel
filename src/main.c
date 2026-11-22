@@ -93,7 +93,10 @@ static void shell(App *app) {
     div(flex, flex_1, min_w(0), h(full), py(2), pr(2)) {
       div(flex, flex_1, min_w(0), h(full), rounded(xl), bg(k->chat), border(1),
           border_color(k->frame_border), overflow_hidden) {
-        if (channel) {
+        if (channel && channel_is_forum(channel)) {
+          forum_page(app, channel);
+        }
+        else if (channel) {
           chat(app, channel);
         }
         else {
@@ -242,6 +245,11 @@ int main() {
   free(app.pick_search);
   free(app.guild_name);
   free(app.menu_search);
+  free(app.forum_search);
+  free(app.post_title);
+  free(app.post_body);
+  free(app.forum_tags.v);
+  free(app.post_tags.v);
   free(app.hide_muted.v);
   free(app.picks.v);
   platform_timer_cancel(app.friends_tick);

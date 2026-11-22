@@ -1298,10 +1298,27 @@ static void divider(const Look *k, const char *label, bool fresh) {
   }
 }
 
+// a post begins with its title and the tags it wears, its first message
+// under them.
+static void post_beginning(App *app, const Channel *c) {
+  const Look *k = &app->look;
+
+  div(flex, flex_col, gap(2), px(4), pt(4), mb(2)) {
+    text(c->name ? c->name : "", text_size(px(24)), line_height(px(30)),
+         font_weight(bold), text_color(k->strong));
+    post_tags(app, c, SIZE_MAX);
+  }
+}
+
 static void beginning(App *app, const Channel *c) {
   const Look *k = &app->look;
   Store *store = app->session->store;
   char name[128], title[192], lead[256];
+
+  if (store_is_post(store, c)) {
+    post_beginning(app, c);
+    return;
+  }
 
   store_channel_name(store, c, name, sizeof name);
 

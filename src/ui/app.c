@@ -74,6 +74,10 @@ void app_reset(App *app) {
   app->revealed.len = 0;
   app->hide_muted.len = 0;
   app->picks.len = 0;
+  app->forum_id = 0;
+  app->forum_tags.len = 0;
+  app->post_tags.len = 0;
+  app->post_open = false;
 
   // the password does not stay around once it served.
   if (app->password) {
@@ -100,6 +104,9 @@ void app_reset(App *app) {
   app->upload_title[0] = 0;
   drop(&app->gif_search);
   drop(&app->gif_title);
+  drop(&app->forum_search);
+  drop(&app->post_title);
+  drop(&app->post_body);
   drop(&app->profile_message);
   drop(&app->profile_note);
 

@@ -1104,6 +1104,7 @@ static void clear_invite(Session *s) {
   s->guild_created = 0;
 }
 
+static void clear_forum(Session *s);
 static void clear_friend(Session *s);
 static void clear_bookmarks(Session *s);
 static void qr_stop(Session *s);
@@ -1111,6 +1112,7 @@ static void qr_stop(Session *s);
 static void end_session(Session *s, const char *error) {
   uploads_clear(s);
   qr_stop(s);
+  clear_forum(s);
   clear_mentions(s);
   clear_bookmarks(s);
   clear_frecency(s);
@@ -1600,6 +1602,7 @@ static void session_free(Session *s) {
 
   clear_login(s);
   uploads_clear(s);
+  clear_forum(s);
   clear_mentions(s);
   clear_bookmarks(s);
   clear_frecency(s);
@@ -2120,58 +2123,57 @@ void session_delete(Session *s, Snowflake channel_id, Snowflake message_id) {
 void session_react(Session *s, Snowflake channel_id, Snowflake message_id,
                    Snowflake emoji_id, const char *name, bool add) {
   Channel *c = store_channel(s->store, channel_id);
+  bool starter = c != nullptr && c->starter != nullptr &&
+                 c->starter->id == message_id;
 
-  if (store_message(c, message_id) == nullptr || name == nullptr) {
+  if ((store_message(c, message_id) == nullptr && !starter) ||
+      name == nullptr) {
     return;
   }
 
-  if (s->offline) {
-    cima_json_writer w = {};
-    cilo_arena arena = {};
+  // shown at once. the gateway telling of the user's own reaction after
+  // changes nothing.
+  cima_json_writer w = {};
+  cilo_arena arena = {};
 
-    json_begin_object(&w);
-    json_key(&w, "id");
+  json_begin_object(&w);
+  json_key(&w, "id");
 
-    if (emoji_id != 0) {
-      snowflake_write(&w, emoji_id);
-    }
-    else {
-      cima_json_write_null(&w);
-    }
-
-    json_field(&w, "name", name);
-    json_end_object(&w);
-
-    const cima_json *emoji =
-      json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr);
-
-    if (add) {
-      store_reaction_add(s->store, channel_id, message_id, s->store->self_id,
-                         emoji);
-    }
-    else {
-      store_reaction_remove(s->store, channel_id, message_id, s->store->self_id,
-                            emoji);
-    }
-
-    cilo_arena_drop(&arena);
-    cima_json_writer_dispose(&w);
-    changed(s);
-    return;
+  if (emoji_id != 0) {
+    snowflake_write(&w, emoji_id);
+  }
+  else {
+    cima_json_write_null(&w);
   }
 
-  if (!online(s)) {
-    return;
-  }
+  json_field(&w, "name", name);
+  json_end_object(&w);
+
+  const cima_json *emoji =
+    json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr);
 
   if (add) {
+    store_reaction_add(s->store, channel_id, message_id, s->store->self_id,
+                       emoji);
+  }
+  else {
+    store_reaction_remove(s->store, channel_id, message_id, s->store->self_id,
+                          emoji);
+  }
+
+  cilo_arena_drop(&arena);
+  cima_json_writer_dispose(&w);
+
+  if (online(s) && add) {
     api_add_reaction(s->api, channel_id, message_id, emoji_id, name, nullptr,
                      nullptr);
   }
-  else {
+  else if (online(s)) {
     api_remove_reaction(s->api, channel_id, message_id, emoji_id, name, nullptr,
                         nullptr);
   }
+
+  changed(s);
 }
 
 void session_typing(Session *s, Snowflake channel_id) {
@@ -4035,4 +4037,686 @@ void session_set_note(Session *s, Snowflake user_id, const char *note) {
 
   api_request(s->api, &req, nullptr, nullptr);
   cima_json_writer_dispose(&w);
+}
+
+/* ========================================================================== */
+/* forums.                                                                    */
+/* ========================================================================== */
+
+constexpr uint32_t FORUM_PAGE = 25;
+constexpr size_t STARTERS_BATCH = 10;
+constexpr size_t TITLE_MAX = 100;
+
+static void clear_query(ForumQuery *q) {
+  free(q->tags);
+  free(q->query);
+  *q = (ForumQuery){};
+}
+
+static void clear_forum(Session *s) {
+  clear_query(&s->forum.query);
+  free(s->forum.posts);
+  free(s->forum.error);
+  s->forum = (SessionForum){.generation = s->forum.generation + 1};
+
+  free(s->starters_asked);
+  s->starters_asked = nullptr;
+  s->nstarters_asked = 0;
+  s->starters_cap = 0;
+
+  free(s->post_error);
+  s->post_error = nullptr;
+  s->post_creating = false;
+  s->post_created = 0;
+}
+
+static bool same_query(const ForumQuery *a, const ForumQuery *b) {
+  const char *qa = a->query != nullptr ? a->query : "";
+  const char *qb = b->query != nullptr ? b->query : "";
+
+  if (a->sort != b->sort || a->match_all != b->match_all ||
+      a->ntags != b->ntags || strcmp(qa, qb) != 0) {
+    return false;
+  }
+
+  for (size_t i = 0; i < a->ntags; i++) {
+    if (a->tags[i] != b->tags[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static void copy_query(ForumQuery *to, const ForumQuery *from) {
+  clear_query(to);
+  to->sort = from->sort;
+  to->match_all = from->match_all;
+  to->query = from->query != nullptr && from->query[0] != '\0'
+                ? str_dup(from->query)
+                : nullptr;
+
+  if (from->ntags != 0) {
+    to->tags = malloc(from->ntags * sizeof *to->tags);
+
+    if (to->tags == nullptr) {
+      cilo_oom(from->ntags * sizeof *to->tags);
+    }
+
+    memcpy(to->tags, from->tags, from->ntags * sizeof *to->tags);
+    to->ntags = from->ntags;
+  }
+}
+
+static void add_post(SessionForum *f, Snowflake id) {
+  for (size_t i = 0; i < f->nposts; i++) {
+    if (f->posts[i] == id) {
+      return;
+    }
+  }
+
+  Snowflake *grown = realloc(f->posts, (f->nposts + 1) * sizeof *f->posts);
+
+  if (grown == nullptr) {
+    cilo_oom((f->nposts + 1) * sizeof *f->posts);
+  }
+
+  f->posts = grown;
+  f->posts[f->nposts++] = id;
+}
+
+// the members of threads the answer carries are the current user's.
+static void put_thread_members(Session *s, const cima_json *members) {
+  CIMA_EACH(member, json_items(members)) {
+    Snowflake id = snowflake_of(json_get(member, "id"));
+    Channel *c = store_channel(s->store, id);
+
+    if (c == nullptr || c->thread_joined) {
+      continue;
+    }
+
+    store_set_thread_joined(s->store, id, true);
+
+    int64_t joined =
+      iso8601_parse_ms(json_get_or(member, "join_timestamp", nullptr));
+
+    if (joined != 0) {
+      c->thread_joined_at = joined;
+    }
+  }
+}
+
+static void put_first_messages(Session *s, const cima_json *messages) {
+  CIMA_EACH(message, json_items(messages)) {
+    Channel *post = store_channel(
+      s->store, snowflake_of(json_get(message, "channel_id")));
+
+    if (post != nullptr) {
+      store_put_starter(s->store, post, message);
+    }
+  }
+}
+
+static void on_forum_page(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  SessionForum *f = &s->forum;
+  bool current =
+    call->id == f->generation && call->channel_id == f->channel_id;
+
+  call_end(call);
+
+  // the list was asked again since.
+  if (!current) {
+    return;
+  }
+
+  f->loading = false;
+
+  if (!res->ok) {
+    str_set(&f->error, res->error.message);
+    f->has_more = false;
+    changed(s);
+    return;
+  }
+
+  const Channel *forum = store_channel(s->store, f->channel_id);
+  Snowflake guild_id = forum != nullptr ? forum->guild_id : 0;
+
+  CIMA_EACH(thread, json_items(json_get(res->json, "threads"))) {
+    Channel *c = store_put_channel(s->store, thread, guild_id);
+
+    if (c != nullptr) {
+      add_post(f, c->id);
+    }
+  }
+
+  put_thread_members(s, json_get(res->json, "members"));
+  put_first_messages(s, json_get(res->json, "first_messages"));
+
+  f->has_more = json_get_coerce(res->json, "has_more", false);
+  f->total = (uint32_t)json_get_coerce(res->json, "total_results",
+                                       (int64_t)f->nposts);
+  str_set(&f->error, nullptr);
+  changed(s);
+}
+
+// the posts discord finds for the query, from the `offset`th on.
+static void fetch_forum_page(Session *s) {
+  SessionForum *f = &s->forum;
+  const ForumQuery *q = &f->query;
+  char *path = nullptr;
+  size_t size = 0;
+  FILE *out = open_memstream(&path, &size);
+
+  if (out == nullptr) {
+    return;
+  }
+
+  // what the web client asks: the archived posts, the active ones coming
+  // through the gateway, unless words are looked for in every post. both
+  // are latest first whatever the order shown.
+  fprintf(out, "/channels/%" PRIu64 "/threads/search?", f->channel_id);
+
+  if (q->query != nullptr) {
+    char *words = url_encode(q->query);
+
+    fprintf(out, "name=%s&", words);
+    free(words);
+  }
+  else {
+    fprintf(out, "archived=true&");
+  }
+
+  fprintf(out,
+          "sort_by=last_message_time&sort_order=desc&limit=%u"
+          "&tag_setting=%s&offset=%zu",
+          FORUM_PAGE, q->match_all ? "match_all" : "match_some", f->nposts);
+
+  for (size_t i = 0; i < q->ntags; i++) {
+    fprintf(out, i == 0 ? "&tag=%" PRIu64 : ",%" PRIu64, q->tags[i]);
+  }
+
+  fclose(out);
+
+  ApiRequest req = {
+    .method = "GET",
+    .path = path,
+    .route = "/channels/:id/threads/search",
+  };
+
+  f->loading = true;
+  api_request(s->api, &req, on_forum_page,
+              call_new(s, f->channel_id, f->generation));
+  free(path);
+}
+
+// how many messages came in the posts opened before that have news, for
+// the counts of the list.
+static void request_forum_unreads(Session *s, Snowflake forum_id) {
+  const Channel *forum = store_channel(s->store, forum_id);
+
+  if (forum == nullptr || !gateway_ready(s)) {
+    return;
+  }
+
+  size_t count = 0, asked = 0;
+  Channel *const *posts = store_forum_posts(s->store, forum, &count);
+  GatewayForumAck acks[180];
+
+  for (size_t i = 0; i < count && asked < 180; i++) {
+    const Channel *post = posts[i];
+    Snowflake acked = store_last_acked(s->store, post->id);
+
+    if (!post->thread_archived && store_has_read_state(s->store, post->id) &&
+        acked < post->last_message_id) {
+      acks[asked++] = (GatewayForumAck){post->id, acked};
+    }
+  }
+
+  gateway_request_forum_unreads(s->gateway, forum->guild_id, forum_id, acks,
+                                asked);
+}
+
+void session_forum_query(Session *s, Snowflake forum_id,
+                         const ForumQuery *query) {
+  SessionForum *f = &s->forum;
+
+  if (f->channel_id == forum_id && same_query(&f->query, query)) {
+    return;
+  }
+
+  free(f->posts);
+  f->posts = nullptr;
+  f->nposts = 0;
+  f->total = 0;
+  f->generation++;
+  f->loading = false;
+  f->channel_id = forum_id;
+  str_set(&f->error, nullptr);
+  copy_query(&f->query, query);
+
+  // offline, the posts the store holds are all there is.
+  f->has_more = online(s) && forum_id != 0;
+
+  if (f->has_more) {
+    fetch_forum_page(s);
+  }
+
+  request_forum_unreads(s, forum_id);
+  changed(s);
+}
+
+void session_forum_more(Session *s) {
+  SessionForum *f = &s->forum;
+
+  if (f->has_more && !f->loading && online(s)) {
+    fetch_forum_page(s);
+    changed(s);
+  }
+}
+
+static bool starter_asked(Session *s, Snowflake id) {
+  for (size_t i = 0; i < s->nstarters_asked; i++) {
+    if (s->starters_asked[i] == id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static void on_starters(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (!res->ok) {
+    return;
+  }
+
+  // keyed by the post's id, each with its first message and its owner.
+  const cima_json *threads = json_get(res->json, "threads");
+
+  CIMA_EACH(entry, json_members(threads)) {
+    Channel *post = store_channel(s->store, snowflake_parse(entry->key));
+    const cima_json *first = json_get(&entry->value, "first_message");
+
+    if (post == nullptr) {
+      continue;
+    }
+
+    const cima_json *owner = json_get(&entry->value, "owner");
+    Guild *g = store_guild(s->store, post->guild_id);
+
+    if (g != nullptr && json_type(owner) == CIMA_JSON_OBJECT) {
+      store_put_member(s->store, g, owner, post->owner_id);
+    }
+
+    store_put_starter(s->store, post, first);
+  }
+
+  changed(s);
+}
+
+void session_fetch_starters(Session *s, Snowflake forum_id,
+                            const Snowflake *post_ids, size_t count) {
+  if (!online(s)) {
+    return;
+  }
+
+  Snowflake batch[STARTERS_BATCH];
+  size_t n = 0;
+
+  for (size_t i = 0; i <= count; i++) {
+    if (i < count) {
+      const Channel *post = store_channel(s->store, post_ids[i]);
+
+      if (post == nullptr || post->starter_known ||
+          starter_asked(s, post->id)) {
+        continue;
+      }
+
+      if (s->nstarters_asked == s->starters_cap) {
+        s->starters_cap = s->starters_cap != 0 ? s->starters_cap * 2 : 64;
+        s->starters_asked = realloc(
+          s->starters_asked, s->starters_cap * sizeof *s->starters_asked);
+
+        if (s->starters_asked == nullptr) {
+          cilo_oom(s->starters_cap * sizeof *s->starters_asked);
+        }
+      }
+
+      s->starters_asked[s->nstarters_asked++] = post->id;
+      batch[n++] = post->id;
+    }
+
+    if (n == 0 || (n < STARTERS_BATCH && i < count)) {
+      continue;
+    }
+
+    cima_json_writer w = {};
+    char path[96];
+
+    snprintf(path, sizeof path, "/channels/%" PRIu64 "/post-data", forum_id);
+    json_begin_object(&w);
+    json_key(&w, "thread_ids");
+    json_begin_array(&w);
+
+    for (size_t j = 0; j < n; j++) {
+      snowflake_write(&w, batch[j]);
+    }
+
+    json_end_array(&w);
+    json_end_object(&w);
+
+    ApiRequest req = {
+      .method = "POST",
+      .path = path,
+      .route = "/channels/:id/post-data",
+      .body = cima_json_writer_text(&w),
+    };
+
+    api_request(s->api, &req, on_starters, call_new(s, forum_id, 0));
+    cima_json_writer_dispose(&w);
+    n = 0;
+  }
+}
+
+// offline, a post is made up the way discord would tell of it.
+static void echo_post(Session *s, const Channel *forum, const char *title,
+                      const char *content, const Snowflake *tags,
+                      size_t ntags) {
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+  Snowflake id = snowflake_from_time_ms(now) | (++s->nonce_counter & 0xfff);
+  char timestamp[40];
+  cima_json_writer w = {};
+
+  iso_now(s->store, timestamp);
+
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, id);
+  json_key(&w, "guild_id"), snowflake_write(&w, forum->guild_id);
+  json_key(&w, "parent_id"), snowflake_write(&w, forum->id);
+  json_key(&w, "owner_id"), snowflake_write(&w, s->store->self_id);
+  json_field(&w, "type", (int64_t)CHANNEL_PUBLIC_THREAD);
+  json_field(&w, "name", title);
+  json_key(&w, "applied_tags");
+  json_begin_array(&w);
+
+  for (size_t i = 0; i < ntags; i++) {
+    snowflake_write(&w, tags[i]);
+  }
+
+  json_end_array(&w);
+  json_key(&w, "thread_metadata");
+  json_begin_object(&w);
+  json_field(&w, "archived", false);
+  json_field(&w, "locked", false);
+  json_field(&w, "create_timestamp", timestamp);
+  json_end_object(&w);
+  json_key(&w, "member");
+  json_begin_object(&w);
+  json_field(&w, "join_timestamp", timestamp);
+  json_end_object(&w);
+  json_end_object(&w);
+  apply_local(s, "THREAD_CREATE", &w);
+
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, id);
+  json_key(&w, "channel_id"), snowflake_write(&w, id);
+  json_field(&w, "content", content);
+  json_field(&w, "timestamp", timestamp);
+  json_key(&w, "author");
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, s->store->self_id);
+  json_end_object(&w);
+  json_end_object(&w);
+  apply_local(s, "MESSAGE_CREATE", &w);
+
+  s->post_created = id;
+}
+
+static void on_post_created(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  const Channel *forum = store_channel(s->store, call->channel_id);
+
+  call_end(call);
+  s->post_creating = false;
+
+  // the answer is the thread, its first message under `message`.
+  Channel *post =
+    res->ok ? store_put_channel(s->store, res->json,
+                                forum != nullptr ? forum->guild_id : 0)
+            : nullptr;
+
+  if (post != nullptr) {
+    store_set_thread_joined(s->store, post->id, true);
+
+    if (json_type(json_get(res->json, "message")) == CIMA_JSON_OBJECT) {
+      store_create_message(s->store, json_get(res->json, "message"));
+    }
+
+    s->post_created = post->id;
+  }
+  else {
+    str_set(&s->post_error,
+            res->ok ? "Discord sent no post." : res->error.message);
+  }
+
+  changed(s);
+}
+
+void session_create_post(Session *s, Snowflake forum_id, const char *title,
+                         const char *content, const Snowflake *tags,
+                         size_t ntags) {
+  const Channel *forum = store_channel(s->store, forum_id);
+
+  if (forum == nullptr || s->post_creating || title == nullptr ||
+      title[0] == '\0' || content == nullptr || content[0] == '\0') {
+    return;
+  }
+
+  str_set(&s->post_error, nullptr);
+  s->post_created = 0;
+
+  if (s->offline) {
+    echo_post(s, forum, title, content, tags, ntags);
+    changed(s);
+    return;
+  }
+
+  if (!online(s)) {
+    str_set(&s->post_error, "Posting needs a connection.");
+    changed(s);
+    return;
+  }
+
+  char path[96];
+  cima_json_writer w = {};
+
+  char name[TITLE_MAX * 4 + 1];
+
+  // a title is a hundred characters at most, cut where one begins.
+  snprintf(name, sizeof name, "%s", title);
+
+  for (size_t i = 0, chars = 0; name[i] != '\0'; i++) {
+    if ((name[i] & 0xc0) != 0x80 && chars++ == TITLE_MAX) {
+      name[i] = '\0';
+      break;
+    }
+  }
+
+  snprintf(path, sizeof path,
+           "/channels/%" PRIu64 "/threads?use_nested_fields=true", forum_id);
+
+  json_begin_object(&w);
+  json_field(&w, "name", name);
+  json_key(&w, "applied_tags");
+  json_begin_array(&w);
+
+  for (size_t i = 0; i < ntags; i++) {
+    snowflake_write(&w, tags[i]);
+  }
+
+  json_end_array(&w);
+  json_key(&w, "message");
+  json_begin_object(&w);
+  json_field(&w, "content", content);
+  json_end_object(&w);
+  json_end_object(&w);
+
+  ApiRequest req = {
+    .method = "POST",
+    .path = path,
+    .route = "/channels/:id/threads",
+    .body = cima_json_writer_text(&w),
+  };
+
+  s->post_creating = true;
+  api_request(s->api, &req, on_post_created, call_new(s, forum_id, 0));
+  cima_json_writer_dispose(&w);
+  changed(s);
+}
+
+void session_follow(Session *s, Snowflake thread_id, bool follow) {
+  Channel *c = store_channel(s->store, thread_id);
+
+  if (c == nullptr || !channel_is_thread(c) || c->thread_joined == follow) {
+    return;
+  }
+
+  // the gateway tells of it too, which changes nothing then.
+  store_set_thread_joined(s->store, thread_id, follow);
+
+  if (online(s)) {
+    char path[96];
+
+    snprintf(path, sizeof path,
+             "/channels/%" PRIu64
+             "/thread-members/@me?location=Forum%%20Toolbar",
+             thread_id);
+
+    ApiRequest req = {
+      .method = follow ? "POST" : "DELETE",
+      .path = path,
+      .route = "/channels/:id/thread-members/@me",
+    };
+
+    api_request(s->api, &req, nullptr, nullptr);
+  }
+
+  changed(s);
+}
+
+void session_set_post_tags(Session *s, Snowflake post_id, const Snowflake *tags,
+                           size_t ntags) {
+  Channel *post = store_channel(s->store, post_id);
+
+  if (post == nullptr || !channel_is_thread(post)) {
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, post_id);
+  json_key(&w, "applied_tags");
+  json_begin_array(&w);
+
+  for (size_t i = 0; i < ntags; i++) {
+    snowflake_write(&w, tags[i]);
+  }
+
+  json_end_array(&w);
+  json_end_object(&w);
+
+  // shown at once, discord's THREAD_UPDATE following.
+  if (online(s)) {
+    char path[96];
+
+    snprintf(path, sizeof path, "/channels/%" PRIu64, post_id);
+
+    ApiRequest req = {
+      .method = "PATCH",
+      .path = path,
+      .route = "/channels/:id",
+      .body = cima_json_writer_text(&w),
+    };
+
+    api_request(s->api, &req, nullptr, nullptr);
+  }
+
+  apply_local(s, "THREAD_UPDATE", &w);
+  changed(s);
+}
+
+void session_update_post(Session *s, Snowflake post_id, bool pinned,
+                         bool archived, bool locked) {
+  Channel *post = store_channel(s->store, post_id);
+
+  if (post == nullptr || !channel_is_thread(post)) {
+    return;
+  }
+
+  // archiving takes the pin away, and a pinned post is never archived.
+  uint32_t flags = pinned && !archived ? post->flags | CHANNEL_FLAG_PINNED
+                                       : post->flags & ~CHANNEL_FLAG_PINNED;
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_key(&w, "id"), snowflake_write(&w, post_id);
+  json_field(&w, "flags", (int64_t)flags);
+  json_key(&w, "thread_metadata");
+  json_begin_object(&w);
+  json_field(&w, "archived", archived);
+  json_field(&w, "locked", locked);
+  json_end_object(&w);
+  json_end_object(&w);
+
+  if (online(s)) {
+    char path[96];
+    cima_json_writer body = {};
+
+    snprintf(path, sizeof path, "/channels/%" PRIu64, post_id);
+    json_begin_object(&body);
+
+    if (flags != post->flags) {
+      json_field(&body, "flags", (int64_t)flags);
+    }
+
+    json_field(&body, "archived", archived);
+    json_field(&body, "locked", locked);
+    json_end_object(&body);
+
+    ApiRequest req = {
+      .method = "PATCH",
+      .path = path,
+      .route = "/channels/:id",
+      .body = cima_json_writer_text(&body),
+    };
+
+    api_request(s->api, &req, nullptr, nullptr);
+    cima_json_writer_dispose(&body);
+  }
+
+  apply_local(s, "THREAD_UPDATE", &w);
+  changed(s);
 }
