@@ -146,6 +146,7 @@ static void frame(void *ctx, civue_ui *ui) {
       profile_modal(app);
       settings_dialog(app);
       voice_switch_dialog(app);
+      notice_toast(app);
       break;
     case SESSION_CONNECTING:
       connecting_screen(app);

@@ -208,6 +208,15 @@ struct Session {
   SessionMention *mentions;
   size_t nmentions;
   bool mentions_loading, mentions_loaded;
+  // the pages of bookmarks the inbox lists, which the store holds: one on
+  // its way, more to fetch, the first came, the last failed.
+  bool bookmarks_loading, bookmarks_more, bookmarks_fetched, bookmarks_failed;
+  // what the last change of a bookmark came to, for the ui to tell for a
+  // moment, `notice_failed` when it went wrong. null for nothing, and
+  // `notice_version` bumped with every new one.
+  char *notice;
+  bool notice_failed;
+  uint64_t notice_version;
   // the invite session_create_invite asked for: the guild it is to, its
   // code once discord answered, or why there is none.
   Snowflake invite_guild_id;
@@ -295,6 +304,10 @@ struct Session {
   uint32_t list_first, list_last;
   uint64_t nonce_counter;
   char *voice_token, *voice_endpoint;
+  // when the last bookmark listed was saved, as discord wrote it, which the
+  // next page comes before. bumped with every new list of them.
+  char *bookmarks_before;
+  uint64_t bookmarks_generation;
   void *voice_timer;
   // discord confirmed the channel for this gateway session, the call was
   // started with what is known, and a new gateway session has to join again.
@@ -403,6 +416,13 @@ void session_typing(Session *s, Snowflake channel_id);
 void session_ack(Session *s, Snowflake channel_id);
 // fetches the 25 latest messages that mention the user, see `mentions`.
 void session_fetch_mentions(Session *s);
+// fetches the first page of the bookmarks, the latest saved first, once
+// discord said which messages are. with `more`, the next page, or the one
+// that failed again. see store->bookmarks and `bookmarks_more`.
+void session_fetch_bookmarks(Session *s, bool more);
+// bookmarks a message or takes its bookmark away, see `notice`.
+void session_bookmark(Session *s, Snowflake channel_id, Snowflake message_id,
+                      bool add);
 // opens the dm with a user and selects it once it exists.
 void session_open_dm(Session *s, Snowflake user_id);
 // the same with several users: a new group dm, selected once it exists. one

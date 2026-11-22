@@ -1449,6 +1449,231 @@ static bool pings(const Store *s, const Channel *c, const Message *m) {
          notify_level(s, c) == NOTIFY_ALL_MESSAGES;
 }
 
+/* ========================================================================== */
+/* bookmarks.                                                                 */
+/* ========================================================================== */
+
+// where `id` is or goes in the sorted `bookmark_ids`.
+static size_t bookmark_id_slot(const Store *s, Snowflake id) {
+  size_t low = 0, high = s->nbookmark_ids;
+
+  while (low < high) {
+    size_t mid = low + (high - low) / 2;
+
+    if (s->bookmark_ids[mid] < id) {
+      low = mid + 1;
+    }
+    else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
+
+bool store_bookmarked(const Store *s, Snowflake message_id) {
+  size_t slot = bookmark_id_slot(s, message_id);
+
+  return slot < s->nbookmark_ids && s->bookmark_ids[slot] == message_id;
+}
+
+static void add_bookmark_id(Store *s, Snowflake id) {
+  size_t slot = bookmark_id_slot(s, id);
+
+  if (id == 0 || (slot < s->nbookmark_ids && s->bookmark_ids[slot] == id)) {
+    return;
+  }
+
+  s->bookmark_ids = resized(s->bookmark_ids, s->nbookmark_ids + 1,
+                            sizeof *s->bookmark_ids);
+  memmove(&s->bookmark_ids[slot + 1], &s->bookmark_ids[slot],
+          (s->nbookmark_ids - slot) * sizeof *s->bookmark_ids);
+  s->bookmark_ids[slot] = id;
+  s->nbookmark_ids++;
+}
+
+static void drop_bookmark_id(Store *s, Snowflake id) {
+  size_t slot = bookmark_id_slot(s, id);
+
+  if (slot >= s->nbookmark_ids || s->bookmark_ids[slot] != id) {
+    return;
+  }
+
+  memmove(&s->bookmark_ids[slot], &s->bookmark_ids[slot + 1],
+          (s->nbookmark_ids - slot - 1) * sizeof *s->bookmark_ids);
+  s->bookmark_ids =
+    resized(s->bookmark_ids, s->nbookmark_ids - 1, sizeof *s->bookmark_ids);
+  s->nbookmark_ids--;
+}
+
+static Bookmark *find_bookmark(Store *s, Snowflake message_id) {
+  for (size_t i = 0; i < s->nbookmarks; i++) {
+    if (s->bookmarks[i].message_id == message_id) {
+      return &s->bookmarks[i];
+    }
+  }
+
+  return nullptr;
+}
+
+static void drop_bookmark(Store *s, Snowflake message_id) {
+  Bookmark *b = find_bookmark(s, message_id);
+
+  if (b == nullptr) {
+    return;
+  }
+
+  size_t at = (size_t)(b - s->bookmarks);
+
+  free_message(b->message);
+  memmove(b, b + 1, (s->nbookmarks - at - 1) * sizeof *b);
+  s->bookmarks =
+    resized(s->bookmarks, s->nbookmarks - 1, sizeof *s->bookmarks);
+  s->nbookmarks--;
+}
+
+static void free_bookmarks(Store *s) {
+  for (size_t i = 0; i < s->nbookmarks; i++) {
+    free_message(s->bookmarks[i].message);
+  }
+
+  free(s->bookmarks);
+  s->bookmarks = nullptr;
+  s->nbookmarks = 0;
+}
+
+// the listed bookmark of a message, made in its place by when it was saved
+// when it is new. one saved again moves to its new place.
+static Bookmark *put_bookmark(Store *s, Snowflake channel_id,
+                              Snowflake message_id, int64_t saved_at) {
+  Bookmark kept = {};
+  Bookmark *old = find_bookmark(s, message_id);
+
+  if (old != nullptr) {
+    kept = *old;
+    size_t at = (size_t)(old - s->bookmarks);
+
+    memmove(old, old + 1, (s->nbookmarks - at - 1) * sizeof *old);
+    s->nbookmarks--;
+  }
+
+  size_t at = 0;
+
+  while (at < s->nbookmarks && s->bookmarks[at].saved_at >= saved_at) {
+    at++;
+  }
+
+  s->bookmarks =
+    resized(s->bookmarks, s->nbookmarks + 1, sizeof *s->bookmarks);
+  memmove(&s->bookmarks[at + 1], &s->bookmarks[at],
+          (s->nbookmarks - at) * sizeof *s->bookmarks);
+  s->nbookmarks++;
+
+  Bookmark *b = &s->bookmarks[at];
+
+  *b = kept;
+  b->channel_id = channel_id;
+  b->message_id = message_id;
+  b->saved_at = saved_at;
+  return b;
+}
+
+const Message *store_bookmark_message(const Store *s, const Bookmark *b) {
+  if (b->message != nullptr) {
+    return b->message;
+  }
+
+  return store_message(store_channel(s, b->channel_id), b->message_id);
+}
+
+void store_set_bookmark_ids(Store *s, const cima_json *ids) {
+  free_bookmarks(s);
+  free(s->bookmark_ids);
+  s->bookmark_ids = nullptr;
+  s->nbookmark_ids = 0;
+
+  CIMA_EACH(id, json_items(ids)) {
+    add_bookmark_id(s, snowflake_of(id));
+  }
+
+  s->bookmarks_known = true;
+  s->bookmarks_version++;
+  s->version++;
+}
+
+void store_put_saved_message(Store *s, const cima_json *saved, bool page) {
+  const cima_json *data = json_get(saved, "save_data");
+  Snowflake channel_id = snowflake_of(json_get(data, "channel_id"));
+  Snowflake message_id = snowflake_of(json_get(data, "message_id"));
+
+  if (channel_id == 0 || message_id == 0) {
+    return;
+  }
+
+  s->bookmarks_version++;
+  s->version++;
+
+  // a reminder is no bookmark, even of a message that was one.
+  if (json_type(json_get(data, "due_at")) == CIMA_JSON_STRING) {
+    drop_bookmark_id(s, message_id);
+    drop_bookmark(s, message_id);
+    return;
+  }
+
+  if (page && !store_bookmarked(s, message_id)) {
+    return;
+  }
+
+  int64_t saved_at =
+    iso8601_parse_ms(json_get_or(data, "saved_at", nullptr));
+  Bookmark *b = put_bookmark(s, channel_id, message_id, saved_at);
+  const cima_json *message = json_get(saved, "message");
+
+  add_bookmark_id(s, message_id);
+  // discord writes 0 for no guild.
+  b->guild_id = snowflake_of(json_get(data, "guild_id"));
+
+  if (json_type(message) != CIMA_JSON_OBJECT) {
+    free_message(b->message);
+    b->message = nullptr;
+    return;
+  }
+
+  if (b->message == nullptr) {
+    b->message = xcalloc(1, sizeof *b->message);
+    b->message->id = message_id;
+    b->message->channel_id = channel_id;
+    b->message->content = str_dup("");
+  }
+
+  fill_message(s, b->message, message, store_guild(s, b->guild_id), 0);
+}
+
+void store_add_bookmark(Store *s, Snowflake channel_id, Snowflake message_id,
+                        int64_t saved_at) {
+  Channel *c = store_channel(s, channel_id);
+  Bookmark *b = put_bookmark(s, channel_id, message_id, saved_at);
+
+  add_bookmark_id(s, message_id);
+  b->guild_id = c != nullptr ? c->guild_id : 0;
+  s->bookmarks_version++;
+  s->version++;
+}
+
+void store_remove_saved_message(Store *s, Snowflake message_id) {
+  drop_bookmark_id(s, message_id);
+  drop_bookmark(s, message_id);
+  s->bookmarks_version++;
+  s->version++;
+}
+
+// the copy a bookmark keeps of a message, null for none.
+static Message *bookmark_copy(Store *s, Snowflake message_id) {
+  Bookmark *b = find_bookmark(s, message_id);
+
+  return b != nullptr ? b->message : nullptr;
+}
+
 Message *store_create_message(Store *s, const cima_json *message) {
   Channel *c = store_channel(s, snowflake_of(json_get(message, "channel_id")));
 
@@ -1513,18 +1738,35 @@ Message *store_create_message(Store *s, const cima_json *message) {
 
 void store_update_message(Store *s, const cima_json *message) {
   Channel *c = store_channel(s, snowflake_of(json_get(message, "channel_id")));
-  Message *m = store_message(c, snowflake_of(json_get(message, "id")));
+  Snowflake id = snowflake_of(json_get(message, "id"));
+  Message *found[] = {store_message(c, id), starter_of(c, id)};
+  Bookmark *b = find_bookmark(s, id);
 
-  if (m == nullptr) {
-    return;
+  for (size_t i = 0; i < 2; i++) {
+    if (found[i] != nullptr) {
+      fill_message(s, found[i], message, store_guild(s, c->guild_id), 0);
+      store_touch_channel(s, c);
+    }
   }
 
-  fill_message(s, m, message, store_guild(s, c->guild_id), 0);
-  store_touch_channel(s, c);
+  if (b != nullptr && b->message != nullptr) {
+    fill_message(s, b->message, message, store_guild(s, b->guild_id), 0);
+    s->bookmarks_version++;
+    s->version++;
+  }
 }
 
 void store_remove_message(Store *s, Snowflake channel_id, Snowflake id) {
   Channel *c = store_channel(s, channel_id);
+  Bookmark *b = find_bookmark(s, id);
+
+  // the bookmark stays, and tells that its message is gone.
+  if (b != nullptr && b->message != nullptr) {
+    free_message(b->message);
+    b->message = nullptr;
+    s->bookmarks_version++;
+    s->version++;
+  }
 
   if (c == nullptr || id == 0) {
     return;
@@ -3929,6 +4171,7 @@ void store_reset(Store *s) {
 
   free_folders(s);
   free_stored_folders(s);
+  free_bookmarks(s);
 
   MAP_DROP(&s->guilds);
   MAP_DROP(&s->channels);
@@ -3944,6 +4187,7 @@ void store_reset(Store *s) {
   free(s->resume_gateway_url);
   free(s->refreshed_token);
   free(s->status_proto);
+  free(s->bookmark_ids);
 
   // the counters go on, so nothing memoized on them is mistaken for fresh.
   Store fresh = {
@@ -3951,6 +4195,7 @@ void store_reset(Store *s) {
     .users_version = s->users_version + 1,
     .guilds_version = s->guilds_version + 1,
     .private_version = s->private_version + 1,
+    .bookmarks_version = s->bookmarks_version + 1,
     .list_clock = s->list_clock,
     .clock = s->clock,
   };

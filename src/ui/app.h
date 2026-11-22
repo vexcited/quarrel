@@ -68,6 +68,7 @@ typedef enum : uint8_t {
 typedef enum : uint8_t {
   INBOX_UNREADS,
   INBOX_MENTIONS,
+  INBOX_BOOKMARKS,
 } InboxTab;
 
 typedef struct {
@@ -104,6 +105,12 @@ typedef struct {
   // opened.
   bool inbox_asked;
   InboxTab inbox_tab;
+  // the session notice shown last, see session->notice, the session it came
+  // from, when it goes away and the timer that redraws then.
+  uint64_t notice_seen;
+  const Session *notice_session;
+  double notice_until;
+  PlatformTimer *notice_timer;
   // how wide the user made the sidebar.
   float sidebar_width;
 

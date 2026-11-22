@@ -1081,6 +1081,21 @@ static void message_body(App *app, const Channel *c, const Message *m,
   stickers(app, m);
   reactions(app, m);
 }
+
+void message_preview(App *app, const Channel *c, const Message *m,
+                     float width) {
+  const Look *k = &app->look;
+  civue_id kept = key_scope;
+
+  key_scope = id("message-preview");
+
+  div(key(message_key(m)), relative, pl(px(GUTTER)), pr(12), py(px(2))) {
+    message_body(app, c, m, true, width, k->text, k->surface_high);
+  }
+
+  key_scope = kept;
+}
+
 static void message(App *app, Channel *c, Message *m, bool head, float width) {
   const Look *k = &app->look;
   civue_ui *ui = civue_ui_current();

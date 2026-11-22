@@ -265,6 +265,12 @@ void events_dispatch(Store *s, const char *type, const cima_json *d) {
   else if (IS("MESSAGE_ACK")) {
     store_put_ack(s, d);
   }
+  else if (IS("SAVED_MESSAGE_CREATE")) {
+    store_put_saved_message(s, d, false);
+  }
+  else if (IS("SAVED_MESSAGE_DELETE")) {
+    store_remove_saved_message(s, snowflake_of(json_get(d, "message_id")));
+  }
   else if (IS("CHANNEL_CREATE") || IS("CHANNEL_UPDATE") ||
            IS("THREAD_CREATE") || IS("THREAD_UPDATE")) {
     store_put_channel(s, d, 0);

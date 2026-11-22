@@ -341,3 +341,62 @@ void top_bar(App *app) {
     settings_button(app);
   }
 }
+
+// how long a notice stays, in seconds. it sits 16 points over the foot of
+// the window, as discord's toasts do.
+constexpr double NOTICE_SECONDS = 3;
+
+static void on_notice_end(void *ctx) {
+  App *app = ctx;
+
+  app->notice_timer = nullptr;
+  civue_window_wake();
+}
+
+void notice_toast(App *app) {
+  const Look *k = &app->look;
+  Session *session = app->session;
+  double now = platform_now();
+
+  // a notice of another account, or older than the one shown, is not news.
+  if (app->notice_session != session) {
+    app->notice_session = session;
+    app->notice_seen = session->notice_version;
+    app->notice_until = 0;
+  }
+  else if (app->notice_seen != session->notice_version) {
+    app->notice_seen = session->notice_version;
+    app->notice_until = now + NOTICE_SECONDS;
+    platform_timer_cancel(app->notice_timer);
+    app->notice_timer = platform_timer(NOTICE_SECONDS, on_notice_end, app);
+  }
+
+  if (!session->notice || now >= app->notice_until) {
+    return;
+  }
+
+  civue_vec2 window = civue_ui_current()->size;
+  float width = 440;
+
+  overlay() {
+    div(key(id("notice")), flex, justify_center,
+        left(px(window.x / 2 - width / 2)), top(px(window.y - 16 - 36)),
+        w(px(width))) {
+      div(flex, items_center, gap(2), max_w(full), px(3), py(2), rounded(lg),
+          bg(k->surface_high), border(1), border_color(k->border_strong),
+          shadow(lg), text_size(px(14)), line_height(px(18)),
+          font_weight(medium), text_color(k->strong)) {
+        if (session->notice_failed) {
+          icon(lucide, circle_alert, size(4), flex_shrink_0,
+               text_color(k->critical_text));
+        }
+        else {
+          icon(lucide, bookmark, size(4), flex_shrink_0,
+               text_color(k->subtle));
+        }
+
+        text(session->notice, min_w(0));
+      }
+    }
+  }
+}

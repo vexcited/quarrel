@@ -169,11 +169,15 @@ static void menu(App *app, const Channel *c, const Message *m) {
   bool pins = !c->guild_id || store_can(store, c, PERM_PIN_MESSAGES) ||
               store_can(store, c, PERM_MANAGE_MESSAGES);
   bool has_text = *m->content != '\0';
+  bool bookmarked = store_bookmarked(store, m->id);
+  // discord's client offers no bookmark of what the user cannot read again.
+  bool bookmarks = bookmarked || channel_is_private(c) ||
+                   store_can(store, c, PERM_READ_MESSAGE_HISTORY);
   ReactionPick picks[4];
   size_t npicks = reacts ? quick_reactions(app, c, picks, 4) : 0;
 
   size_t rows = reacts + (own && plain) + (writes && plain) + plain + has_text +
-                pins + 3 + removable;
+                pins + bookmarks + 3 + removable;
   float height = 2 + 8 + (float)rows * 40 + 3 * 9 + (npicks ? 52 : 0);
   civue_rect card = card_at(app->menu_anchor, MENU_WIDTH, height);
   civue_id base = id("message-menu");
@@ -187,6 +191,7 @@ static void menu(App *app, const Channel *c, const Message *m) {
     FORWARD,
     COPY_TEXT,
     PIN,
+    BOOKMARK,
     UNREAD,
     COPY_LINK,
     COPY_ID,
@@ -252,6 +257,15 @@ static void menu(App *app, const Channel *c, const Message *m) {
         }
       }
 
+      if (bookmarks && bookmarked) {
+        ROW(BOOKMARK, CIVUE_ICON(lucide, bookmark_minus), "Remove Bookmark",
+            k->text);
+      }
+      else if (bookmarks) {
+        ROW(BOOKMARK, CIVUE_ICON(lucide, bookmark), "Bookmark Message",
+            k->text);
+      }
+
       ROW(UNREAD, CIVUE_ICON(lucide, message_square_dot), "Mark Unread",
           k->text);
       ROW(COPY_LINK, CIVUE_ICON(lucide, link), "Copy Message Link", k->text);
@@ -307,6 +321,10 @@ static void menu(App *app, const Channel *c, const Message *m) {
 
     case PIN:
       session_pin(app->session, c->id, m->id, !m->pinned);
+      break;
+
+    case BOOKMARK:
+      session_bookmark(app->session, c->id, m->id, !bookmarked);
       break;
 
     case UNREAD:

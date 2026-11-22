@@ -68,11 +68,18 @@ uint32_t accounts_waiting(App *app);
 // what waits to be read and what mentions the user, under `anchor`, while
 // the app shows POPOVER_INBOX. a press on `anchor` is left to what opened it.
 void inbox(App *app, civue_rect anchor);
+// what the session last told of something the user did, at the foot of the
+// window for a moment.
+void notice_toast(App *app);
 // the saved accounts under the login form, nothing when there is none.
 void account_choices(App *app);
 
 void chat(App *app, Channel *channel);
 void message_list(App *app, Channel *channel);
+// a message of `c` alone, under its author and without its toolbar, in a
+// node `width` points wide.
+void message_preview(App *app, const Channel *c, const Message *m,
+                     float width);
 void composer(App *app, Channel *channel);
 
 // an emoji to react with: one of a guild by its id and name, or one of

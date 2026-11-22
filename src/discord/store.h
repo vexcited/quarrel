@@ -599,6 +599,23 @@ static inline bool message_is_system(const Message *m) {
 }
 
 /* ========================================================================== */
+/* bookmarks, the saved messages without a reminder.                          */
+/* ========================================================================== */
+
+// a bookmark the inbox lists.
+typedef struct {
+  Snowflake channel_id, message_id;
+  // 0 outside a guild.
+  Snowflake guild_id;
+  // unix milliseconds.
+  int64_t saved_at;
+  // the message as discord sent it with the bookmark, kept in sync since.
+  // null once it was deleted, when discord sent none, or for a bookmark
+  // made offline. see store_bookmark_message.
+  Message *message;
+} Bookmark;
+
+/* ========================================================================== */
 /* the store.                                                                 */
 /* ========================================================================== */
 
@@ -641,6 +658,18 @@ struct Store {
   // everyone known to be in a voice channel, in no order.
   VoiceState *voice_states;
   size_t nvoice_states;
+
+  // the messages the user bookmarked, by id, as discord last listed them.
+  // `bookmarks_known` once it did since READY.
+  Snowflake *bookmark_ids;
+  size_t nbookmark_ids;
+  bool bookmarks_known;
+  // the bookmarks fetched for the inbox, the latest saved first. some of
+  // `bookmark_ids` are not here until their page was fetched.
+  Bookmark *bookmarks;
+  size_t nbookmarks;
+  // bumped with every change of the bookmarks or of their messages.
+  uint64_t bookmarks_version;
 
   // the session id and the url to resume at, as READY gave them.
   char *session_id, *resume_gateway_url;
@@ -785,6 +814,12 @@ Unread store_private_unread(Store *s);
 // divider goes after it.
 Snowflake store_last_acked(const Store *s, Snowflake channel_id);
 
+// whether the user bookmarked the message.
+bool store_bookmarked(const Store *s, Snowflake message_id);
+// the message a bookmark is for: its own copy, else the one loaded in its
+// channel. null when neither is there, as for a deleted message.
+const Message *store_bookmark_message(const Store *s, const Bookmark *b);
+
 // the users typing in a channel but the current one, into `out`. returns how
 // many there are, which may be more than `cap`.
 size_t store_typing(const Store *s, const Channel *c, Snowflake *out,
@@ -882,6 +917,19 @@ void store_ack(Store *s, Snowflake channel_id, Snowflake message_id,
                uint32_t mention_count);
 // MESSAGE_ACK, an ack made by any of the account's clients.
 void store_put_ack(Store *s, const cima_json *ack);
+// the `bookmark_ids` of the saved messages route, which replace the ones
+// known and drop the bookmarks fetched.
+void store_set_bookmark_ids(Store *s, const cima_json *ids);
+// saved messages as SAVED_MESSAGE_CREATE, the saved messages routes and a
+// page of bookmarks send them. one with a due date is a reminder, never a
+// bookmark. `page` keeps out those no longer in `bookmark_ids`, as discord
+// does with what a page brings.
+void store_put_saved_message(Store *s, const cima_json *saved, bool page);
+// a bookmark made without discord, as a fixture does.
+void store_add_bookmark(Store *s, Snowflake channel_id, Snowflake message_id,
+                        int64_t saved_at);
+// SAVED_MESSAGE_DELETE.
+void store_remove_saved_message(Store *s, Snowflake message_id);
 // one entry of user_guild_settings.
 void store_put_guild_settings(Store *s, const cima_json *settings);
 // user_settings, whole or partial.

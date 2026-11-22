@@ -1,5 +1,6 @@
 #include "discord/session.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -33,6 +34,8 @@ struct Call {
   Session *s;
   Snowflake channel_id, id;
   HistoryKind kind;
+  // a bookmark is made rather than taken away.
+  bool add;
   uint64_t epoch;
 };
 
@@ -962,6 +965,8 @@ static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   changed(s);
 }
 
+static void fetch_bookmark_ids(Session *s);
+
 static void on_status(void *ctx, GatewayStatus status) {
   Session *s = ctx;
 
@@ -971,6 +976,8 @@ static void on_status(void *ctx, GatewayStatus status) {
 
       // a new session knows nothing of what was shown, a resumed one does.
       activate(s);
+      // as discord's client does on every connection.
+      fetch_bookmark_ids(s);
 
       if (s->voice_rejoin) {
         s->voice_rejoin = s->voice_stated = s->voice_live = false;
@@ -1072,11 +1079,13 @@ static void clear_invite(Session *s) {
 }
 
 static void clear_friend(Session *s);
+static void clear_bookmarks(Session *s);
 static void qr_stop(Session *s);
 
 static void end_session(Session *s, const char *error) {
   qr_stop(s);
   clear_mentions(s);
+  clear_bookmarks(s);
   clear_frecency(s);
   clear_applications(s);
   clear_profile(s);
@@ -1562,6 +1571,7 @@ static void session_free(Session *s) {
 
   clear_login(s);
   clear_mentions(s);
+  clear_bookmarks(s);
   clear_frecency(s);
   clear_applications(s);
   clear_profile(s);
@@ -1700,6 +1710,8 @@ bool session_load_fixture(Session *s, const char *path) {
   }
 
   s->offline = true;
+  // nothing was bookmarked that a fixture would know of.
+  s->store->bookmarks_known = true;
   set_error(s, nullptr);
   set_state(s, SESSION_READY);
   return true;
@@ -2211,6 +2223,236 @@ void session_fetch_mentions(Session *s) {
   s->mentions_loading = true;
   api_request(s->api, &req, on_mentions, call_new(s, 0, 0));
   changed(s);
+}
+
+/* ========================================================================== */
+/* bookmarks. discord's client asks which messages are bookmarked on every    */
+/* connection, then lists them by pages of 25 as the inbox scrolls.          */
+/* ========================================================================== */
+
+// how many bookmarks discord keeps for an account, as its client tells.
+constexpr int BOOKMARKS_MAX = 500;
+// discord's code for a full list of saved messages.
+constexpr uint32_t TOO_MANY_SAVED_MESSAGES = 30074;
+
+static void notify(Session *s, const char *notice, bool failed) {
+  str_set(&s->notice, notice);
+  s->notice_failed = failed;
+  s->notice_version++;
+}
+
+// forgets the pages fetched, and drops the answers on their way.
+static void restart_bookmarks(Session *s) {
+  free(s->bookmarks_before);
+  s->bookmarks_before = nullptr;
+  s->bookmarks_generation++;
+  s->bookmarks_loading = false;
+  s->bookmarks_more = false;
+  s->bookmarks_fetched = false;
+  s->bookmarks_failed = false;
+}
+
+static void clear_bookmarks(Session *s) {
+  restart_bookmarks(s);
+  free(s->notice);
+  s->notice = nullptr;
+  s->notice_failed = false;
+}
+
+static void on_bookmark_ids(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  uint64_t generation = call->id;
+
+  call_end(call);
+
+  if (generation != s->bookmarks_generation) {
+    return;
+  }
+
+  // the client takes a failure for no bookmarks at all.
+  store_set_bookmark_ids(s->store,
+                         res->ok ? json_get(res->json, "bookmark_ids")
+                                 : nullptr);
+  s->bookmarks_loading = false;
+  s->bookmarks_more = s->store->nbookmark_ids > 0;
+  changed(s);
+}
+
+// which messages are bookmarked, the list starting over.
+static void fetch_bookmark_ids(Session *s) {
+  if (!online(s)) {
+    return;
+  }
+
+  ApiRequest req = {
+    .method = "GET",
+    .path = "/users/@me/saved-messages?bookmark_ids=true",
+    .route = "/users/@me/saved-messages",
+  };
+
+  restart_bookmarks(s);
+  s->bookmarks_loading = true;
+  api_request(s->api, &req, on_bookmark_ids,
+              call_new(s, 0, s->bookmarks_generation));
+}
+
+static void on_bookmarks(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  uint64_t generation = call->id;
+
+  call_end(call);
+
+  if (generation != s->bookmarks_generation) {
+    return;
+  }
+
+  s->bookmarks_loading = false;
+
+  if (!res->ok) {
+    s->bookmarks_failed = true;
+    changed(s);
+    return;
+  }
+
+  const char *last = nullptr;
+
+  CIMA_EACH(saved, json_items(json_get(res->json, "results"))) {
+    store_put_saved_message(s->store, saved, true);
+    last = json_get_or(json_get(saved, "save_data"), "saved_at", last);
+  }
+
+  if (last != nullptr) {
+    str_set(&s->bookmarks_before, last);
+  }
+
+  s->bookmarks_fetched = true;
+  s->bookmarks_failed = false;
+  s->bookmarks_more =
+    json_get_coerce(res->json, "has_more", false) && last != nullptr;
+  changed(s);
+}
+
+void session_fetch_bookmarks(Session *s, bool more) {
+  bool first = !s->bookmarks_fetched && !s->bookmarks_failed;
+
+  if (!online(s) || s->bookmarks_loading || !s->store->bookmarks_known ||
+      !s->bookmarks_more || (!more && !first)) {
+    return;
+  }
+
+  char path[160] = "/users/@me/saved-messages/bookmarks?limit=25";
+
+  if (s->bookmarks_before != nullptr) {
+    char *before = url_encode(s->bookmarks_before);
+
+    snprintf(path, sizeof path,
+             "/users/@me/saved-messages/bookmarks?before=%s&limit=25", before);
+    free(before);
+  }
+
+  ApiRequest req = {
+    .method = "GET",
+    .path = path,
+    .route = "/users/@me/saved-messages/bookmarks",
+  };
+
+  s->bookmarks_loading = true;
+  api_request(s->api, &req, on_bookmarks,
+              call_new(s, 0, s->bookmarks_generation));
+  changed(s);
+}
+
+static void on_bookmark_set(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake message_id = call->id;
+  bool add = call->add;
+
+  call_end(call);
+
+  if (!res->ok && res->error.code == TOO_MANY_SAVED_MESSAGES) {
+    char line[160];
+
+    snprintf(line, sizeof line,
+             "You've reached the limit for bookmarks (%d total). To add more, "
+             "please delete a few messages.",
+             BOOKMARKS_MAX);
+    notify(s, line, true);
+  }
+  else if (!res->ok) {
+    notify(s, res->error.message, true);
+  }
+  // the gateway tells too, the answer is only here first.
+  else if (add) {
+    store_put_saved_message(s->store, res->json, false);
+    notify(s, "Bookmark added. For your eyes only.", false);
+  }
+  else {
+    store_remove_saved_message(s->store, message_id);
+    notify(s, "Bookmark removed.", false);
+  }
+
+  changed(s);
+}
+
+void session_bookmark(Session *s, Snowflake channel_id, Snowflake message_id,
+                      bool add) {
+  if (channel_id == 0 || message_id == 0) {
+    return;
+  }
+
+  if (s->offline) {
+    if (add) {
+      store_add_bookmark(s->store, channel_id, message_id,
+                         (int64_t)(store_now(s->store) * 1000));
+    }
+    else {
+      store_remove_saved_message(s->store, message_id);
+    }
+
+    notify(s, add ? "Bookmark added. For your eyes only." : "Bookmark removed.",
+           false);
+    changed(s);
+    return;
+  }
+
+  if (!online(s)) {
+    return;
+  }
+
+  char path[96];
+
+  snprintf(path, sizeof path, "/users/@me/saved-messages/%" PRIu64 "/%" PRIu64,
+           channel_id, message_id);
+
+  // no due date makes a bookmark rather than a reminder.
+  ApiRequest req = {
+    .method = add ? "PUT" : "DELETE",
+    .path = path,
+    .route = "/users/@me/saved-messages/:id/:id",
+    .body = add ? "{\"source\":\"context_menu\"}" : nullptr,
+  };
+  Call *call = call_new(s, channel_id, message_id);
+
+  call->add = add;
+  api_request(s->api, &req, on_bookmark_set, call);
 }
 
 // how much a use counts for, from how many days ago it was. the client's.
