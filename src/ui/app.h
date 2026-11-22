@@ -222,6 +222,9 @@ typedef struct {
   // while it is not.
   char *profile_message, *profile_note;
   Snowflake note_user;
+  // the videos playing and the media open over the window, see media.h.
+  struct Media *media;
+
 } App;
 
 // forgets what was shown and typed, for another account.

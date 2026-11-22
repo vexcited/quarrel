@@ -6,6 +6,7 @@
 
 #include <civue/dsl.h>
 
+#include "media.h"
 #include "widgets.h"
 
 constexpr float LINE = 22;
@@ -126,7 +127,8 @@ static void catch_typing(App *app) {
   civue_ui *ui = civue_ui_current();
   civue_bytes *typed = &ui->input.text;
 
-  if (ui->focus || !typed->len || (ui->input.mods & CIVUE_MOD_CMD)) {
+  if (ui->focus || !typed->len || (ui->input.mods & CIVUE_MOD_CMD) ||
+      media_viewing(app)) {
     return;
   }
 

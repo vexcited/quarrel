@@ -1040,6 +1040,12 @@ static bool has_prefix(const char *s, const char *prefix) {
   return s != nullptr && strncmp(s, prefix, strlen(prefix)) == 0;
 }
 
+// the flags of an attachment, and of the media of an embed.
+constexpr uint64_t ATTACHMENT_FLAG_THUMBNAIL = 1u << 1;
+constexpr uint64_t ATTACHMENT_FLAG_SPOILER = 1u << 3;
+constexpr uint64_t ATTACHMENT_FLAG_ANIMATED = 1u << 5;
+constexpr uint64_t EMBED_MEDIA_FLAG_ANIMATED = 1u << 5;
+
 static void fill_attachments(Message *m, const cima_json *attachments) {
   free_attachments(m);
 
@@ -1063,8 +1069,13 @@ static void fill_attachments(Message *m, const cima_json *attachments) {
     a->size = json_get_coerce(item, "size", (uint64_t)0);
     a->width = (uint32_t)json_get_coerce(item, "width", (uint64_t)0);
     a->height = (uint32_t)json_get_coerce(item, "height", (uint64_t)0);
+    uint64_t flags = json_get_coerce(item, "flags", (uint64_t)0);
+
     a->spoiler = has_prefix(a->filename, "SPOILER_") ||
-                 (json_get_coerce(item, "flags", (uint64_t)0) & (1u << 3)) != 0;
+                 (flags & ATTACHMENT_FLAG_SPOILER) != 0;
+    a->animated = (flags & ATTACHMENT_FLAG_ANIMATED) != 0;
+    a->thumbnail = (flags & ATTACHMENT_FLAG_THUMBNAIL) != 0;
+    a->duration = json_get_coerce(item, "duration_secs", 0.0);
   }
 }
 
@@ -1073,6 +1084,8 @@ static void fill_media(EmbedMedia *media, const cima_json *v) {
   media->proxy_url = str_dup(json_get_or(v, "proxy_url", nullptr));
   media->width = (uint32_t)json_get_coerce(v, "width", (uint64_t)0);
   media->height = (uint32_t)json_get_coerce(v, "height", (uint64_t)0);
+  media->animated = (json_get_coerce(v, "flags", (uint64_t)0) &
+                     EMBED_MEDIA_FLAG_ANIMATED) != 0;
 }
 
 static void fill_embeds(Message *m, const cima_json *embeds) {

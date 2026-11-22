@@ -5,6 +5,7 @@
 
 #include "http.h"
 #include "ui/components.h"
+#include "ui/media.h"
 #include "ui/widgets.h"
 
 #define SIDEBAR_KEY "sidebar_width"
@@ -146,6 +147,7 @@ static void frame(void *ctx, civue_ui *ui) {
       profile_modal(app);
       settings_dialog(app);
       voice_switch_dialog(app);
+      media_viewer(app);
       notice_toast(app);
       break;
     case SESSION_CONNECTING:
@@ -155,6 +157,8 @@ static void frame(void *ctx, civue_ui *ui) {
       login_screen(app);
       break;
   }
+
+  media_sweep(app);
 
   if (app->covers_buttons != app->buttons_hidden) {
     app->buttons_hidden = app->covers_buttons;
@@ -215,6 +219,7 @@ int main() {
     hcaptcha_free(app.friend_captcha);
   }
 
+  media_free(&app);
   roster_free(app.roster);
   civue_images_free(app.images);
   http_shutdown();

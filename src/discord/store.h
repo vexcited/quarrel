@@ -495,11 +495,19 @@ typedef struct {
   uint32_t width, height;
   // the file is named SPOILER_ or flagged as one.
   bool spoiler;
+  // an image whose frames move, a gif or an animated webp or png.
+  bool animated;
+  // the picture of another attachment, which discord's client never shows.
+  bool thumbnail;
+  // how long a video or a voice message lasts in seconds, 0 when unknown.
+  double duration;
 } Attachment;
 
 typedef struct {
   char *url, *proxy_url;
   uint32_t width, height;
+  // an image whose frames move.
+  bool animated;
 } EmbedMedia;
 
 typedef struct {

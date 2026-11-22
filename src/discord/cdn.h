@@ -81,5 +81,8 @@ char *cdn_sticker(char out[static CDN_URL_MAX], Snowflake sticker_id,
 // `width` by `height` pixels, as webp. 0 for both keeps its size.
 char *cdn_media(char out[static CDN_URL_MAX], const char *proxy_url,
                 uint32_t width, uint32_t height);
+// the same keeping every frame of an animated gif, webp or png.
+char *cdn_media_animated(char out[static CDN_URL_MAX], const char *proxy_url,
+                         uint32_t width, uint32_t height);
 
 #endif

@@ -149,6 +149,7 @@ add_executable(quarrel
   src/ui/look.c
   src/ui/markup.c
   src/ui/members.c
+  src/ui/media.c
   src/ui/messages.c
   src/ui/profile.c
   src/ui/shell.c

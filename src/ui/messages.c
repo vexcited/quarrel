@@ -9,15 +9,22 @@
 
 #include "discord/cdn.h"
 #include "discord/markdown.h"
+#include "media.h"
 #include "widgets.h"
 
 constexpr float GUTTER = 72;
-constexpr float MEDIA_MAX_WIDTH = 400;
-constexpr float MEDIA_MAX_HEIGHT = 300;
+constexpr float MEDIA_MAX_HEIGHT = 350;
+constexpr float MEDIA_RADIUS = 8;
+constexpr float MOSAIC_WIDTH = 550;
 constexpr int64_t GROUP_GAP_MS = 7 * 60 * 1000;
 
+// what the keys of messages hang from, so that one shown twice, as in the
+// inbox, keeps two of each.
+static civue_id key_scope;
+
 static civue_id message_key(const Message *m) {
-  return id_at(id("message"), m->id ? m->id : m->nonce);
+  return id_at(key_scope ? key_scope : id("message"),
+               m->id ? m->id : m->nonce);
 }
 
 static bool starts_with(const char *s, const char *prefix) {
@@ -33,51 +40,19 @@ static civue_vec2 fit_media(uint32_t width, uint32_t height, float max_width,
   return point(fmax(round(w * scale), 16), fmax(round(h * scale), 16));
 }
 
-// an image of a message, opened in the browser when pressed.
-static void media(App *app, civue_id id, const char *proxy_url, const char *url,
-                  uint32_t width, uint32_t height, float max_width,
-                  float max_height, bool spoiler) {
-  const Look *k = &app->look;
-  civue_ui *ui = civue_ui_current();
-  civue_vec2 size = fit_media(width, height, max_width, max_height);
-  char sized[CDN_URL_MAX];
-  bool hidden = spoiler;
+// one picture of an embed, `size` points, opened in the viewer when pressed.
+static void embed_picture(App *app, civue_id id, Snowflake message_id,
+                          const EmbedMedia *m, civue_vec2 size) {
+  MediaItem item = {
+    .kind = MEDIA_IMAGE,
+    .url = m->url,
+    .proxy_url = m->proxy_url,
+    .width = m->width,
+    .height = m->height,
+    .animated = m->animated,
+  };
 
-  for (uint32_t i = 0; hidden && i < app->revealed.len; i++) {
-    hidden = app->revealed.v[i] != id;
-  }
-
-  cdn_media(sized, proxy_url ? proxy_url : url, (uint32_t)(size.x * ui->scale),
-            (uint32_t)(size.y * ui->scale));
-
-  div(key(id), flex, items_center, justify_center, flex_shrink_0, w(px(size.x)),
-      h(px(size.y)), rounded(lg), bg(k->surface), cursor_pointer) {
-    bool pressed = button().activated;
-
-    if (hidden) {
-      div(px(3), py(1), rounded(full), bg(rgba(0x000000b8))) {
-        text("SPOILER", text_size(px(14)), font_weight(bold),
-             text_color(CIVUE_WHITE));
-      }
-
-      if (pressed) {
-        if (app->revealed.len == app->revealed.cap) {
-          app->revealed.cap = app->revealed.cap ? app->revealed.cap * 2 : 16;
-          app->revealed.v = realloc(app->revealed.v, app->revealed.cap *
-                                                       sizeof *app->revealed.v);
-        }
-
-        app->revealed.v[app->revealed.len++] = id;
-      }
-    }
-    else {
-      image_fill(app, sized, 8);
-
-      if (pressed && url) {
-        civue_open_url(url);
-      }
-    }
-  }
+  media_tile(app, id, message_id, &item, 1, 0, size, 4);
 }
 
 static void format_bytes(uint64_t size, char *out, size_t cap) {
@@ -116,21 +91,156 @@ static void file_card(App *app, civue_id id, const Attachment *a) {
   }
 }
 
+// what of an attachment shows as a picture or plays as a video. discord
+// tells them apart by the name's extension, its content type only when it
+// has none it knows.
+static bool attachment_media(const Attachment *a, MediaItem *out) {
+  static const char *pictures[] = {"jpg",  "jpeg", "png", "webp",
+                                   "gif",  "avif", "heic", "heif"};
+  static const char *videos[] = {"mp4", "webm", "mov", "m4v"};
+  const char *dot = a->filename ? strrchr(a->filename, '.') : nullptr;
+  bool image = false, video = false;
+
+  for (size_t i = 0; dot && i < sizeof pictures / sizeof *pictures; i++) {
+    image |= !strcasecmp(dot + 1, pictures[i]);
+  }
+
+  for (size_t i = 0; dot && i < sizeof videos / sizeof *videos; i++) {
+    video |= !strcasecmp(dot + 1, videos[i]);
+  }
+
+  if (!image && !video) {
+    image = starts_with(a->content_type, "image/");
+    video = starts_with(a->content_type, "video/");
+  }
+
+  // a video plays from the file, its picture from the media proxy.
+  if (!a->width || !a->height || !(image || (video && a->proxy_url))) {
+    return false;
+  }
+
+  bool gif = (dot && !strcasecmp(dot + 1, "gif")) ||
+             starts_with(a->content_type, "image/gif");
+
+  *out = (MediaItem){
+    .kind = video ? MEDIA_VIDEO : MEDIA_IMAGE,
+    .url = a->url,
+    .proxy_url = a->proxy_url,
+    .poster = a->proxy_url,
+    .width = a->width,
+    .height = a->height,
+    .filename = a->filename,
+    .animated = image && (gif || a->animated),
+    .spoiler = a->spoiler,
+    .duration = a->duration,
+  };
+
+  return true;
+}
+
+// a row of a mosaic: tiles of `size` side by side.
+static void mosaic_row(App *app, Snowflake message_id, const MediaItem *items,
+                       const civue_id *ids, size_t n, size_t from,
+                       size_t across, civue_vec2 size) {
+  div(flex, gap(1), flex_shrink_0) {
+    for (size_t i = from; i < from + across && i < n; i++) {
+      media_tile(app, ids[i], message_id, items, n, i, size, 2);
+    }
+  }
+}
+
+// the media of a message as discord's mosaic lays them out for a width of
+// `wide`, at most 550: alone at its own shape, two side by side, three as
+// one beside two, four in a square, and more under a row of one or two in
+// rows of three squares.
+static void mosaic(App *app, const Message *m, const MediaItem *items,
+                   const civue_id *ids, size_t n) {
+  Snowflake message_id = m->id ? m->id : m->nonce;
+  civue_id box = id_at(message_key(m), 0x80);
+  float room = (float)last_size(box).x;
+  float wide = room > 0 ? fminf(room, MOSAIC_WIDTH) : MOSAIC_WIDTH;
+  float half = roundf((wide - 4) / 2), third = roundf((wide - 8) / 3);
+
+  div(key(box), flex, flex_col, gap(1), mt(1), w(full), max_w(px(wide)),
+      rounded(px(MEDIA_RADIUS)), overflow_hidden) {
+    if (n == 1) {
+      civue_vec2 size = fit_media(items[0].width, items[0].height, wide,
+                                  MEDIA_MAX_HEIGHT);
+
+      media_tile(app, ids[0], message_id, items, 1, 0, size, MEDIA_RADIUS);
+    }
+    else if (n == 2) {
+      mosaic_row(app, message_id, items, ids, n, 0, 2,
+                 point(half, fminf(half, 280)));
+    }
+    else if (n == 3) {
+      float left = roundf(2 * (wide - 4) / 3);
+
+      div(flex, gap(1)) {
+        media_tile(app, ids[0], message_id, items, n, 0, point(left, 350), 2);
+
+        div(flex, flex_col, gap(1)) {
+          for (size_t i = 1; i < 3; i++) {
+            media_tile(app, ids[i], message_id, items, n, i,
+                       point(wide - 4 - left, 173), 2);
+          }
+        }
+      }
+    }
+    else if (n == 4) {
+      mosaic_row(app, message_id, items, ids, n, 0, 2, point(half, 173));
+      mosaic_row(app, message_id, items, ids, n, 2, 2, point(half, 173));
+    }
+    else {
+      size_t lead = n % 3;
+
+      if (lead == 1) {
+        mosaic_row(app, message_id, items, ids, n, 0, 1, point(wide, 280));
+      }
+      else if (lead == 2) {
+        mosaic_row(app, message_id, items, ids, n, 0, 2,
+                   point(half, fminf(half, 280)));
+      }
+
+      for (size_t i = lead; i < n; i += 3) {
+        mosaic_row(app, message_id, items, ids, n, i, 3, point(third, third));
+      }
+    }
+  }
+}
+
 static void attachments(App *app, const Message *m) {
-  for (size_t i = 0; i < m->nattachments; i++) {
+  MediaItem items[10];
+  civue_id ids[10];
+  size_t n = 0;
+
+  for (size_t i = 0; i < m->nattachments && n < 10; i++) {
+    if (!m->attachments[i].thumbnail &&
+        attachment_media(&m->attachments[i], &items[n])) {
+      ids[n++] = id_at(message_key(m), 0x100 + i);
+    }
+  }
+
+  if (n) {
+    mosaic(app, m, items, ids, n);
+  }
+
+  // past the tenth, media shows as files.
+  for (size_t i = 0, shown = 0; i < m->nattachments; i++) {
     const Attachment *a = &m->attachments[i];
-    civue_id id = id_at(message_key(m), 0x100 + i);
-    bool image = a->width && a->height &&
-                 (starts_with(a->content_type, "image/") || !a->content_type);
+    MediaItem item;
+
+    if (a->thumbnail) {
+      continue;
+    }
+
+    if (attachment_media(a, &item) && shown < 10) {
+      shown++;
+      continue;
+    }
 
     div(mt(1)) {
-      if (image) {
-        media(app, id, a->proxy_url, a->url, a->width, a->height,
-              MEDIA_MAX_WIDTH, MEDIA_MAX_HEIGHT, a->spoiler);
-      }
-      else {
-        file_card(app, id, a);
-      }
+      file_card(app, id_at(message_key(m), 0x100 + i), a);
     }
   }
 }
@@ -149,6 +259,7 @@ constexpr float EMBED_CHROME = 12 + 16 + 4 + 1;
 // come.
 typedef struct {
   const Embed *e;
+  Snowflake message_id;
   const EmbedMedia *image, *thumbnail, *video;
   // more than one when embeds with the same url merged into a gallery.
   const EmbedMedia *images[4];
@@ -247,8 +358,9 @@ static civue_vec2 embed_video_size(const EmbedView *v) {
   return point(fmax(size.x, 150), fmax(size.y, 144));
 }
 
-// a video or a gif: its first frame, opened in the browser when pressed.
-static void embed_video(App *app, civue_id id, const EmbedView *v) {
+// a video the system cannot play, a youtube one: its first frame, opened in
+// the browser when pressed.
+static void embed_link_video(App *app, civue_id id, const EmbedView *v) {
   const Look *k = &app->look;
   civue_ui *ui = civue_ui_current();
   civue_vec2 size = embed_video_size(v);
@@ -268,63 +380,74 @@ static void embed_video(App *app, civue_id id, const EmbedView *v) {
 
     image_cover(app, sized, 4);
 
-    if (v->gifv) {
-      div(absolute, right(px(4)), top(px(4)), px(1), rounded(px(4)),
-          bg(rgba(0x000000b8))) {
-        text("GIF", text_size(px(12)), line_height(px(16)), font_weight(bold),
-             text_color(CIVUE_WHITE));
-      }
-    }
-    else {
-      div(flex, items_center, justify_center, size(12), rounded(full),
-          bg(rgba(0x00000099)), text_color(CIVUE_WHITE)) {
-        icon(lucide, play, size(6));
-      }
+    div(flex, items_center, justify_center, size(12), rounded(full),
+        bg(rgba(0x00000099)), text_color(CIVUE_WHITE)) {
+      icon(lucide, play, size(6));
     }
   }
 }
 
-static void gallery_image(App *app, civue_id id, const EmbedMedia *m) {
-  const Look *k = &app->look;
-  civue_ui *ui = civue_ui_current();
-  char sized[CDN_URL_MAX];
+// a video the media proxy serves, or a gif made a video, played in place.
+static void embed_video(App *app, civue_id id, const EmbedView *v) {
+  const EmbedMedia *video = v->video, *poster = v->thumbnail;
 
-  cdn_media(sized, m->proxy_url ? m->proxy_url : m->url,
-            (uint32_t)(400 * ui->scale), (uint32_t)(300 * ui->scale));
-
-  div(key(id), flex_1, min_h(0), bg(k->surface), cursor_pointer) {
-    if (button().activated && m->url) {
-      civue_open_url(m->url);
-    }
-
-    image_cover(app, sized, 0);
+  if (!v->gifv && !video->proxy_url) {
+    embed_link_video(app, id, v);
+    return;
   }
+
+  MediaItem item = {
+    .kind = v->gifv ? MEDIA_GIFV : MEDIA_VIDEO,
+    .url = v->gifv || !video->proxy_url ? video->url : video->proxy_url,
+    .proxy_url = video->proxy_url,
+    .poster = poster->proxy_url ? poster->proxy_url : poster->url,
+    .width = video->width ? video->width : poster->width,
+    .height = video->height ? video->height : poster->height,
+  };
+
+  media_tile(app, id, v->message_id, &item, 1, 0, embed_video_size(v), 4);
 }
 
 // two to four pictures in two columns, the third under the first when there
 // are four and under the second otherwise.
 static void embed_gallery(App *app, civue_id id, const EmbedView *v) {
   size_t n = v->nimages;
+  civue_vec2 max = embed_media_max(v);
+  float column = (max.x - 4) / 2;
+  float tall = max.y, half = (max.y - 4) / 2;
+  MediaItem items[4];
 
-  div(flex, gap(1), w(full), h(px(embed_media_max(v).y)), rounded(px(4)),
-      overflow_hidden) {
+  for (size_t i = 0; i < n; i++) {
+    const EmbedMedia *m = v->images[i];
+
+    items[i] = (MediaItem){
+      .kind = MEDIA_IMAGE,
+      .url = m->url,
+      .proxy_url = m->proxy_url,
+      .width = m->width,
+      .height = m->height,
+      .animated = m->animated,
+    };
+  }
+
+  div(flex, gap(1), w(px(max.x)), max_w(full)) {
     div(flex, flex_col, gap(1), flex_1, min_w(0)) {
-      gallery_image(app, id_at(id, 0), v->images[0]);
+      media_tile(app, id_at(id, 0), v->message_id, items, n, 0,
+                 point(column, n == 4 ? half : tall), 4);
 
       if (n == 4) {
-        gallery_image(app, id_at(id, 2), v->images[2]);
+        media_tile(app, id_at(id, 2), v->message_id, items, n, 2,
+                   point(column, half), 4);
       }
     }
 
     div(flex, flex_col, gap(1), flex_1, min_w(0)) {
-      gallery_image(app, id_at(id, 1), v->images[1]);
+      media_tile(app, id_at(id, 1), v->message_id, items, n, 1,
+                 point(column, n == 2 ? tall : half), 4);
 
-      if (n == 3) {
-        gallery_image(app, id_at(id, 2), v->images[2]);
-      }
-
-      if (n == 4) {
-        gallery_image(app, id_at(id, 3), v->images[3]);
+      if (n >= 3) {
+        media_tile(app, id_at(id, n == 3 ? 2 : 3), v->message_id, items, n,
+                   n == 3 ? 2 : 3, point(column, half), 4);
       }
     }
   }
@@ -348,8 +471,8 @@ static bool embed_media(App *app, civue_id id, const EmbedView *v) {
     embed_gallery(app, id, v);
   }
   else if (v->image) {
-    media(app, id, v->image->proxy_url, v->image->url, v->image->width,
-          v->image->height, max.x, max.y, false);
+    embed_picture(app, id, v->message_id, v->image,
+                  fit_media(v->image->width, v->image->height, max.x, max.y));
   }
   else {
     return false;
@@ -630,9 +753,9 @@ static void embed(App *app, civue_id id, const EmbedView *v,
 
         if (thumbnail) {
           div(ml(4), mt(2), flex_shrink_0) {
-            media(app, id_at(id, 6), v->thumbnail->proxy_url, v->thumbnail->url,
-                  v->thumbnail->width, v->thumbnail->height, EMBED_THUMBNAIL,
-                  EMBED_THUMBNAIL, false);
+            embed_picture(app, id_at(id, 6), v->message_id, v->thumbnail,
+                          fit_media(v->thumbnail->width, v->thumbnail->height,
+                                    EMBED_THUMBNAIL, EMBED_THUMBNAIL));
           }
         }
       }
@@ -659,6 +782,8 @@ static void embeds(App *app, const Message *m, Snowflake guild_id) {
     const Embed *e = &m->embeds[i];
     EmbedView v = embed_view(e);
     bool merged = false;
+
+    v.message_id = m->id ? m->id : m->nonce;
 
     // embeds sharing a url are one embed: the first, with every picture.
     for (size_t j = 0; e->url && j < i && !merged; j++) {
@@ -1344,6 +1469,7 @@ void message_list(App *app, Channel *c) {
           store->users_version,
           civue_images_version(app->images),
           app->revealed.len,
+          media_live(app, known),
           app->hover_message == known,
           app->editing == known,
           head,

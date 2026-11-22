@@ -2,6 +2,8 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
 
 #define CDN_BASE "https://cdn.discordapp.com"
 #define MEDIA_BASE "https://media.discordapp.net"
@@ -298,5 +300,41 @@ char *cdn_media(char out[static CDN_URL_MAX], const char *proxy_url,
     snprintf(out + len, CDN_URL_MAX - len, "%sformat=webp", join);
   }
 
+  return out;
+}
+
+// whether the path of `url`, its query aside, ends with `.ext`.
+static bool path_ends(const char *url, const char *ext) {
+  size_t path = strcspn(url, "?#"), n = strlen(ext);
+
+  return path > n && url[path - n - 1] == '.' &&
+         strncasecmp(url + path - n, ext, n) == 0;
+}
+
+// a playing gif comes as itself, an animated webp or avif as an animated
+// webp: the proxy's frozen ones are webp stills.
+char *cdn_media_animated(char out[static CDN_URL_MAX], const char *proxy_url,
+                         uint32_t width, uint32_t height) {
+  if (proxy_url == nullptr || proxy_url[0] == '\0') {
+    return empty(out);
+  }
+
+  size_t len = strlen(proxy_url);
+
+  if (len + 80 >= CDN_URL_MAX) {
+    return empty(out);
+  }
+
+  memcpy(out, proxy_url, len + 1);
+
+  bool has_query = strchr(out, '?') != nullptr;
+  char last = out[len - 1];
+  const char *join = !has_query ? "?" : last == '&' || last == '?' ? "" : "&";
+  bool gif = path_ends(proxy_url, "gif");
+  bool avif = path_ends(proxy_url, "avif");
+
+  snprintf(out + len, CDN_URL_MAX - len, "%s%swidth=%u&height=%u%s", join,
+           avif ? "format=webp&" : "", width, height,
+           gif ? "" : "&animated=true");
   return out;
 }
