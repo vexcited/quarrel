@@ -771,8 +771,12 @@ static void reply_line(App *app, const Message *m, Snowflake guild_id) {
     }
 
     avatar(app, author.user, guild_id, 16, false, k->chat);
-    text(author.name, flex_shrink_0, font_weight(medium), whitespace_nowrap,
-         text_color(author.color ? rgb(author.color) : k->text));
+
+    div(key(id_at(message_key(m), 0x502)), flex_shrink_0, cursor_pointer) {
+      profile_name_trigger(app, to->author_id, guild_id);
+      text(author.name, font_weight(medium), whitespace_nowrap,
+           text_color(author.color ? rgb(author.color) : k->text));
+    }
 
     if (plain && *plain) {
       text(plain, flex_1, min_w(0), truncate);
@@ -852,8 +856,12 @@ static void system_message(App *app, const Channel *c, const Message *m) {
   }
 
   div(flex, flex_wrap, items_baseline, gap_x(1), text_color(k->subtle)) {
-    text(author.name, font_weight(medium),
-         text_color(author.color ? rgb(author.color) : k->strong));
+    div(key(id_at(message_key(m), 0x500)), cursor_pointer) {
+      profile_name_trigger(app, m->author_id, c->guild_id);
+      text(author.name, font_weight(medium),
+           text_color(author.color ? rgb(author.color) : k->strong));
+    }
+
     text(system_text(m, line, sizeof line, other), min_w(0));
     text(stamp, text_size(px(12)), text_color(k->faint), ml(1),
          whitespace_nowrap);
@@ -865,13 +873,20 @@ static void header(App *app, const Channel *c, const Message *m) {
   Author author = store_author(app->session->store, m);
   char stamp[48];
   bool tagged = (author.user && author.user->bot) || m->webhook_id;
+  bool profiled = author.user && !m->webhook_id;
 
-  (void)c;
   format_stamp(m->timestamp, stamp, sizeof stamp);
 
   div(flex, items_baseline, gap(2), min_w(0)) {
-    text(author.name, font_weight(medium), min_w(0), truncate,
-         text_color(author.color ? rgb(author.color) : k->strong));
+    div(key(id_at(message_key(m), 0x500)), min_w(0),
+        style(.has_cursor = profiled, .cursor = CIVUE_CURSOR_POINTER)) {
+      if (profiled) {
+        profile_name_trigger(app, m->author_id, c->guild_id);
+      }
+
+      text(author.name, font_weight(medium), truncate,
+           text_color(author.color ? rgb(author.color) : k->strong));
+    }
 
     if (tagged) {
       div(self_center, flex_shrink_0, px(px(5)), rounded(sm), bg(k->brand)) {
@@ -1013,12 +1028,63 @@ static void failure(App *app, const Channel *c, const Message *m) {
   }
 }
 
-static void message(App *app, Channel *c, Message *m, bool head, float width) {
-  const Look *k = &app->look;
-  civue_ui *ui = civue_ui_current();
+// what a message says, in a node GUTTER points in on the left: the line of
+// what it answers, its author when `head`, then its text in `ink` and what
+// it carries. the avatar is drawn over `ring`.
+static void message_body(App *app, const Channel *c, const Message *m,
+                         bool head, float width, civue_color ink,
+                         civue_color ring) {
   Store *store = app->session->store;
   civue_id id = message_key(m);
   bool reply = m->reference_id && !m->forwarded && !message_is_system(m);
+
+  if (message_is_system(m)) {
+    system_message(app, c, m);
+    return;
+  }
+
+  if (reply) {
+    reply_line(app, m, c->guild_id);
+  }
+
+  if (head) {
+    Author author = store_author(store, m);
+
+    div(absolute, left(4), top(px(reply ? 26 : 2))) {
+      // a webhook has no profile to show.
+      if (author.user && !m->webhook_id) {
+        div(key(id_at(id, 0x501)), cursor_pointer) {
+          profile_trigger(app, m->author_id, c->guild_id, PROFILE_RIGHT);
+          avatar(app, author.user, c->guild_id, 40, false, ring);
+        }
+      }
+      else {
+        avatar(app, author.user, c->guild_id, 40, false, ring);
+      }
+    }
+
+    header(app, c, m);
+  }
+
+  if (*m->content) {
+    markup(app, id_at(id, 1), m->content,
+           &(MarkupOptions){
+             .guild_id = c->guild_id,
+             .color = ink,
+             .edited = m->edited_at != 0,
+             .hint = width - GUTTER - 48,
+           });
+  }
+
+  attachments(app, m);
+  embeds(app, m, c->guild_id);
+  stickers(app, m);
+  reactions(app, m);
+}
+static void message(App *app, Channel *c, Message *m, bool head, float width) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  civue_id id = message_key(m);
   bool hot = app->hover_message == (m->id ? m->id : m->nonce) ||
              message_popover_open(app, m);
   bool editing = app->editing && app->editing == m->id;
@@ -1046,51 +1112,20 @@ static void message(App *app, Channel *c, Message *m, bool head, float width) {
           bg(k->mentioned_bar)) {}
     }
 
-    if (message_is_system(m)) {
-      system_message(app, c, m);
+    if (!head && hot && !message_is_system(m)) {
+      char clock[16];
+      format_clock(m->timestamp, clock, sizeof clock);
+
+      div(absolute, left(0), top(px(2)), w(px(GUTTER - 16))) {
+        text(clock, text_right, text_size(px(11)), line_height(px(22)),
+             text_color(k->faint));
+      }
     }
-    else {
-      if (reply) {
-        reply_line(app, m, c->guild_id);
-      }
 
-      if (head) {
-        Author author = store_author(store, m);
+    message_body(app, c, m, head, width, ink, k->chat);
 
-        div(absolute, left(4), top(px(reply ? 26 : 2))) {
-          avatar(app, author.user, c->guild_id, 40, false, k->chat);
-        }
-
-        header(app, c, m);
-      }
-      else if (hot) {
-        char clock[16];
-        format_clock(m->timestamp, clock, sizeof clock);
-
-        div(absolute, left(0), top(px(2)), w(px(GUTTER - 16))) {
-          text(clock, text_right, text_size(px(11)), line_height(px(22)),
-               text_color(k->faint));
-        }
-      }
-
-      if (*m->content) {
-        markup(app, id_at(id, 1), m->content,
-               &(MarkupOptions){
-                 .guild_id = c->guild_id,
-                 .color = ink,
-                 .edited = m->edited_at != 0,
-                 .hint = width - GUTTER - 48,
-               });
-      }
-
-      attachments(app, m);
-      embeds(app, m, c->guild_id);
-      stickers(app, m);
-      reactions(app, m);
-
-      if (m->state == MESSAGE_FAILED) {
-        failure(app, c, m);
-      }
+    if (m->state == MESSAGE_FAILED && !message_is_system(m)) {
+      failure(app, c, m);
     }
 
     if (hot && m->state == MESSAGE_SENT) {

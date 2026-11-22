@@ -99,6 +99,19 @@ char *cdn_member_avatar(char out[static CDN_URL_MAX], Snowflake guild_id,
   return sized(out, (size_t)len, size);
 }
 
+char *cdn_member_banner(char out[static CDN_URL_MAX], Snowflake guild_id,
+                        Snowflake user_id, const char *hash, uint32_t size) {
+  if (!hash_ok(hash)) {
+    return empty(out);
+  }
+
+  int len =
+    snprintf(out, CDN_URL_MAX,
+             CDN_BASE "/guilds/%" PRIu64 "/users/%" PRIu64 "/banners/%s.webp",
+             guild_id, user_id, hash);
+  return sized(out, (size_t)len, size);
+}
+
 char *cdn_guild_icon(char out[static CDN_URL_MAX], Snowflake guild_id,
                      const char *hash, uint32_t size) {
   return hashed(out, "icons", guild_id, hash, size);

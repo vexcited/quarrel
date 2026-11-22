@@ -46,6 +46,8 @@ civue_scrollbar_look scrollbars_of(App *app, float size);
 void format_clock(int64_t ms, char *out, size_t cap);
 void format_stamp(int64_t ms, char *out, size_t cap);
 void format_day(int64_t ms, char *out, size_t cap);
+// "Nov 20, 2026", as profiles write their dates.
+void format_short_day(int64_t ms, char *out, size_t cap);
 // the day `ms` falls on in the local time zone, to tell two apart.
 int64_t day_of(int64_t ms);
 

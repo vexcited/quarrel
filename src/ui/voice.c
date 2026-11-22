@@ -22,7 +22,10 @@ static void voice_member(App *app, const Channel *c, const VoiceState *v) {
   bool speaking = speaks(app->session, c, v->user_id);
 
   div(key(id_at(id("voice-member"), v->user_id)), flex, items_center, gap(2),
-      h(7), ml(9), mr(2), px(2), rounded(lg), hover(bg(k->hover))) {
+      h(7), ml(9), mr(2), px(2), rounded(lg), hover(bg(k->hover)),
+      cursor_pointer) {
+    profile_trigger(app, v->user_id, c->guild_id, PROFILE_RIGHT);
+
     div(relative, flex_shrink_0) {
       avatar(app, user, c->guild_id, MEMBER_AVATAR, false, k->frame);
 

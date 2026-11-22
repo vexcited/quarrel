@@ -345,6 +345,16 @@ void format_day(int64_t ms, char *out, size_t cap) {
            tm.tm_year + 1900);
 }
 
+void format_short_day(int64_t ms, char *out, size_t cap) {
+  static const char *const months[] = {"Jan", "Feb", "Mar", "Apr",
+                                       "May", "Jun", "Jul", "Aug",
+                                       "Sep", "Oct", "Nov", "Dec"};
+  struct tm tm = local_of(ms);
+
+  snprintf(out, cap, "%s %d, %d", months[tm.tm_mon % 12], tm.tm_mday,
+           tm.tm_year + 1900);
+}
+
 civue_icon activity_icon(ActivityType type) {
   switch (type) {
     case ACTIVITY_LISTENING:

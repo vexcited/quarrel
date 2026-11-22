@@ -142,6 +142,8 @@ static void frame(void *ctx, civue_ui *ui) {
     case SESSION_RECONNECTING:
       open_asked(app);
       shell(app);
+      profile_popout(app);
+      profile_modal(app);
       settings_dialog(app);
       voice_switch_dialog(app);
       break;
@@ -221,6 +223,8 @@ int main() {
   free(app.code);
   free(app.draft);
   free(app.kept_draft);
+  free(app.profile_message);
+  free(app.profile_note);
   free(app.friends_search);
   free(app.friend_tag);
   free(app.friend_note);

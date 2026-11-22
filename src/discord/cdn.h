@@ -31,6 +31,9 @@ char *cdn_default_avatar(char out[static CDN_URL_MAX], Snowflake user_id,
 // the avatar a member set for one guild.
 char *cdn_member_avatar(char out[static CDN_URL_MAX], Snowflake guild_id,
                         Snowflake user_id, const char *hash, uint32_t size);
+// the banner a member set for a guild.
+char *cdn_member_banner(char out[static CDN_URL_MAX], Snowflake guild_id,
+                        Snowflake user_id, const char *hash, uint32_t size);
 char *cdn_guild_icon(char out[static CDN_URL_MAX], Snowflake guild_id,
                      const char *hash, uint32_t size);
 // a group dm's icon.

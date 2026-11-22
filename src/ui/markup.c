@@ -1,3 +1,4 @@
+#include "components.h"
 #include "widgets.h"
 
 #include <stdio.h>
@@ -19,7 +20,7 @@ typedef struct {
   bool hidden;
   civue_id spoiler;
   const char *url;
-  Snowflake channel_id;
+  Snowflake channel_id, user_id;
 } Run;
 
 // pieces flow from left to right in lines of one height, wrapped at the
@@ -108,9 +109,10 @@ static void reveal(App *app, civue_id spoiler) {
 }
 
 // what a piece does under the pointer: a spoiler shows, a link opens, a
-// channel mention goes to its channel. true while a link is hovered.
+// channel mention goes to its channel and a user's opens their profile.
+// true while it is hovered.
 static bool interact_piece(Flow *f, const Run *r, civue_rect at) {
-  if (!r->hidden && !r->url && !r->channel_id) {
+  if (!r->hidden && !r->url && !r->channel_id && !r->user_id) {
     return false;
   }
 
@@ -133,11 +135,14 @@ static bool interact_piece(Flow *f, const Run *r, civue_rect at) {
   if (resp.clicked && r->url) {
     civue_open_url(r->url);
   }
+  else if (resp.clicked && r->user_id) {
+    profile_open(f->app, r->user_id, f->o->guild_id, at, PROFILE_RIGHT);
+  }
   else if (resp.clicked) {
     app_select_channel(f->app, r->channel_id);
   }
 
-  return resp.hovered && r->url;
+  return resp.hovered;
 }
 
 static void paint_piece(Flow *f, const Run *r, const char *s, size_t n,
@@ -153,19 +158,23 @@ static void paint_piece(Flow *f, const Run *r, const char *s, size_t n,
     return;
   }
 
+  // a mention lights up as discord's do.
+  bool lit = hovered && r->pill && (r->user_id || r->channel_id);
+  civue_color ink = lit ? CIVUE_WHITE : r->color;
+
   if (r->pill) {
-    fill(civue_rect_inflate(at, 2, -1), r->ground, 4);
+    fill(civue_rect_inflate(at, 2, -1), lit ? k->brand : r->ground, 4);
   }
 
   if (n) {
     const civue_text_block *b = civue_layout_n(f->ui, s, n, st, 0);
 
-    civue_draw_text(f->ui, b, point(x, y), r->color);
+    civue_draw_text(f->ui, b, point(x, y), ink);
   }
 
   double middle = y + f->line / 2;
 
-  if (r->underline || hovered) {
+  if (r->underline || (hovered && r->url)) {
     civue_hline(f->ui, x, x + w, middle + st.size * .5, r->color);
   }
 
@@ -452,6 +461,7 @@ static void mention(Flow *f, const Run *r, const MdNode *node) {
     case MD_MENTION_USER:
       snprintf(name, sizeof name, "@%s",
                store_display_name(store, f->o->guild_id, node->id));
+      run.user_id = node->id;
       break;
     case MD_MENTION_ROLE: {
       const Guild *guild = store_guild(store, f->o->guild_id);

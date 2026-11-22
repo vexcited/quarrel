@@ -131,6 +131,64 @@ typedef struct {
   char *icon, *description;
 } SessionBadge;
 
+// a guild the current user shares with someone, with the name they wear
+// there, null for none.
+typedef struct {
+  Snowflake id;
+  char *nick;
+} ProfileGuild;
+
+// an account elsewhere a user shows on their profile, like "github".
+typedef struct {
+  char *type, *name;
+  bool verified;
+} ProfileConnection;
+
+// what discord says of a user beyond the user object, seen from a guild or
+// from none. see session_profile.
+typedef struct {
+  Snowflake user_id, guild_id;
+  // asked and not answered yet, answered, or answered with an error.
+  bool loading, loaded, failed;
+  // the mutuals were asked for, as the full profile does.
+  bool full;
+  // store_now when it was answered, to ask again after a while.
+  double at;
+  char *bio, *pronouns, *banner;
+  // 0xrrggbb when `has_accent`, the banner's color without an image.
+  uint32_t accent_color;
+  bool has_accent;
+  // the two colors of a themed profile, top then bottom, when `has_theme`.
+  uint32_t theme[2];
+  bool has_theme;
+  // what the member set in `guild_id`, null or false where they did not.
+  char *guild_bio, *guild_pronouns, *guild_banner;
+  uint32_t guild_theme[2];
+  bool has_guild_theme;
+  // the user's badges, then the ones of the guild.
+  SessionBadge *badges;
+  size_t nbadges;
+  // "name#1234" from before unique usernames, null when hidden or none.
+  char *legacy_username;
+  ProfileGuild *mutual_guilds;
+  size_t nmutual_guilds;
+  // users the store holds: the few discord tells with the profile, then
+  // every one once the full profile listed them.
+  Snowflake *mutual_friends;
+  size_t nmutual_friends;
+  uint32_t mutual_friends_count;
+  bool friends_loading, friends_loaded;
+  // the nitro they pay for, which their theme needs.
+  uint8_t premium_type;
+  ProfileConnection *connections;
+  size_t nconnections;
+  // unix milliseconds, 0 for never.
+  int64_t premium_since, premium_guild_since;
+  // what the current user wrote about them, null for nothing.
+  char *note;
+  bool note_loaded;
+} Profile;
+
 struct Session {
   SessionState state;
   // never null, and the same store for the session's whole life.
@@ -225,6 +283,12 @@ struct Session {
   SessionBadge *badges;
   size_t nbadges;
   bool profile_loading, profile_loaded;
+  // the profiles of others asked for, see session_profile.
+  Profile **profiles;
+  size_t nprofiles;
+  // what session_message_user sends once the conversation is opened.
+  Snowflake dm_user;
+  char *dm_text;
   Snowflake typing_channel_id;
   double typing_sent_at;
   Snowflake list_guild_id, list_channel_id;
@@ -377,6 +441,22 @@ void session_set_status(Session *s, UserStatus status, bool invisible,
                         int64_t seconds);
 // asks once for the account's own profile, see `badges`.
 void session_fetch_profile(Session *s);
+// the profile of a user as seen from a guild, 0 for none, never null. it is
+// asked for when unknown or old, as the full profile asks it when `full`,
+// and with the note on them. offline, it holds what the store knows.
+const Profile *session_profile(Session *s, Snowflake user_id,
+                               Snowflake guild_id, bool full);
+// every friend the current user shares with someone, into the profile's
+// `mutual_friends`, once.
+void session_mutual_friends(Session *s, Snowflake user_id, Snowflake guild_id);
+// what the current user writes about someone, empty to take it away.
+void session_set_note(Session *s, Snowflake user_id, const char *note);
+// a note changed on another client.
+void session_put_note(Session *s, Snowflake user_id, const char *note);
+// sends a direct message to a user and shows it, opening the conversation
+// first when there is none yet.
+void session_message_user(Session *s, Snowflake user_id, const char *content);
+
 
 typedef enum : uint8_t {
   SESSION_LINK_UP,

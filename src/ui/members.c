@@ -34,9 +34,14 @@ static void person(App *app, Snowflake guild_id, const User *user,
   uint32_t color = store_member_color(store, guild_id, user->id);
   civue_color ink = color ? rgb(color) : k->subtle;
   float fade = dimmed ? .35f : 1;
+  bool open =
+    app->popover == POPOVER_PROFILE && app->profile_user == user->id;
 
-  div(flex, items_center, gap(3), h(px(42)), mx(2), px(2), rounded(lg),
-      hover(bg(k->hover))) {
+  div(key(id_at(id("member"), user->id)), flex, items_center, gap(3),
+      h(px(42)), mx(2), px(2), rounded(lg),
+      style(.bg = open ? k->selected : CIVUE_CLEAR, .has_bg = open),
+      hover(bg(open ? k->selected : k->hover)), cursor_pointer) {
+    profile_trigger(app, user->id, guild_id, PROFILE_LEFT);
     avatar(app, user, guild_id, 32, !dimmed, k->chat);
 
     div(flex, flex_col, flex_1, min_w(0)) {

@@ -92,6 +92,13 @@ void app_reset(App *app) {
   drop(&app->pick_search);
   drop(&app->guild_name);
   drop(&app->menu_search);
+  drop(&app->profile_message);
+  drop(&app->profile_note);
+
+  app->profile_user = 0;
+  app->modal_user = 0;
+  app->note_user = 0;
+
   app->friend_ready = false;
 
   if (app->friend_captcha) {

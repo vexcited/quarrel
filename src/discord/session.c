@@ -954,6 +954,10 @@ static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   else if (strcmp(type, "TYPING_START") == 0) {
     schedule_typing(s);
   }
+  else if (strcmp(type, "USER_NOTE_UPDATE") == 0) {
+    session_put_note(s, snowflake_of(json_get(data, "id")),
+                     json_get_or(data, "note", nullptr));
+  }
 
   changed(s);
 }
@@ -1037,8 +1041,14 @@ static void clear_profile_badges(Session *s) {
   s->nbadges = 0;
 }
 
+static void clear_profiles(Session *s);
+
 static void clear_profile(Session *s) {
   clear_profile_badges(s);
+  clear_profiles(s);
+  free(s->dm_text);
+  s->dm_text = nullptr;
+  s->dm_user = 0;
   s->profile_loading = false;
   s->profile_loaded = false;
 
@@ -2478,10 +2488,43 @@ static void on_dm_opened(void *ctx, const ApiResponse *res) {
     if (c != nullptr) {
       session_select_channel(s, c->id);
     }
+
+    // a message written to them before the conversation existed.
+    if (c != nullptr && s->dm_text != nullptr && s->dm_user == call->id) {
+      session_send(s, c->id, s->dm_text, 0, false);
+    }
+  }
+
+  if (s->dm_user == call->id) {
+    free(s->dm_text);
+    s->dm_text = nullptr;
+    s->dm_user = 0;
   }
 
   call_end(call);
   changed(s);
+}
+
+void session_message_user(Session *s, Snowflake user_id,
+                          const char *content) {
+  size_t count;
+  Channel *const *privates = store_private_channels(s->store, &count);
+
+  for (size_t i = 0; i < count; i++) {
+    const Channel *c = privates[i];
+
+    if (c->type == CHANNEL_DM && c->nrecipients == 1 &&
+        c->recipients[0] == user_id) {
+      session_select_channel(s, c->id);
+      session_send(s, c->id, content, 0, false);
+      return;
+    }
+  }
+
+  free(s->dm_text);
+  s->dm_text = str_dup(content);
+  s->dm_user = user_id;
+  session_open_dm(s, user_id);
 }
 
 void session_open_dm(Session *s, Snowflake user_id) {
@@ -3062,4 +3105,514 @@ void session_fetch_profile(Session *s) {
 
   s->profile_loading = true;
   api_request(s->api, &req, on_profile, call_new(s, 0, 0));
+}
+
+/* ========================================================================== */
+/* profiles of others.                                                        */
+/* ========================================================================== */
+
+constexpr size_t PROFILES_KEPT = 64;
+// seconds a profile is good for before it is asked again as it shows.
+constexpr double PROFILE_FRESH = 60;
+constexpr double PROFILE_RETRY = 60;
+
+static void free_badges(SessionBadge *badges, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    free(badges[i].icon);
+    free(badges[i].description);
+  }
+
+  free(badges);
+}
+
+// what an answer fills, before it is filled again.
+static void empty_profile(Profile *p) {
+  free(p->bio);
+  free(p->pronouns);
+  free(p->banner);
+  free(p->guild_bio);
+  free(p->guild_pronouns);
+  free(p->guild_banner);
+  free(p->legacy_username);
+  free_badges(p->badges, p->nbadges);
+
+  for (size_t i = 0; i < p->nmutual_guilds; i++) {
+    free(p->mutual_guilds[i].nick);
+  }
+
+  for (size_t i = 0; i < p->nconnections; i++) {
+    free(p->connections[i].type);
+    free(p->connections[i].name);
+  }
+
+  free(p->mutual_guilds);
+  free(p->mutual_friends);
+  free(p->connections);
+
+  *p = (Profile){
+    .user_id = p->user_id,
+    .guild_id = p->guild_id,
+    .loading = p->loading,
+    .full = p->full,
+    .friends_loading = p->friends_loading,
+    .note = p->note,
+    .note_loaded = p->note_loaded,
+  };
+}
+
+static void free_profile(Profile *p) {
+  empty_profile(p);
+  free(p->note);
+  free(p);
+}
+
+static void clear_profiles(Session *s) {
+  for (size_t i = 0; i < s->nprofiles; i++) {
+    free_profile(s->profiles[i]);
+  }
+
+  free(s->profiles);
+  s->profiles = nullptr;
+  s->nprofiles = 0;
+}
+
+static Profile *find_profile(Session *s, Snowflake user_id,
+                             Snowflake guild_id) {
+  for (size_t i = 0; i < s->nprofiles; i++) {
+    Profile *p = s->profiles[i];
+
+    if (p->user_id == user_id && p->guild_id == guild_id) {
+      return p;
+    }
+  }
+
+  return nullptr;
+}
+
+// a new profile, the one answered longest ago making room for it.
+static Profile *add_profile(Session *s, Snowflake user_id, Snowflake guild_id) {
+  if (s->nprofiles == PROFILES_KEPT) {
+    size_t oldest = SIZE_MAX;
+
+    for (size_t i = 0; i < s->nprofiles; i++) {
+      const Profile *p = s->profiles[i];
+
+      if (!p->loading &&
+          (oldest == SIZE_MAX || p->at < s->profiles[oldest]->at)) {
+        oldest = i;
+      }
+    }
+
+    if (oldest == SIZE_MAX) {
+      oldest = 0;
+    }
+
+    free_profile(s->profiles[oldest]);
+    s->profiles[oldest] = s->profiles[--s->nprofiles];
+  }
+
+  if (s->profiles == nullptr) {
+    s->profiles = calloc(PROFILES_KEPT, sizeof *s->profiles);
+
+    if (s->profiles == nullptr) {
+      cilo_oom(PROFILES_KEPT * sizeof *s->profiles);
+    }
+  }
+
+  Profile *p = calloc(1, sizeof *p);
+
+  if (p == nullptr) {
+    cilo_oom(sizeof *p);
+  }
+
+  *p = (Profile){.user_id = user_id, .guild_id = guild_id};
+  s->profiles[s->nprofiles++] = p;
+
+  return p;
+}
+
+static void put_theme(const cima_json *colors, uint32_t theme[2], bool *has) {
+  *has = json_type(colors) == CIMA_JSON_ARRAY && json_len(colors) >= 2;
+
+  if (!*has) {
+    return;
+  }
+
+  size_t i = 0;
+
+  CIMA_EACH(color, json_items(colors)) {
+    if (i < 2) {
+      theme[i++] = (uint32_t)json_coerce(color, (uint64_t)0);
+    }
+  }
+}
+
+static void put_badges(Profile *p, const cima_json *badges) {
+  size_t n = json_type(badges) == CIMA_JSON_ARRAY ? json_len(badges) : 0;
+
+  if (n == 0) {
+    return;
+  }
+
+  SessionBadge *grown =
+    realloc(p->badges, (p->nbadges + n) * sizeof *p->badges);
+
+  if (grown == nullptr) {
+    cilo_oom((p->nbadges + n) * sizeof *p->badges);
+  }
+
+  p->badges = grown;
+
+  CIMA_EACH(badge, json_items(badges)) {
+    p->badges[p->nbadges++] = (SessionBadge){
+      .icon = str_dup(json_get_or(badge, "icon", nullptr)),
+      .description = str_dup(json_get_or(badge, "description", nullptr)),
+    };
+  }
+}
+
+static void put_mutuals(Session *s, Profile *p, const cima_json *d) {
+  const cima_json *guilds = json_get(d, "mutual_guilds");
+  const cima_json *friends = json_get(d, "mutual_friends");
+  size_t n = json_type(guilds) == CIMA_JSON_ARRAY ? json_len(guilds) : 0;
+
+  p->mutual_guilds = n ? calloc(n, sizeof *p->mutual_guilds) : nullptr;
+
+  CIMA_EACH(guild, json_items(guilds)) {
+    Snowflake id = snowflake_of(json_get(guild, "id"));
+
+    if (id != 0) {
+      p->mutual_guilds[p->nmutual_guilds++] = (ProfileGuild){
+        .id = id,
+        .nick = str_dup(json_get_or(guild, "nick", nullptr)),
+      };
+    }
+  }
+
+  n = json_type(friends) == CIMA_JSON_ARRAY ? json_len(friends) : 0;
+  p->mutual_friends = n ? calloc(n, sizeof *p->mutual_friends) : nullptr;
+
+  CIMA_EACH(user, json_items(friends)) {
+    const User *u = store_put_user(s->store, user);
+
+    if (u != nullptr) {
+      p->mutual_friends[p->nmutual_friends++] = u->id;
+    }
+  }
+}
+
+static void put_connections(Profile *p, const cima_json *accounts) {
+  size_t n = json_type(accounts) == CIMA_JSON_ARRAY ? json_len(accounts) : 0;
+
+  p->connections = n ? calloc(n, sizeof *p->connections) : nullptr;
+
+  CIMA_EACH(account, json_items(accounts)) {
+    const char *type = json_get_or(account, "type", nullptr);
+    const char *name = json_get_or(account, "name", nullptr);
+
+    if (type != nullptr && name != nullptr) {
+      p->connections[p->nconnections++] = (ProfileConnection){
+        .type = str_dup(type),
+        .name = str_dup(name),
+        .verified = json_get_coerce(account, "verified", false),
+      };
+    }
+  }
+}
+
+static void fill_profile(Session *s, Profile *p, const cima_json *d) {
+  const cima_json *mine = json_get(d, "user_profile");
+  const cima_json *theirs = json_get(d, "guild_member_profile");
+  const cima_json *member = json_get(d, "guild_member");
+  const cima_json *accent = json_get(mine, "accent_color");
+  Guild *guild = store_guild(s->store, p->guild_id);
+
+  empty_profile(p);
+  store_put_user(s->store, json_get(d, "user"));
+
+  if (guild != nullptr && json_type(member) == CIMA_JSON_OBJECT) {
+    store_put_member(s->store, guild, member, p->user_id);
+  }
+
+  p->bio = str_dup(json_get_or(mine, "bio", nullptr));
+  p->pronouns = str_dup(json_get_or(mine, "pronouns", nullptr));
+  p->banner = str_dup(json_get_or(mine, "banner", nullptr));
+  p->has_accent = cima_json_is_number(accent);
+  p->accent_color = (uint32_t)json_coerce(accent, (uint64_t)0);
+  put_theme(json_get(mine, "theme_colors"), p->theme, &p->has_theme);
+
+  p->guild_bio = str_dup(json_get_or(theirs, "bio", nullptr));
+  p->guild_pronouns = str_dup(json_get_or(theirs, "pronouns", nullptr));
+  p->guild_banner = str_dup(json_get_or(theirs, "banner", nullptr));
+  put_theme(json_get(theirs, "theme_colors"), p->guild_theme,
+            &p->has_guild_theme);
+
+  put_badges(p, json_get(d, "badges"));
+  put_badges(p, json_get(d, "guild_badges"));
+  p->legacy_username = str_dup(json_get_or(d, "legacy_username", nullptr));
+  put_mutuals(s, p, d);
+  p->mutual_friends_count =
+    (uint32_t)json_get_coerce(d, "mutual_friends_count",
+                              (uint64_t)p->nmutual_friends);
+  p->premium_type = (uint8_t)json_get_coerce(d, "premium_type", (uint64_t)0);
+  put_connections(p, json_get(d, "connected_accounts"));
+  p->premium_since =
+    iso8601_parse_ms(json_get_or(d, "premium_since", nullptr));
+  p->premium_guild_since =
+    iso8601_parse_ms(json_get_or(d, "premium_guild_since", nullptr));
+
+  p->loaded = true;
+}
+
+static void on_user_profile(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Profile *p = find_profile(s, call->id, call->channel_id);
+
+  call_end(call);
+
+  if (p == nullptr) {
+    return;
+  }
+
+  p->loading = false;
+  p->at = store_now(s->store);
+
+  if (res->ok && json_type(res->json) == CIMA_JSON_OBJECT) {
+    fill_profile(s, p, res->json);
+    p->failed = false;
+  }
+  else {
+    p->failed = !p->loaded;
+  }
+
+  changed(s);
+}
+
+// a note is the same seen from any guild.
+static void spread_note(Session *s, Snowflake user_id, const char *note) {
+  for (size_t i = 0; i < s->nprofiles; i++) {
+    Profile *p = s->profiles[i];
+
+    if (p->user_id == user_id) {
+      str_set(&p->note, note != nullptr && *note ? note : nullptr);
+      p->note_loaded = true;
+    }
+  }
+}
+
+static void on_note(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake user_id = call->id;
+
+  call_end(call);
+
+  // no note is a 404.
+  if (res->ok || res->status == 404) {
+    spread_note(s, user_id, json_get_or(res->json, "note", nullptr));
+    changed(s);
+  }
+}
+
+// what the store knows, for a session that cannot ask.
+static void profile_of_store(Session *s, Profile *p) {
+  const User *u = store_user(s->store, p->user_id);
+
+  empty_profile(p);
+  p->loaded = true;
+  p->note_loaded = true;
+  p->at = store_now(s->store);
+
+  if (u != nullptr) {
+    p->bio = str_dup(u->bio);
+    p->pronouns = str_dup(u->pronouns);
+    p->banner = str_dup(u->banner);
+    p->has_accent = u->has_accent;
+    p->accent_color = u->accent_color;
+  }
+}
+
+const Profile *session_profile(Session *s, Snowflake user_id,
+                               Snowflake guild_id, bool full) {
+  Profile *p = find_profile(s, user_id, guild_id);
+  bool fresh = p == nullptr;
+
+  if (p == nullptr) {
+    p = add_profile(s, user_id, guild_id);
+  }
+
+  // the note of another guild's profile of them serves.
+  if (fresh) {
+    for (size_t i = 0; i < s->nprofiles; i++) {
+      const Profile *other = s->profiles[i];
+
+      if (other != p && other->user_id == user_id && other->note_loaded) {
+        p->note = str_dup(other->note);
+        p->note_loaded = true;
+        break;
+      }
+    }
+  }
+
+  if (!online(s)) {
+    if (!p->loaded) {
+      profile_of_store(s, p);
+    }
+
+    return p;
+  }
+
+  double now = store_now(s->store);
+  double age = now - p->at;
+  bool stale = p->loaded ? age > PROFILE_FRESH || (full && !p->full)
+                         : !p->failed || age > PROFILE_RETRY;
+
+  if (p->loading || !stale) {
+    return p;
+  }
+
+  char path[256];
+  char guild[48] = "";
+  const User *u = store_user(s->store, user_id);
+  bool self = user_id == s->store->self_id;
+  bool bot = u != nullptr && u->bot;
+
+  if (guild_id != 0) {
+    snprintf(guild, sizeof guild, "&guild_id=%llu",
+             (unsigned long long)guild_id);
+  }
+
+  // as the client asks for its popout and its full profile: the popout
+  // wants a few mutual friends, the full one their count.
+  snprintf(path, sizeof path,
+           "/users/%llu/profile?type=%s&with_mutual_guilds=%s"
+           "&with_mutual_friends=%s&with_mutual_friends_count=%s%s",
+           (unsigned long long)user_id, full ? "modal" : "popout",
+           self && !full ? "false" : "true",
+           !full && !bot && !self ? "true" : "false",
+           full && !bot ? "true" : "false", guild);
+
+  ApiRequest req = {.method = "GET",
+                    .path = path,
+                    .route = "/users/:id/profile"};
+
+  p->loading = true;
+  p->full = p->full || full;
+  api_request(s->api, &req, on_user_profile, call_new(s, guild_id, user_id));
+
+  if (!p->note_loaded && user_id != s->store->self_id) {
+    snprintf(path, sizeof path, "/users/@me/notes/%llu",
+             (unsigned long long)user_id);
+
+    ApiRequest note = {.method = "GET",
+                       .path = path,
+                       .route = "/users/@me/notes/:id"};
+
+    api_request(s->api, &note, on_note, call_new(s, 0, user_id));
+  }
+
+  return p;
+}
+
+static void on_mutual_friends(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Profile *p = find_profile(s, call->id, call->channel_id);
+
+  call_end(call);
+
+  if (p == nullptr) {
+    return;
+  }
+
+  p->friends_loading = false;
+
+  if (!res->ok) {
+    return;
+  }
+
+  size_t n = json_type(res->json) == CIMA_JSON_ARRAY ? json_len(res->json) : 0;
+
+  free(p->mutual_friends);
+  p->mutual_friends = n ? calloc(n, sizeof *p->mutual_friends) : nullptr;
+  p->nmutual_friends = 0;
+
+  CIMA_EACH(user, json_items(res->json)) {
+    const User *u = store_put_user(s->store, user);
+
+    if (u != nullptr) {
+      p->mutual_friends[p->nmutual_friends++] = u->id;
+    }
+  }
+
+  p->mutual_friends_count = (uint32_t)p->nmutual_friends;
+  p->friends_loaded = true;
+  changed(s);
+}
+
+void session_mutual_friends(Session *s, Snowflake user_id,
+                            Snowflake guild_id) {
+  Profile *p = find_profile(s, user_id, guild_id);
+
+  if (p == nullptr || p->friends_loading || p->friends_loaded || !online(s)) {
+    return;
+  }
+
+  char path[64];
+
+  snprintf(path, sizeof path, "/users/%llu/relationships",
+           (unsigned long long)user_id);
+
+  ApiRequest req = {.method = "GET",
+                    .path = path,
+                    .route = "/users/:id/relationships"};
+
+  p->friends_loading = true;
+  api_request(s->api, &req, on_mutual_friends, call_new(s, guild_id, user_id));
+}
+
+void session_put_note(Session *s, Snowflake user_id, const char *note) {
+  spread_note(s, user_id, note);
+  changed(s);
+}
+
+void session_set_note(Session *s, Snowflake user_id, const char *note) {
+  session_put_note(s, user_id, note);
+
+  if (!online(s)) {
+    return;
+  }
+
+  char path[64];
+  cima_json_writer w = {};
+
+  snprintf(path, sizeof path, "/users/@me/notes/%llu",
+           (unsigned long long)user_id);
+  json_begin_object(&w);
+  json_field(&w, "note", note != nullptr ? note : "");
+  json_end_object(&w);
+
+  ApiRequest req = {.method = "PUT",
+                    .path = path,
+                    .route = "/users/@me/notes/:id",
+                    .body = cima_json_writer_text(&w)};
+
+  api_request(s->api, &req, nullptr, nullptr);
+  cima_json_writer_dispose(&w);
 }

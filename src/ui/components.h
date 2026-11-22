@@ -99,6 +99,22 @@ void message_popovers(App *app, Channel *c);
 // puts the message's text in the composer to be edited.
 void app_edit_message(App *app, const Message *m);
 void member_list(App *app, Channel *channel);
+
+// opens the profile card of a user by `anchor`, seen from a guild, 0 for
+// none, or closes it when it is the one open.
+void profile_open(App *app, Snowflake user_id, Snowflake guild_id,
+                  civue_rect anchor, ProfileSide side);
+// a press on the open node opens the user's profile card by it. true when
+// it did.
+bool profile_trigger(App *app, Snowflake user_id, Snowflake guild_id,
+                     ProfileSide side);
+// the same for a name, underlined while pointed at, the card opening on its
+// right.
+bool profile_name_trigger(App *app, Snowflake user_id, Snowflake guild_id);
+// the card of `app->profile_user` while the app shows POPOVER_PROFILE.
+void profile_popout(App *app);
+// the full profile of `app->modal_user` over the whole window.
+void profile_modal(App *app);
 void friends_page(App *app);
 
 #endif

@@ -48,7 +48,22 @@ typedef enum : uint8_t {
   POPOVER_FORWARD,
   POPOVER_VOICE_SOUND,
   POPOVER_VOICE_CAMERA,
+  POPOVER_PROFILE,
 } Popover;
+
+// the side of what was clicked a profile card opens on.
+typedef enum : uint8_t {
+  PROFILE_RIGHT,
+  PROFILE_LEFT,
+} ProfileSide;
+
+// the tabs of the full profile.
+typedef enum : uint8_t {
+  PROFILE_TAB_ABOUT,
+  PROFILE_TAB_ACTIVITY,
+  PROFILE_TAB_GUILDS,
+  PROFILE_TAB_FRIENDS,
+} ProfileTab;
 
 typedef enum : uint8_t {
   INBOX_UNREADS,
@@ -183,6 +198,23 @@ typedef struct {
 
   // the spoilers the user clicked.
   CIVUE_VEC(civue_id) revealed;
+
+  // the profile card open while the app shows POPOVER_PROFILE: whose, seen
+  // from which guild, 0 for none, and by what it opened.
+  Snowflake profile_user, profile_guild;
+  civue_rect profile_anchor;
+  ProfileSide profile_side;
+  // bumped as a card or the full profile opens, for their animations, and
+  // whether the card's menu or all its roles show.
+  uint32_t profile_opens;
+  bool profile_menu, profile_roles;
+  // the full profile over the window, 0 for none, and its tab.
+  Snowflake modal_user, modal_guild;
+  ProfileTab modal_tab;
+  // what the card's message box holds, and the note being written, null
+  // while it is not.
+  char *profile_message, *profile_note;
+  Snowflake note_user;
 } App;
 
 // forgets what was shown and typed, for another account.
