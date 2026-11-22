@@ -895,6 +895,24 @@ void api_mfa_send_sms(Api *api, const char *ticket, ApiDone done, void *ctx) {
   cima_json_writer_dispose(&w);
 }
 
+void api_remote_auth_login(Api *api, const char *ticket, ApiDone done,
+                           void *ctx) {
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "ticket", ticket != nullptr ? ticket : "");
+  json_end_object(&w);
+
+  ApiRequest req = {
+    .method = "POST",
+    .path = "/users/@me/remote-auth/login",
+    .body = cima_json_writer_text(&w),
+  };
+
+  api_request(api, &req, done, ctx);
+  cima_json_writer_dispose(&w);
+}
+
 void api_logout(Api *api, ApiDone done, void *ctx) {
   ApiRequest req = {
     .method = "POST",

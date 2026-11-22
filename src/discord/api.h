@@ -171,6 +171,10 @@ void api_mfa(Api *api, ApiMfaKind kind, const ApiMfa *mfa, const char *code,
              ApiLoginDone done, void *ctx);
 // has discord text a code to the user's phone, for API_MFA_SMS.
 void api_mfa_send_sms(Api *api, const char *ticket, ApiDone done, void *ctx);
+// trades the ticket of a login by qr code for the token, answered as
+// `encrypted_token`, see remote_auth.h.
+void api_remote_auth_login(Api *api, const char *ticket, ApiDone done,
+                           void *ctx);
 // invalidates the token.
 void api_logout(Api *api, ApiDone done, void *ctx);
 

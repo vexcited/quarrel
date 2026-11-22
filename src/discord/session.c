@@ -6,6 +6,7 @@
 
 #include "discord/api.h"
 #include "discord/gateway.h"
+#include "discord/remote_auth.h"
 #include "discord/settings_proto.h"
 #include "http.h"
 #include "platform/platform.h"
@@ -1060,7 +1061,10 @@ static void clear_invite(Session *s) {
   s->guild_created = 0;
 }
 
+static void qr_stop(Session *s);
+
 static void end_session(Session *s, const char *error) {
+  qr_stop(s);
   clear_mentions(s);
   clear_frecency(s);
   clear_applications(s);
@@ -1179,6 +1183,7 @@ static void enter(Session *s, const char *token, bool saved) {
   s->account_id = token_account(token);
   s->token_saved = saved;
 
+  qr_stop(s);
   clear_login(s);
   set_error(s, nullptr);
   remember(s);
@@ -1349,6 +1354,167 @@ void session_cancel_login(Session *s) {
   set_state(s, SESSION_LOGGED_OUT);
 }
 
+/* ========================================================================== */
+/* logging in by qr code, see remote_auth.h.                                  */
+/* ========================================================================== */
+
+// the web client's Backoff(1500, 30000).
+constexpr double QR_BACKOFF_FIRST = 1.5;
+constexpr double QR_BACKOFF_MAX = 30;
+
+static void qr_connect(Session *s);
+
+static void qr_set(Session *s, SessionQrStep step) {
+  s->qr.step = step;
+  changed(s);
+}
+
+// forgets the attempt, and the answers still on their way for it.
+static void qr_drop(Session *s) {
+  remote_auth_free(s->remote_auth);
+  s->remote_auth = nullptr;
+  platform_timer_cancel(s->qr_timer);
+  s->qr_timer = nullptr;
+  s->qr_attempt++;
+
+  free(s->qr.url);
+  free(s->qr.username);
+  free(s->qr.discriminator);
+  free(s->qr.avatar);
+  s->qr = (SessionQr){.step = s->qr.step};
+}
+
+static void qr_stop(Session *s) {
+  if (s->qr.step == SESSION_QR_OFF) {
+    return;
+  }
+
+  qr_drop(s);
+  qr_set(s, SESSION_QR_OFF);
+}
+
+static void qr_retry(void *ctx) {
+  Session *s = ctx;
+
+  s->qr_timer = nullptr;
+  qr_connect(s);
+}
+
+// each failure waits longer, by up to twice the last wait.
+static void qr_failed(Session *s) {
+  uint32_t random;
+
+  qr_drop(s);
+  platform_random(&random, sizeof random);
+
+  double grown =
+    s->qr_backoff + s->qr_backoff * 2 * ((double)random / 4294967296.0);
+
+  s->qr_backoff = grown < QR_BACKOFF_MAX ? grown : QR_BACKOFF_MAX;
+  s->qr_timer = platform_timer(s->qr_backoff, qr_retry, s);
+  qr_set(s, SESSION_QR_LOADING);
+}
+
+static void qr_on_ready(void *ctx, const char *fingerprint) {
+  Session *s = ctx;
+  char url[128];
+
+  snprintf(url, sizeof url, "https://discord.com/ra/%s", fingerprint);
+  str_set(&s->qr.url, url);
+  s->qr_backoff = QR_BACKOFF_FIRST;
+  qr_set(s, SESSION_QR_READY);
+}
+
+static void qr_on_scanned(void *ctx, const RemoteAuthUser *user) {
+  Session *s = ctx;
+
+  s->qr.user_id = user->id;
+  str_set(&s->qr.username, user->username);
+  str_set(&s->qr.discriminator, user->discriminator);
+  str_set(&s->qr.avatar, user->avatar);
+  qr_set(s, SESSION_QR_SCANNED);
+}
+
+static void qr_on_cancelled(void *ctx) {
+  qr_connect(ctx);
+}
+
+static void qr_on_failed(void *ctx) {
+  qr_failed(ctx);
+}
+
+static void qr_on_token(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+  Session *s = call->s;
+  bool current = call->id == s->qr_attempt;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  call_end(call);
+
+  if (!current) {
+    return;
+  }
+
+  const char *encrypted =
+    res->ok ? json_get_or(res->json, "encrypted_token", nullptr) : nullptr;
+  char *token = remote_auth_decrypt(s->remote_auth, encrypted);
+
+  if (token == nullptr || token[0] == '\0') {
+    wipe(&token);
+    qr_failed(s);
+    return;
+  }
+
+  enter(s, token, false);
+  wipe(&token);
+}
+
+static void qr_on_ticket(void *ctx, const char *ticket) {
+  Session *s = ctx;
+
+  if (s->api == nullptr) {
+    s->api = api_new();
+  }
+
+  qr_set(s, SESSION_QR_LOGGING_IN);
+  api_remote_auth_login(s->api, ticket, qr_on_token,
+                        call_new(s, 0, s->qr_attempt));
+}
+
+static void qr_connect(Session *s) {
+  RemoteAuthEvents events = {
+    .ctx = s,
+    .ready = qr_on_ready,
+    .scanned = qr_on_scanned,
+    .ticket = qr_on_ticket,
+    .cancelled = qr_on_cancelled,
+    .failed = qr_on_failed,
+  };
+
+  qr_drop(s);
+  s->remote_auth = remote_auth_new(&events);
+  qr_set(s, SESSION_QR_LOADING);
+}
+
+void session_qr(Session *s, bool shown) {
+  if (!shown || s->offline) {
+    qr_stop(s);
+  }
+  else if (s->qr.step == SESSION_QR_OFF) {
+    s->qr_backoff = QR_BACKOFF_FIRST;
+    qr_connect(s);
+  }
+}
+
+void session_qr_restart(Session *s) {
+  if (s->qr.step != SESSION_QR_OFF) {
+    qr_connect(s);
+  }
+}
+
 static Session *session_new(Roster *r) {
   Session *s = calloc(1, sizeof *s);
 
@@ -1369,6 +1535,7 @@ static void session_free(Session *s) {
 
   s->options.on_change = nullptr;
 
+  qr_stop(s);
   voice_reset(s);
   voice_free(s->voice);
   gateway_free(s->gateway);

@@ -71,6 +71,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/gateway.c
   src/discord/markdown.c
   src/discord/permissions.c
+  src/discord/remote_auth.c
   src/discord/settings_proto.c
   src/discord/session.c
   src/discord/store.c
@@ -86,6 +87,7 @@ set(QUARREL_DARWIN_SOURCES
   src/platform/darwin/audio.m
   src/platform/darwin/camera.m
   src/platform/darwin/pending.m
+  src/platform/darwin/qr.m
   src/platform/darwin/storage.m
   src/platform/darwin/system.m
   src/platform/darwin/timer.m
@@ -98,7 +100,7 @@ if(APPLE)
     $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
   target_link_libraries(quarrel_core PUBLIC
     "-framework Foundation" "-framework Security" "-framework ImageIO"
-    "-framework CoreGraphics" "-framework CoreFoundation"
+    "-framework CoreGraphics" "-framework CoreFoundation" "-framework CoreImage"
     "-framework AudioToolbox" "-framework AVFoundation"
     "-framework CoreAudio" "-framework CoreMedia" "-framework CoreVideo"
     "-framework Metal" "-framework AppKit" "-framework Network" z)

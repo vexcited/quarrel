@@ -6,9 +6,18 @@
 
 #include <civue/dsl.h>
 
+#include "discord/cdn.h"
+#include "platform/platform.h"
 #include "widgets.h"
 
 constexpr float CARD_WIDTH = 480;
+// discord's expanded auth box, the form beside the qr code.
+constexpr float WIDE_CARD_WIDTH = 784;
+constexpr float QR_PANEL_WIDTH = 240;
+constexpr float QR_BOX = 176;
+constexpr float QR_PADDING = 8;
+constexpr float QR_LOGO = 50;
+constexpr float SCANNED_AVATAR = 120;
 
 static void heading(const Look *k, const char *title, const char *subtitle) {
   div(flex, flex_col, items_center, gap(2), mb(5)) {
@@ -223,6 +232,198 @@ static void credentials(App *app) {
   account_choices(app);
 }
 
+// discord's wandering cubes: two squares chasing each other around a 32
+// point box, shrinking to half on the sides, every 1.8 seconds.
+static void wandering_cubes(const Look *k) {
+  static const double xs[] = {0, 22, 22, 0, 0};
+  static const double ys[] = {0, 0, 22, 22, 0};
+  static const double scales[] = {1, .5, 1, .5, 1};
+  civue_ui *ui = civue_ui_current();
+
+  div(size(px(32)), flex_shrink_0) {
+    civue_rect r = here();
+
+    for (int i = 0; i < 2; i++) {
+      double t = fmod(ui->now / 1.8 + i * .5, 1) * 4;
+      int at = (int)t;
+      double f = t - at;
+
+      // ease-in-out between each two steps.
+      f = f * f * (3 - 2 * f);
+
+      double x = xs[at] + (xs[at + 1] - xs[at]) * f;
+      double y = ys[at] + (ys[at + 1] - ys[at]) * f;
+      double side = 10 * (scales[at] + (scales[at + 1] - scales[at]) * f);
+
+      fill(xywh(r.x0 + x + 5 - side / 2, r.y0 + y + 5 - side / 2, side, side),
+           k->brand, 0);
+    }
+
+    civue_request_repaint_after(ui, 1. / 60);
+  }
+}
+
+// words that wrap between them, each line centered.
+static void centered_words(const char *s, const civue_color *strong) {
+  char word[64];
+
+  for (const char *at = s + strspn(s, " "); *at;) {
+    size_t n = strcspn(at, " ");
+
+    if (n < sizeof word) {
+      memcpy(word, at, n);
+      word[n] = 0;
+
+      if (strong) {
+        text(word, font_weight(semibold), text_color(*strong));
+      }
+      else {
+        text(word);
+      }
+    }
+
+    at += n;
+    at += strspn(at, " ");
+  }
+}
+
+// the code's modules, edges on whole pixels so that it stays sharp.
+static void qr_modules(const char *url, civue_rect box) {
+  static char *drawn;
+  static uint8_t *modules;
+  static size_t side;
+  civue_ui *ui = civue_ui_current();
+
+  if (!drawn || strcmp(drawn, url)) {
+    free(drawn);
+    free(modules);
+    drawn = strdup(url);
+    modules = platform_qr(url, &side);
+  }
+
+  if (!modules) {
+    return;
+  }
+
+  double scale = ui->scale > 0 ? ui->scale : 1;
+  double cell = (civue_rect_w(box) - QR_PADDING * 2) / (double)side;
+  double x0 = box.x0 + QR_PADDING, y0 = box.y0 + QR_PADDING;
+
+  for (size_t row = 0; row < side; row++) {
+    double top = round((y0 + row * cell) * scale) / scale;
+    double bottom = round((y0 + (row + 1) * cell) * scale) / scale;
+
+    for (size_t col = 0; col < side;) {
+      if (!modules[row * side + col]) {
+        col++;
+        continue;
+      }
+
+      size_t end = col;
+
+      while (end < side && modules[row * side + end]) {
+        end++;
+      }
+
+      double left = round((x0 + col * cell) * scale) / scale;
+      double right = round((x0 + end * cell) * scale) / scale;
+
+      fill(xywh(left, top, right - left, bottom - top), CIVUE_BLACK, 0);
+      col = end;
+    }
+  }
+}
+
+static void qr_code(const Look *k, const SessionQr *qr) {
+  bool ready = qr->step == SESSION_QR_READY && qr->url;
+
+  div(relative, flex, items_center, justify_center, size(px(QR_BOX)),
+      flex_shrink_0, mb(8), rounded(sm),
+      style(.bg = ready ? CIVUE_WHITE : CIVUE_CLEAR)) {
+    if (!ready) {
+      wandering_cubes(k);
+    }
+    else {
+      qr_modules(qr->url, here());
+
+      div(flex, items_center, justify_center, size(px(QR_LOGO)),
+          rounded(full), bg(CIVUE_BLACK)) {
+        icon(ic, baseline_discord, size(px(28)), text_color(CIVUE_WHITE));
+      }
+    }
+  }
+}
+
+static void qr_waiting(const Look *k, const SessionQr *qr) {
+  qr_code(k, qr);
+
+  text("Log in with QR Code", text_size(px(24)), line_height(px(30)),
+       font_weight(semibold), text_color(k->strong), text_center, mb(2));
+
+  div(flex, flex_wrap, justify_center, gap_x(px(4)), text_color(k->text)) {
+    centered_words("Scan this with the", nullptr);
+    centered_words("Discord mobile app", &k->strong);
+    centered_words("to log in instantly.", nullptr);
+  }
+}
+
+static void qr_scanned(App *app, const SessionQr *qr) {
+  const Look *k = &app->look;
+  char url[CDN_URL_MAX], tag[64], line[96];
+  bool discriminated = qr->discriminator && strcmp(qr->discriminator, "0");
+
+  cdn_avatar(url, qr->user_id, qr->avatar, qr->discriminator,
+             (uint32_t)SCANNED_AVATAR * 2);
+
+  div(size(px(SCANNED_AVATAR)), flex_shrink_0, mb(8), rounded(full),
+      bg(k->surface_high)) {
+    civue_rect r = here();
+    double dot = 24;
+
+    image_fill(app, url, SCANNED_AVATAR / 2);
+    status_dot(STATUS_ONLINE, xywh(r.x1 - dot - 4, r.y1 - dot - 4, dot, dot),
+               k, k->surface);
+  }
+
+  snprintf(tag, sizeof tag, "%s%s%s", qr->username ? qr->username : "",
+           discriminated ? "#" : "", discriminated ? qr->discriminator : "");
+  snprintf(line, sizeof line, "Logging in as %s", tag);
+
+  text("Check your phone!", text_size(px(24)), line_height(px(30)),
+       font_weight(semibold), text_color(k->strong), text_center, mb(2));
+  text(line, text_color(k->text), text_center);
+
+  div(mt(4)) {
+    div(key(id("qr-restart")), text_color(k->brand), text_size(px(14)),
+        line_height(px(18)), cursor_pointer) {
+      if (button().activated) {
+        session_qr_restart(app->session);
+      }
+
+      text("Not me, start over");
+    }
+  }
+}
+
+static void qr_panel(App *app) {
+  const SessionQr *qr = &app->session->qr;
+
+  div(flex, flex_col, items_center, justify_center, w(px(QR_PANEL_WIDTH)),
+      flex_shrink_0, overflow_hidden) {
+    switch (qr->step) {
+      case SESSION_QR_SCANNED:
+        qr_scanned(app, qr);
+        break;
+      case SESSION_QR_LOGGING_IN:
+        wandering_cubes(&app->look);
+        break;
+      default:
+        qr_waiting(&app->look, qr);
+        break;
+    }
+  }
+}
+
 static void method_choice(App *app, SessionMfaMethod method, const char *label,
                           bool offered) {
   const Look *k = &app->look;
@@ -388,15 +589,21 @@ static void challenge(App *app) {
 void login_screen(App *app) {
   const Look *k = &app->look;
   Session *session = app->session;
+  bool form = session->state != SESSION_MFA &&
+              session->state != SESSION_CAPTCHA;
 
   if (session->state != SESSION_CAPTCHA) {
     drop_captcha(app);
   }
 
+  // a second factor being checked shows the form, not a new code.
+  session_qr(session, form && session->mfa_ticket == nullptr);
+
   div(size(full), flex, items_center, justify_center, bg(k->frame),
       text_color(k->text), text_size(px(16)), line_height(px(20))) {
-    div(flex, flex_col, w(px(CARD_WIDTH)), p(8), rounded(lg), bg(k->surface),
-        border(1), border_color(k->border), shadow(xl)) {
+    div(flex, flex_col, w(px(form ? WIDE_CARD_WIDTH : CARD_WIDTH)), p(8),
+        rounded(lg), bg(k->surface), border(1), border_color(k->border),
+        shadow(xl)) {
       if (session->state == SESSION_MFA) {
         second_factor(app);
       }
@@ -404,7 +611,13 @@ void login_screen(App *app) {
         challenge(app);
       }
       else {
-        credentials(app);
+        div(flex, items_center, gap(16)) {
+          div(flex, flex_col, flex_1, min_w(0)) {
+            credentials(app);
+          }
+
+          qr_panel(app);
+        }
       }
     }
   }

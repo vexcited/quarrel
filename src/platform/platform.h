@@ -77,6 +77,12 @@ char *platform_pref_get(const char *key);
 /* the system.                                                                */
 /* ========================================================================== */
 
+// the modules of a qr code holding `text` with the medium level of error
+// correction, row after row from the top, 1 for dark, without the quiet
+// zone around it. from malloc, `side` modules square, null when it does not
+// fit in one.
+uint8_t *platform_qr(const char *text, size_t *side);
+
 // the system's version like "27.2.0".
 void platform_os_version(char *out, size_t cap);
 // the user's locale as a bcp 47 tag like "en-US".

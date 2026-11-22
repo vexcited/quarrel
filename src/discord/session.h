@@ -71,6 +71,29 @@ typedef struct {
   char *session_id, *rqtoken;
 } SessionCaptcha;
 
+typedef enum : uint8_t {
+  // nothing asks for the qr code.
+  SESSION_QR_OFF,
+  // connecting to the remote auth gateway, or waiting to try again.
+  SESSION_QR_LOADING,
+  // `url` is the code to show.
+  SESSION_QR_READY,
+  // a phone scanned it, its user is asked to confirm.
+  SESSION_QR_SCANNED,
+  // the phone confirmed, the token is on its way.
+  SESSION_QR_LOGGING_IN,
+} SessionQrStep;
+
+// the login by qr code that the login form shows beside it.
+typedef struct {
+  SessionQrStep step;
+  // "https://discord.com/ra/" and the fingerprint, when READY.
+  char *url;
+  // who scanned it, when SCANNED.
+  Snowflake user_id;
+  char *username, *discriminator, *avatar;
+} SessionQr;
+
 typedef struct Session Session;
 typedef struct Roster Roster;
 
@@ -117,6 +140,7 @@ struct Session {
   char *error;
   SessionMfa mfa;
   SessionCaptcha captcha;
+  SessionQr qr;
   // the channel the ui shows, 0 for none.
   Snowflake selected_channel_id;
   // the store came from a fixture and nothing touches the network.
@@ -171,6 +195,12 @@ struct Session {
   uint64_t epoch;
   char *login, *password;
   char *mfa_ticket, *mfa_instance_id;
+  // the qr code's attempt, its retry after a failure and how long that
+  // waits, and a count bumped with every attempt so late answers are
+  // dropped.
+  void *remote_auth, *qr_timer;
+  double qr_backoff;
+  uint64_t qr_attempt;
   bool was_ready;
   // the store came from the account's last READY, kept on disk, and waits
   // for the gateway to say how things are now.
@@ -251,6 +281,12 @@ void session_request_sms(Session *s);
 void session_submit_captcha(Session *s, const char *solution);
 // leaves SESSION_MFA or SESSION_CAPTCHA for SESSION_LOGGED_OUT.
 void session_cancel_login(Session *s);
+// called each frame with whether the qr code is on screen: it is kept alive
+// while it is, see `qr`, and dropped once it is not. a scan that is
+// confirmed logs in like session_login_token.
+void session_qr(Session *s, bool shown);
+// leaves the scan of the wrong account for a new code.
+void session_qr_restart(Session *s);
 
 /* ========================================================================== */
 /* channels and messages. each call is a no op when its channel or message    */
