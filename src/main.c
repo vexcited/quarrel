@@ -208,6 +208,10 @@ int main() {
     hcaptcha_free(app.captcha);
   }
 
+  if (app.friend_captcha) {
+    hcaptcha_free(app.friend_captcha);
+  }
+
   roster_free(app.roster);
   civue_images_free(app.images);
   http_shutdown();
@@ -218,6 +222,8 @@ int main() {
   free(app.draft);
   free(app.kept_draft);
   free(app.friends_search);
+  free(app.friend_tag);
+  free(app.friend_note);
   free(app.dm_search);
   free(app.pick_search);
   free(app.guild_name);

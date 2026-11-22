@@ -86,10 +86,18 @@ void app_reset(App *app) {
   drop(&app->draft);
   drop(&app->kept_draft);
   drop(&app->friends_search);
+  drop(&app->friend_tag);
+  drop(&app->friend_note);
   drop(&app->dm_search);
   drop(&app->pick_search);
   drop(&app->guild_name);
   drop(&app->menu_search);
+  app->friend_ready = false;
+
+  if (app->friend_captcha) {
+    hcaptcha_free(app->friend_captcha);
+    app->friend_captcha = nullptr;
+  }
 
   app->reply_to = 0;
   app->editing = 0;

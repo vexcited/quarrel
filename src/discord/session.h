@@ -160,6 +160,12 @@ struct Session {
   bool guild_creating;
   char *guild_error;
   Snowflake guild_created;
+  // the friend request session_add_friend sent: on its way, then what to
+  // tell of it, `friend_sent` saying whether it went through. a challenge
+  // discord asks for waits in `friend_captcha`, service null for none.
+  bool friend_adding, friend_sent;
+  char *friend_message;
+  SessionCaptcha friend_captcha;
   // the emojis the user reacts with the most, the most used first: the
   // first name of an emoji of unicode or the id of a guild's. see
   // session_fetch_frecency.
@@ -194,6 +200,9 @@ struct Session {
   // bumped when the session ends, so answers meant for it are dropped.
   uint64_t epoch;
   char *login, *password;
+  // the friend request a challenge holds back, sent again once solved.
+  char *friend_username, *friend_note;
+  int32_t friend_discriminator;
   char *mfa_ticket, *mfa_instance_id;
   // the qr code's attempt, its retry after a failure and how long that
   // waits, and a count bumped with every attempt so late answers are
@@ -337,6 +346,13 @@ void session_open_dm(Session *s, Snowflake user_id);
 void session_open_group(Session *s, const Snowflake *user_ids, size_t count);
 // creates a guild named `name`, see `guild_created`.
 void session_create_guild(Session *s, const char *name);
+// a friend request to a username, or a legacy "name#0000" tag, with a note
+// of at most 120 characters, null or empty for none. see `friend_adding`.
+void session_add_friend(Session *s, const char *tag, const char *note);
+// the token of the challenge the friend request is held back by.
+void session_add_friend_captcha(Session *s, const char *solution);
+// forgets what was told of the last friend request, and any challenge.
+void session_add_friend_clear(Session *s);
 // the hash of an application's icon, for cdn_application_icon. null when it
 // has none or while discord is asked, which happens once.
 const char *session_application_icon(Session *s, Snowflake application_id);

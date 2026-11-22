@@ -209,6 +209,25 @@ static void tab(App *app, FriendsTab which, const char *label) {
   }
 }
 
+// the client's tab in the brand's color, light while it is open.
+static void add_friend_tab(App *app) {
+  const Look *k = &app->look;
+  bool on = app->friends_tab == FRIENDS_ADD;
+  civue_color ground = on ? civue_alpha(k->brand, .16f) : k->brand;
+
+  div(key(id_at(id("friends-tab"), FRIENDS_ADD)), flex, items_center,
+      flex_shrink_0, h(8), px(3), rounded(lg), font_weight(medium),
+      text_color(on ? k->brand_text : CIVUE_WHITE), style(.bg = ground),
+      hover(bg(on ? ground : k->brand_hover)),
+      active(bg(on ? ground : k->brand_active)), cursor_pointer) {
+    if (button().activated) {
+      app->friends_tab = FRIENDS_ADD;
+    }
+
+    text("Add Friend");
+  }
+}
+
 static void friends_list(App *app) {
   static const char *const titles[] = {"Online", "All friends", "Implicit"};
 
@@ -237,6 +256,230 @@ static void friends_list(App *app) {
   }
 
   free(friends);
+}
+
+/* ========================================================================== */
+/* add friend.                                                                */
+/* ========================================================================== */
+
+constexpr size_t NOTE_MAX = 120;
+
+// the length the client counts, in utf-16 units.
+static size_t note_length(const char *text) {
+  size_t n = 0;
+
+  for (const unsigned char *c = (const unsigned char *)text; c && *c; c++) {
+    if ((*c & 0xc0) != 0x80) {
+      n += *c >= 0xf0 ? 2 : 1;
+    }
+  }
+
+  return n;
+}
+
+// cuts the note where the client's field stops taking characters.
+static void clamp_note(char *text) {
+  size_t n = 0;
+
+  for (unsigned char *c = (unsigned char *)text; c && *c; c++) {
+    if ((*c & 0xc0) == 0x80) {
+      continue;
+    }
+
+    n += *c >= 0xf0 ? 2 : 1;
+
+    if (n > NOTE_MAX) {
+      *c = 0;
+      return;
+    }
+  }
+}
+
+static civue_field_look bare_field(const Look *k) {
+  civue_field_box box = {.text = k->text};
+
+  return (civue_field_look){
+    .editing = box,
+    .idle = box,
+    .hovered = box,
+    .placeholder = k->muted,
+    .selection = civue_alpha(k->brand, .45f),
+  };
+}
+
+static bool send_button(const Look *k, bool enabled) {
+  bool pressed = false;
+  civue_color ground = enabled ? k->brand : civue_alpha(k->brand, .5f);
+
+  div(key(id("add-friend-send")), flex, items_center, justify_center,
+      flex_shrink_0, h(8), px(3), rounded(lg), bg(ground),
+      text_color(enabled ? CIVUE_WHITE : civue_alpha(CIVUE_WHITE, .5f)),
+      text_size(px(14)), line_height(px(16)), font_weight(medium),
+      style(.hover = {.bg = k->brand_hover, .has_bg = enabled},
+            .active = {.bg = k->brand_active, .has_bg = enabled},
+            .cursor = enabled ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
+            .has_cursor = true)) {
+    pressed = button().activated && enabled;
+    text("Send Friend Request");
+  }
+
+  return pressed;
+}
+
+static void drop_friend_captcha(App *app) {
+  if (app->friend_captcha) {
+    hcaptcha_free(app->friend_captcha);
+    app->friend_captcha = nullptr;
+  }
+}
+
+// the challenge discord holds the request back for, where the client opens
+// its captcha modal.
+static void friend_challenge(App *app) {
+  const Look *k = &app->look;
+  Session *session = app->session;
+  const SessionCaptcha *asked = &session->friend_captcha;
+
+  if (!asked->service) {
+    drop_friend_captcha(app);
+    return;
+  }
+
+  if (strcmp(asked->service, "hcaptcha") || !asked->sitekey) {
+    text("Discord asks for a challenge Quarrel cannot show.", mt(2),
+         text_size(px(14)), line_height(px(18)),
+         text_color(k->critical_text));
+    return;
+  }
+
+  if (!app->friend_captcha) {
+    app->friend_captcha = hcaptcha_new(&(hcaptcha_options){
+      .sitekey = asked->sitekey,
+      .origin = "https://discord.com",
+      .rqdata = asked->rqdata,
+      .theme = "dark",
+    });
+  }
+
+  hcaptcha_state state = {.status = HCAPTCHA_FAILED,
+                          .error = "web views are missing here"};
+
+  div(key(id("add-friend-captcha")), w(px(400)), h(px(460)), mt(4)) {
+    if (app->friend_captcha) {
+      state = hcaptcha_node(civue_ui_current(), app->friend_captcha);
+    }
+  }
+
+  if (state.status == HCAPTCHA_SOLVED && state.token) {
+    session_add_friend_captcha(session, state.token);
+    drop_friend_captcha(app);
+  }
+  else if (state.status == HCAPTCHA_CANCELLED ||
+           state.status == HCAPTCHA_EXPIRED ||
+           state.status == HCAPTCHA_FAILED) {
+    drop_friend_captcha(app);
+    session_add_friend_clear(session);
+  }
+}
+
+static void add_friend(App *app) {
+  const Look *k = &app->look;
+  Session *session = app->session;
+  civue_ui *ui = civue_ui_current();
+  civue_id tag_id = id("add-friend-tag");
+  const char *told = session->friend_message;
+  bool sent = told && session->friend_sent;
+  bool failed = told && !session->friend_sent;
+  bool submit = false;
+
+  // a request that went through empties the form for the next one.
+  if (sent && (app->friend_tag || app->friend_note)) {
+    free(app->friend_tag);
+    free(app->friend_note);
+    app->friend_tag = nullptr;
+    app->friend_note = nullptr;
+    app->friend_ready = false;
+    ui->focus = tag_id;
+  }
+
+  civue_color edge = sent                  ? k->online
+                     : failed              ? k->critical_text
+                     : app->friend_focused ? k->link
+                                           : k->border_strong;
+  size_t length = note_length(app->friend_note);
+  char left[8];
+
+  snprintf(left, sizeof left, "%zu", NOTE_MAX - length);
+
+  div(key(id("add-friend")), flex, flex_col, flex_1, min_w(0), h(full),
+      overflow_y_scroll, scrollbars(&app->bars)) {
+    div(flex, flex_col, flex_shrink_0, px(px(30)), py(px(20)), border_b(1),
+        border_color(k->border)) {
+      text("Add Friend", mb(2), text_size(px(20)), line_height(px(24)),
+           font_weight(semibold), text_color(k->strong));
+      text("You can add friends with their Discord username.",
+           text_size(px(14)), line_height(px(18)), font_weight(medium),
+           text_color(k->text));
+
+      div(flex, flex_col, mt(4), px(3), rounded(px(16)),
+          bg(failed ? civue_alpha(k->danger, .04f) : rgba(0x00000014)),
+          border(1), border_color(edge)) {
+        div(flex, items_center, gap(4), py(px(2))) {
+          div(key(tag_id), flex_1, min_w(0), h(px(40)), text_size(px(16)),
+              line_height(px(20))) {
+            civue_field_response field =
+              text_field(&app->friend_tag, "Enter a username", bare_field(k));
+
+            app->friend_focused = field.focused;
+
+            // typing starts over: what was told goes, the button wakes up.
+            if (field.changed) {
+              app->friend_ready = app->friend_tag && *app->friend_tag;
+              session_add_friend_clear(session);
+            }
+
+            submit |= field.submitted && app->friend_ready;
+          }
+
+          submit |= send_button(k, app->friend_ready &&
+                                     !session->friend_adding);
+        }
+
+        div(flex, flex_col, py(3), border_t(1), border_color(k->border)) {
+          div(key(id("add-friend-note")), h(px(18)), text_size(px(14)),
+              line_height(px(18))) {
+            civue_field_response field =
+              text_field(&app->friend_note,
+                         "Personalize your request (Optional)", bare_field(k));
+
+            if (field.changed) {
+              clamp_note(app->friend_note);
+            }
+          }
+
+          text(left, self_end, pt(1), text_size(px(14)), line_height(px(18)),
+               text_color(length >= NOTE_MAX ? k->critical_text : k->subtle));
+        }
+      }
+
+      if (told) {
+        text(told, mt(2), text_size(px(14)), line_height(px(18)),
+             text_color(sent ? k->positive_text : k->critical_text));
+      }
+      else {
+        text("What you write here will also show up in your DM if you "
+             "become friends.",
+             mt(2), text_size(px(14)), line_height(px(18)),
+             text_color(k->subtle));
+      }
+
+      friend_challenge(app);
+    }
+  }
+
+  if (submit && !session->friend_adding) {
+    session_add_friend(session, app->friend_tag, app->friend_note);
+  }
 }
 
 /* ========================================================================== */
@@ -627,10 +870,17 @@ void friends_page(App *app) {
       tab(app, FRIENDS_ONLINE, "Online");
       tab(app, FRIENDS_ALL, "All");
       tab(app, FRIENDS_IMPLICIT, "Implicit");
+      add_friend_tab(app);
     }
 
     div(flex, flex_1, min_h(0)) {
-      friends_list(app);
+      if (app->friends_tab == FRIENDS_ADD) {
+        add_friend(app);
+      }
+      else {
+        friends_list(app);
+      }
+
       active_now(app);
     }
   }

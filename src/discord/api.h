@@ -150,6 +150,9 @@ typedef struct {
   const char *route;
   const char *body;
   const ApiCaptchaSolution *captcha;
+  // where in the client the request comes from, as the json the client
+  // sends in X-Context-Properties. null for none.
+  const char *context;
 } ApiRequest;
 
 void api_request(Api *api, const ApiRequest *req, ApiDone done, void *ctx);
@@ -236,6 +239,19 @@ void api_open_group(Api *api, const Snowflake *user_ids, size_t count,
                     ApiDone done, void *ctx);
 // creates a guild from discord's default template. the answer is the guild.
 void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx);
+
+/* ========================================================================== */
+/* relationships.                                                             */
+/* ========================================================================== */
+
+// a friend request to `username`, as the add friend page sends it.
+// `discriminator` is negative for a user without one, and `note` null for
+// none.
+// discord answers 204 and tells of the request with RELATIONSHIP_ADD.
+void api_send_friend_request(Api *api, const char *username,
+                             int32_t discriminator, const char *note,
+                             const ApiCaptchaSolution *captcha, ApiDone done,
+                             void *ctx);
 // creates an invite to the channel's guild that lasts a week, or finds the
 // one made before. the answer holds its `code`.
 void api_create_invite(Api *api, Snowflake channel_id, ApiDone done, void *ctx);

@@ -1061,6 +1061,7 @@ static void clear_invite(Session *s) {
   s->guild_created = 0;
 }
 
+static void clear_friend(Session *s);
 static void qr_stop(Session *s);
 
 static void end_session(Session *s, const char *error) {
@@ -1070,6 +1071,7 @@ static void end_session(Session *s, const char *error) {
   clear_applications(s);
   clear_profile(s);
   clear_invite(s);
+  clear_friend(s);
   gateway_free(s->gateway);
   s->gateway = nullptr;
 
@@ -1554,6 +1556,7 @@ static void session_free(Session *s) {
   clear_applications(s);
   clear_profile(s);
   clear_invite(s);
+  clear_friend(s);
   wipe(&s->token);
   store_free(s->store);
   free(s->error);
@@ -2550,6 +2553,297 @@ void session_create_guild(Session *s, const char *name) {
   }
 
   changed(s);
+}
+
+/* ========================================================================== */
+/* friend requests.                                                           */
+/* ========================================================================== */
+
+static void clear_friend_captcha(Session *s) {
+  SessionCaptcha *c = &s->friend_captcha;
+
+  free(c->service);
+  free(c->sitekey);
+  free(c->rqdata);
+  free(c->session_id);
+  free(c->rqtoken);
+  *c = (SessionCaptcha){};
+}
+
+static void clear_friend(Session *s) {
+  clear_friend_captcha(s);
+  str_set(&s->friend_message, nullptr);
+  str_set(&s->friend_username, nullptr);
+  str_set(&s->friend_note, nullptr);
+  s->friend_adding = false;
+  s->friend_sent = false;
+}
+
+static bool username_char(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+         (c >= '0' && c <= '9') || c == '_' || c == '.';
+}
+
+// the client's own check, from its add friend form: a username, or with a
+// '#' an email like text or a name and a four digit tag.
+static bool tag_valid(const char *tag) {
+  size_t len = strlen(tag);
+
+  if (!len) {
+    return false;
+  }
+
+  if (!strchr(tag, '#')) {
+    for (const char *c = tag; *c; c++) {
+      if (!username_char(*c)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool tagged = len >= 6 && tag[len - 5] == '#';
+
+  for (size_t i = len >= 4 ? len - 4 : 0; tagged && i < len; i++) {
+    tagged = tag[i] >= '0' && tag[i] <= '9';
+  }
+
+  const char *at = strchr(tag + 1, '@');
+  const char *dot = at && at[1] ? strchr(at + 2, '.') : nullptr;
+
+  return tagged || (dot && dot[1]);
+}
+
+// the length javascript gives, in utf-16 units.
+static size_t utf16_length(const char *text) {
+  size_t n = 0;
+
+  for (const unsigned char *c = (const unsigned char *)text; *c; c++) {
+    if ((*c & 0xc0) != 0x80) {
+      n += *c >= 0xf0 ? 2 : 1;
+    }
+  }
+
+  return n;
+}
+
+static char *trimmed(const char *text) {
+  while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r') {
+    text++;
+  }
+
+  size_t len = strlen(text);
+
+  while (len && (text[len - 1] == ' ' || text[len - 1] == '\t' ||
+                 text[len - 1] == '\n' || text[len - 1] == '\r')) {
+    len--;
+  }
+
+  return str_dup_n(text, len);
+}
+
+static void friend_tell(Session *s, const char *message, bool sent) {
+  s->friend_adding = false;
+  s->friend_sent = sent;
+  str_set(&s->friend_message, message);
+  changed(s);
+}
+
+// what the client's form says of a refused request.
+static const char *friend_error(const ApiResponse *res, const char *tag,
+                                char *out, size_t cap) {
+  if (res->status == 0) {
+    return res->error.message;
+  }
+
+  if (json_get(res->json, "note") != nullptr) {
+    return "Notes can only contain plain text and must be under 120 "
+           "characters.";
+  }
+
+  switch (res->error.code) {
+    case 80000:
+      snprintf(out, cap,
+               "%s is not accepting friend requests. They'll have to add you "
+               "to become friends.",
+               tag);
+      return out;
+    case 30002:
+      return "You've maxed out your friend list. Welcome to the elite 1,000 "
+             "friends club!";
+    case 80007:
+      return "You're already friends with that user!";
+    case 40068:
+    case 340007:
+      return "Your account has limited access";
+    case 30059:
+      return "You've maxed out your block list.";
+    case 30078:
+      return "You've maxed out your pending outgoing friend requests.";
+    // the client says these in a dialog, over the generic text.
+    case 40002:
+      return "You're going to need to claim your account and verify your "
+             "e-mail before you can send a friend request.";
+    default:
+      if (res->status == 429) {
+        return "You're sending friend requests too quickly!";
+      }
+
+      return "Hm, didn't work. Double check that the username is correct.";
+  }
+}
+
+static void on_friend_request(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  char tag[64], message[192];
+
+  call_end(call);
+
+  if (s->friend_username == nullptr) {
+    return;
+  }
+
+  if (s->friend_discriminator >= 0) {
+    snprintf(tag, sizeof tag, "%s#%04d", s->friend_username,
+             (int)s->friend_discriminator);
+  }
+  else {
+    snprintf(tag, sizeof tag, "%s", s->friend_username);
+  }
+
+  if (res->captcha != nullptr) {
+    clear_friend_captcha(s);
+    s->friend_captcha = (SessionCaptcha){
+      .service = str_dup(res->captcha->service),
+      .sitekey = str_dup(res->captcha->sitekey),
+      .rqdata = str_dup(res->captcha->rqdata),
+      .session_id = str_dup(res->captcha->session_id),
+      .rqtoken = str_dup(res->captcha->rqtoken),
+      .serve_invisible = res->captcha->serve_invisible,
+    };
+    s->friend_adding = false;
+    changed(s);
+    return;
+  }
+
+  if (res->ok) {
+    snprintf(message, sizeof message,
+             "Success! Your friend request to %s was sent.", tag);
+    friend_tell(s, message, true);
+  }
+  else {
+    friend_tell(s, friend_error(res, tag, message, sizeof message), false);
+  }
+
+  str_set(&s->friend_username, nullptr);
+  str_set(&s->friend_note, nullptr);
+}
+
+static void send_friend_request(Session *s,
+                                const ApiCaptchaSolution *captcha) {
+  s->friend_adding = true;
+  api_send_friend_request(s->api, s->friend_username, s->friend_discriminator,
+                          s->friend_note, captcha, on_friend_request,
+                          call_new(s, 0, 0));
+}
+
+void session_add_friend(Session *s, const char *tag, const char *note) {
+  if (s->friend_adding || tag == nullptr) {
+    return;
+  }
+
+  clear_friend(s);
+
+  char *wanted = trimmed(tag);
+  char *said = nullptr;
+  const char *name = wanted;
+
+  if (!strchr(name, '#') && name[0] == '@') {
+    name++;
+  }
+
+  if (note != nullptr) {
+    if (utf16_length(note) > 120) {
+      free(wanted);
+      friend_tell(s,
+                  "Notes can only contain plain text and must be under 120 "
+                  "characters.",
+                  false);
+      return;
+    }
+
+    char *flat = str_dup(note);
+
+    for (char *c = flat; *c; c++) {
+      if (*c == '\n') {
+        *c = ' ';
+      }
+    }
+
+    said = trimmed(flat);
+    free(flat);
+  }
+
+  if (!tag_valid(name)) {
+    friend_tell(
+      s, "Hm, didn't work. Double check that the username is correct.", false);
+  }
+  else if (!online(s)) {
+    friend_tell(s, "Sending a friend request needs a connection.", false);
+  }
+  else {
+    const char *hash = strchr(name, '#');
+    char *digits = nullptr;
+    long parsed = hash ? strtol(hash + 1, &digits, 10) : -1;
+
+    s->friend_username =
+      hash ? str_dup_n(name, (size_t)(hash - name)) : str_dup(name);
+    s->friend_discriminator =
+      hash && digits != hash + 1 && parsed >= 0 && parsed <= INT32_MAX
+        ? (int32_t)parsed
+        : -1;
+    s->friend_note = said != nullptr && said[0] ? str_dup(said) : nullptr;
+    send_friend_request(s, nullptr);
+    changed(s);
+  }
+
+  free(said);
+  free(wanted);
+}
+
+void session_add_friend_captcha(Session *s, const char *solution) {
+  if (s->friend_captcha.service == nullptr || s->friend_username == nullptr ||
+      solution == nullptr || !online(s)) {
+    return;
+  }
+
+  ApiCaptchaSolution solved = {
+    .key = solution,
+    .session_id = s->friend_captcha.session_id,
+    .rqtoken = s->friend_captcha.rqtoken,
+  };
+
+  send_friend_request(s, &solved);
+  clear_friend_captcha(s);
+  changed(s);
+}
+
+void session_add_friend_clear(Session *s) {
+  if (s->friend_adding) {
+    return;
+  }
+
+  if (s->friend_message != nullptr || s->friend_captcha.service != nullptr) {
+    clear_friend(s);
+    changed(s);
+  }
 }
 
 static void on_invite(void *ctx, const ApiResponse *res) {

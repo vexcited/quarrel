@@ -21,9 +21,11 @@ typedef struct {
   civue_color brand;
   civue_color brand_hover;
   civue_color brand_active;
+  civue_color brand_text;
   civue_color danger;
   civue_color critical_text;
   civue_color positive;
+  civue_color positive_text;
   civue_color online;
   civue_color idle;
   civue_color dnd;

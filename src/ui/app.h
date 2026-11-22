@@ -28,6 +28,7 @@ typedef enum : uint8_t {
   FRIENDS_ONLINE,
   FRIENDS_ALL,
   FRIENDS_IMPLICIT,
+  FRIENDS_ADD,
 } FriendsTab;
 
 typedef CIVUE_VEC(Snowflake) Ids;
@@ -139,6 +140,12 @@ typedef struct {
   // what the search over the direct messages holds.
   char *dm_search;
   PlatformTimer *friends_tick;
+  // the add friend form: the username and the note typed, whether it may be
+  // sent, whether its field had the focus last frame, and the challenge
+  // discord asked for.
+  char *friend_tag, *friend_note;
+  bool friend_ready, friend_focused;
+  hcaptcha *friend_captcha;
 
   // the guilds whose muted channels are hidden.
   Ids hide_muted;

@@ -50,6 +50,8 @@ struct Request {
   Bucket *bucket;
   char *method, *url, *body;
   char *captcha_key, *captcha_session, *captcha_rqtoken;
+  // the base64 of X-Context-Properties, null for none.
+  char *context;
   ApiDone done;
   void *ctx;
   // freed with the request: what a typed callback needs to answer.
@@ -268,6 +270,7 @@ static void request_free(Request *r) {
   free(r->captcha_key);
   free(r->captcha_session);
   free(r->captcha_rqtoken);
+  free(r->context);
   free(r->owned);
   free(r);
 }
@@ -540,6 +543,11 @@ static void send_now(Bucket *b, Request *r) {
     headers[n++] = (HttpHeader){"Content-Type", "application/json"};
   }
 
+  // set by the client's request builder, before its hook adds the rest.
+  if (r->context != nullptr) {
+    headers[n++] = (HttpHeader){"X-Context-Properties", r->context};
+  }
+
   if (api->token != nullptr) {
     headers[n++] = (HttpHeader){"Authorization", api->token};
   }
@@ -637,6 +645,10 @@ static Request *enqueue(Api *api, const ApiRequest *req, ApiDone done,
     r->captcha_key = str_dup(req->captcha->key);
     r->captcha_session = str_dup(req->captcha->session_id);
     r->captcha_rqtoken = str_dup(req->captcha->rqtoken);
+  }
+
+  if (req->context != nullptr) {
+    r->context = base64_encode(req->context, strlen(req->context));
   }
 
   // the method is part of what is limited.
@@ -1247,6 +1259,40 @@ void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx) {
 
   ApiRequest req = {
     .method = "POST", .path = "/guilds", .body = cima_json_writer_text(&w)};
+  api_request(api, &req, done, ctx);
+  cima_json_writer_dispose(&w);
+}
+
+void api_send_friend_request(Api *api, const char *username,
+                             int32_t discriminator, const char *note,
+                             const ApiCaptchaSolution *captcha, ApiDone done,
+                             void *ctx) {
+  cima_json_writer w = {};
+
+  // the client parses the tag's digits, and NaN goes out as null.
+  json_begin_object(&w);
+  json_field(&w, "username", username);
+
+  if (discriminator >= 0) {
+    json_field(&w, "discriminator", discriminator);
+  }
+  else {
+    json_field(&w, "discriminator", nullptr);
+  }
+
+  if (note != nullptr) {
+    json_field(&w, "note", note);
+  }
+
+  json_end_object(&w);
+
+  ApiRequest req = {
+    .method = "POST",
+    .path = "/users/@me/relationships",
+    .body = cima_json_writer_text(&w),
+    .captcha = captcha,
+    .context = "{\"location\":\"Add Friend\"}",
+  };
   api_request(api, &req, done, ctx);
   cima_json_writer_dispose(&w);
 }
