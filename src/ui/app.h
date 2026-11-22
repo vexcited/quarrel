@@ -134,6 +134,17 @@ typedef struct {
   Snowflake editing;
   char *kept_draft;
   bool focus_composer;
+  // the menu of the composer's plus is open.
+  bool upload_menu;
+  // the file whose modal is open, 0 for none, and what its fields hold.
+  uint32_t upload_editing;
+  char *upload_name, *upload_alt;
+  bool upload_spoiler;
+  // why files were refused, shown over the window until dismissed. empty
+  // for nothing.
+  char upload_title[64], upload_body[160];
+  // the message typed is longer than discord takes.
+  bool long_message;
 
   // the message list: whether it follows its end, and what it held last
   // frame, to stay put when history arrives over it.

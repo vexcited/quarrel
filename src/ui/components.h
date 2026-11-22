@@ -124,4 +124,19 @@ void profile_popout(App *app);
 void profile_modal(App *app);
 void friends_page(App *app);
 
+// the composer's files: the plus and its menu, the tray over the field, the
+// zone files are dropped on, and the dialogs about them.
+void upload_button(App *app, Channel *c);
+void upload_tray(App *app, Channel *c);
+void upload_drop_zone(App *app, Channel *c);
+void upload_dialogs(App *app, Channel *c);
+// takes files, a picture or a long text from the clipboard into the tray.
+// false when it holds none of these, for the field to paste.
+bool upload_paste(App *app, Channel *c);
+// how a pending message's files go up, under it.
+void upload_progress(App *app, Channel *c, const Message *m);
+// longer than discord takes from the user.
+bool upload_message_too_long(App *app, const char *draft);
+void upload_clear_draft(App *app);
+
 #endif

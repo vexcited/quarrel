@@ -92,6 +92,12 @@ void app_reset(App *app) {
   drop(&app->pick_search);
   drop(&app->guild_name);
   drop(&app->menu_search);
+  drop(&app->upload_name);
+  drop(&app->upload_alt);
+  app->upload_editing = 0;
+  app->upload_menu = false;
+  app->long_message = false;
+  app->upload_title[0] = 0;
   drop(&app->profile_message);
   drop(&app->profile_note);
 

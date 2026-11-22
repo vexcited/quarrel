@@ -303,6 +303,11 @@ struct Session {
   Snowflake list_guild_id, list_channel_id;
   uint32_t list_first, list_last;
   uint64_t nonce_counter;
+  // the files put in the composer or sent with a pending message, see
+  // discord/uploads.h.
+  struct Upload **uploads;
+  size_t nuploads;
+  uint32_t upload_serial;
   char *voice_token, *voice_endpoint;
   // when the last bookmark listed was saved, as discord wrote it, which the
   // next page comes before. bumped with every new list of them.

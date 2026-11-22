@@ -1263,6 +1263,7 @@ static void message(App *app, Channel *c, Message *m, bool head, float width) {
     }
 
     message_body(app, c, m, head, width, ink, k->chat);
+    upload_progress(app, c, m);
 
     if (m->state == MESSAGE_FAILED && !message_is_system(m)) {
       failure(app, c, m);

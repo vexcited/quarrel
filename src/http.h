@@ -27,6 +27,9 @@ typedef struct {
   // sent as it is, the content type being one of `headers`.
   const void *body;
   size_t body_len;
+  // a file streamed as the body instead of `body`, never held in memory.
+  // http_sent tells how much of it went.
+  const char *body_file;
   // sends the cookies earlier answers set and keeps the ones this one sets,
   // like a browser's session. for the api, not for images.
   bool cookies;
@@ -53,6 +56,8 @@ typedef void (*HttpDone)(void *ctx, const HttpResponse *res);
 // starts a request. `done` runs once unless the request is cancelled first.
 // everything in `req` is copied.
 HttpOp http_send(const HttpRequest *req, HttpDone done, void *ctx);
+// the bytes of a request's `body_file` sent so far, 0 for an unknown one.
+uint64_t http_sent(HttpOp op);
 // forgets a request: its callback never runs and its transfer stops at the
 // next bytes received. finished or unknown ones are fine.
 void http_cancel(HttpOp op);

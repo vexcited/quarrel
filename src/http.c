@@ -1,11 +1,14 @@
 #include "http.h"
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <ciphon/curl.h>
 #include <cinc/cinc.h>
@@ -36,6 +39,10 @@ typedef struct Job {
   size_t nheaders;
   uint8_t *body;
   size_t body_len;
+  char *body_file;
+  // how much of `body_file` was read for sending, from the transfer.
+  atomic_uint_fast64_t sent;
+  ciphon_source file;
   uint32_t timeout_ms;
   uint64_t max_len;
 
@@ -83,6 +90,7 @@ static void job_free(Job *job) {
   free(job->headers);
   free(job->url);
   free(job->body);
+  free(job->body_file);
   free(job->message);
   free(job->received);
   free(job);
@@ -210,6 +218,67 @@ static bool on_body(void *userdata, const ciphon_response *,
   return true;
 }
 
+// reads the file for the transfer and keeps count of where it is.
+static bool read_file(void *userdata, uint64_t offset, uint8_t *data,
+                      size_t cap, size_t *got) {
+  Job *job = userdata;
+
+  if (atomic_load(&job->cancelled) ||
+      !job->file.read(job->file.userdata, offset, data, cap, got)) {
+    return false;
+  }
+
+  atomic_store(&job->sent, offset + *got);
+  return true;
+}
+
+// sends the job's file. the answer is taken whole, it is a short one.
+static ciphon_error upload(Job *job, const ciphon_client *client,
+                           const ciphon_request *request) {
+  int fd = open(job->body_file, O_RDONLY | O_CLOEXEC);
+  struct stat st;
+
+  if (fd < 0 || fstat(fd, &st) != 0) {
+    if (fd >= 0) {
+      close(fd);
+    }
+
+    job->message = strdup("the file could not be read");
+    return CIPHON_ERROR_INVALID_REQUEST;
+  }
+
+  job->file = ciphon_source_fd(fd, (uint64_t)st.st_size);
+
+  ciphon_source source = {
+    .userdata = job,
+    .len = (uint64_t)st.st_size,
+    .read = read_file,
+  };
+  ciphon_error error = ciphon_upload(client, request, source, &job->response,
+                                     &job->message);
+
+  close(fd);
+
+  if (error == CIPHON_OK && job->response.body_len != 0) {
+    job->received = (char *)job->response.body;
+    job->received_len = job->received_cap = job->response.body_len;
+    job->response.body = nullptr;
+    job->response.body_len = 0;
+
+    // nul terminated by deliver, so one more byte.
+    char *grown = realloc(job->received, job->received_len + 1);
+
+    if (grown == nullptr) {
+      return CIPHON_ERROR_CANCELLED;
+    }
+
+    job->received = grown;
+    job->received_cap++;
+  }
+
+  return error;
+}
+
 static void perform(void *arg) {
   Job *job = arg;
   size_t slot = 0;
@@ -246,6 +315,9 @@ static void perform(void *arg) {
 
   if (atomic_load(&job->cancelled)) {
     job->error = CIPHON_ERROR_CANCELLED;
+  }
+  else if (job->body_file != nullptr) {
+    job->error = upload(job, client, &request);
   }
   else {
     job->error = ciphon_stream(client, &request,
@@ -432,6 +504,8 @@ HttpOp http_send(const HttpRequest *req, HttpDone done, void *ctx) {
     free(cookies);
   }
 
+  job->body_file = copy(req->body_file);
+
   if (req->body != nullptr && req->body_len > 0) {
     job->body = malloc(req->body_len);
 
@@ -462,6 +536,16 @@ HttpOp http_send(const HttpRequest *req, HttpDone done, void *ctx) {
   }
 
   return job->op;
+}
+
+uint64_t http_sent(HttpOp op) {
+  for (size_t i = 0; i < http.nlive; i++) {
+    if (http.live[i]->op == op) {
+      return atomic_load(&http.live[i]->sent);
+    }
+  }
+
+  return 0;
 }
 
 void http_cancel(HttpOp op) {

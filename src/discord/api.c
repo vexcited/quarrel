@@ -1,5 +1,6 @@
 #include "discord/api.h"
 
+#include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -988,6 +989,40 @@ void api_send_message(Api *api, Snowflake channel_id,
   json_field(&w, "tts", false);
   json_field(&w, "flags", 0);
 
+  // the index of each file is its id, as the web client numbers them.
+  if (message->nattachments != 0) {
+    json_key(&w, "attachments");
+    json_begin_array(&w);
+
+    for (size_t i = 0; i < message->nattachments; i++) {
+      const ApiAttachment *a = &message->attachments[i];
+      char index[24];
+
+      snprintf(index, sizeof index, "%zu", i);
+      json_begin_object(&w);
+      json_field(&w, "id", index);
+
+      if (a->description != nullptr) {
+        json_field(&w, "description", a->description);
+      }
+
+      json_field(&w, "filename", a->filename);
+      json_field(&w, "uploaded_filename", a->uploaded_filename);
+
+      if (a->spoiler) {
+        json_field(&w, "is_spoiler", true);
+      }
+
+      if (a->content_type != nullptr) {
+        json_field(&w, "original_content_type", a->content_type);
+      }
+
+      json_end_object(&w);
+    }
+
+    json_end_array(&w);
+  }
+
   if (message->forward_id != 0) {
     // type 1 is a forward, which carries a snapshot and no text of its own.
     json_key(&w, "message_reference");
@@ -1030,6 +1065,70 @@ void api_send_message(Api *api, Snowflake channel_id,
     .method = "POST", .path = path, .body = cima_json_writer_text(&w)};
   api_request(api, &req, done, ctx);
   cima_json_writer_dispose(&w);
+}
+
+void api_create_attachments(Api *api, Snowflake channel_id,
+                            const ApiUploadFile *files, size_t count,
+                            ApiDone done, void *ctx) {
+  char path[96];
+  cima_json_writer w = {};
+
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/attachments", channel_id);
+
+  json_begin_object(&w);
+  json_key(&w, "files");
+  json_begin_array(&w);
+
+  for (size_t i = 0; i < count; i++) {
+    char index[24];
+
+    snprintf(index, sizeof index, "%zu", i);
+    json_begin_object(&w);
+    json_field(&w, "filename", files[i].filename);
+    json_field(&w, "file_size", files[i].size);
+    json_field(&w, "id", index);
+    json_field(&w, "is_clip", false);
+
+    if (files[i].content_type != nullptr) {
+      json_field(&w, "original_content_type", files[i].content_type);
+    }
+
+    json_end_object(&w);
+  }
+
+  json_end_array(&w);
+  json_end_object(&w);
+
+  ApiRequest req = {
+    .method = "POST", .path = path, .body = cima_json_writer_text(&w)};
+  api_request(api, &req, done, ctx);
+  cima_json_writer_dispose(&w);
+}
+
+void api_delete_attachment(Api *api, const char *uploaded_filename,
+                           ApiDone done, void *ctx) {
+  static const char hex[] = "0123456789ABCDEF";
+  char path[2048] = "/attachments/";
+  size_t at = strlen(path);
+
+  // the name keeps its slash, what an url can't hold is escaped.
+  for (const unsigned char *c = (const unsigned char *)uploaded_filename;
+       *c != 0 && at + 4 < sizeof path; c++) {
+    if (isalnum(*c) || strchr("-._~/", *c) != nullptr) {
+      path[at++] = (char)*c;
+    }
+    else {
+      path[at++] = '%';
+      path[at++] = hex[*c >> 4];
+      path[at++] = hex[*c & 15];
+    }
+  }
+
+  path[at] = 0;
+
+  ApiRequest req = {
+    .method = "DELETE", .path = path, .route = "/attachments/:name"};
+  api_request(api, &req, done, ctx);
 }
 
 // messages of a channel are limited together whichever one is touched.

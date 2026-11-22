@@ -502,6 +502,11 @@ User *store_put_user(Store *s, const cima_json *user) {
 
   changed |= put_bool(&u->system, user, "system");
 
+  if (json_get(user, "premium_type") != nullptr) {
+    u->premium_type =
+      (uint8_t)json_get_coerce(user, "premium_type", (uint64_t)0);
+  }
+
   if (json_get(user, "public_flags") != nullptr) {
     u->public_flags = json_get_coerce(user, "public_flags", (uint64_t)0);
   }
@@ -2379,12 +2384,29 @@ static void fill_guild(Guild *g, const cima_json *guild) {
   put_bool(&g->large, guild, "large");
 
   if ((v = json_get(props, "features")) != nullptr) {
+    static const struct {
+      const char *name;
+      uint64_t bytes;
+    } uploads[] = {
+      {"MAX_FILE_SIZE_50_MB", 50ull << 20},
+      {"MAX_FILE_SIZE_100_MB", 100ull << 20},
+      {"MAX_FILE_SIZE_250_MB", 250ull << 20},
+    };
+
     g->community = false;
+    g->upload_feature = 0;
 
     CIMA_EACH(feature, json_items(v)) {
-      const char *name = json_or(feature, nullptr);
-      g->community = g->community || (name != nullptr &&
-                                      strcmp(name, "COMMUNITY") == 0);
+      const char *name = json_or(feature, "");
+
+      g->community = g->community || strcmp(name, "COMMUNITY") == 0;
+
+      for (size_t i = 0; i < sizeof uploads / sizeof uploads[0]; i++) {
+        if (strcmp(name, uploads[i].name) == 0 &&
+            uploads[i].bytes > g->upload_feature) {
+          g->upload_feature = uploads[i].bytes;
+        }
+      }
     }
   }
 

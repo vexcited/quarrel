@@ -6,6 +6,7 @@
 
 #include <civue/dsl.h>
 
+#include "discord/uploads.h"
 #include "media.h"
 #include "widgets.h"
 
@@ -58,11 +59,20 @@ static void submit(App *app, Channel *c) {
     return;
   }
 
-  if (blank(app->draft)) {
+  Upload *files[1];
+  bool attached = uploads_of(session, c->id, 0, files, 1) != 0;
+
+  if (blank(app->draft) && !attached) {
     return;
   }
 
-  session_send(session, c->id, app->draft, app->reply_to, app->reply_ping);
+  if (upload_message_too_long(app, app->draft)) {
+    app->long_message = true;
+    return;
+  }
+
+  session_send(session, c->id, blank(app->draft) ? "" : app->draft,
+               app->reply_to, app->reply_ping);
   app->reply_to = 0;
   app->stick = true;
   set_draft(app, "");
@@ -95,6 +105,10 @@ static void drop_key(civue_ui *ui, uint32_t at) {
   ui->input.keys.len--;
 }
 
+static bool attachable(App *app, Channel *c) {
+  return !c->guild_id || store_can(app->session->store, c, PERM_ATTACH_FILES);
+}
+
 // the keys the composer takes before its field sees them: enter sends where
 // the field would start a line, which shift and enter still do.
 static void take_keys(App *app, Channel *c) {
@@ -115,9 +129,15 @@ static void take_keys(App *app, Channel *c) {
       drop_key(ui, i--);
       app->reply_to = 0;
     }
-    else if (press.key == CIVUE_KEY_UP && blank(app->draft) && !app->editing) {
+    else if (press.key == CIVUE_KEY_UP && blank(app->draft) &&
+             !app->editing && !uploads_of(app->session, c->id, 0, nullptr, 0)) {
       drop_key(ui, i--);
       edit_last(app, c);
+    }
+    // files, a picture or a long text go to the tray rather than the field.
+    else if (press.key == 'v' && (press.mods & CIVUE_MOD_CMD) &&
+             !app->editing && attachable(app, c) && upload_paste(app, c)) {
+      drop_key(ui, i--);
     }
   }
 }
@@ -244,30 +264,52 @@ void composer(App *app, Channel *c) {
   div(flex, flex_col, flex_shrink_0, mx(2)) {
     context_bar(app, c);
 
-    div(flex, items_center, gap(3), min_h(px(56)), px(4), py(3), bg(k->input),
-        border(1), border_color(k->border),
+    div(flex, flex_col, bg(k->input), border(1), border_color(k->border),
         style(.radius = {civue_px(barred ? 0 : 8), civue_px(barred ? 0 : 8),
                          civue_px(8), civue_px(8)})) {
-      icon(lucide, circle_plus, size(5), flex_shrink_0, self_start, mt(1),
-           text_color(k->subtle));
+      civue_rect box = here();
 
-      div(key(id), flex_1, min_w(0), h(px(lines + 8))) {
-        civue_field_look look = {
-          .editing = {.text = k->text},
-          .idle = {.text = k->text},
-          .hovered = {.text = k->text},
-          .placeholder = k->faint,
-          .selection = civue_alpha(k->brand, .45f),
-        };
-        civue_field_response field = civue_text_area(
-          ui, id, here(), &app->draft, placeholder, style, look);
+      if (!app->editing) {
+        upload_tray(app, c);
+      }
 
-        if (field.changed && !blank(app->draft) && !app->editing) {
-          session_typing(app->session, c->id);
+      div(flex, items_center, gap(3), min_h(px(54)), px(4), py(3)) {
+        if (attachable(app, c) && !app->editing) {
+          upload_button(app, c);
+        }
+        else {
+          icon(lucide, circle_plus, size(5), flex_shrink_0, self_start, mt(1),
+               text_color(k->faint));
+        }
+
+        div(key(id), flex_1, min_w(0), h(px(lines + 8))) {
+          civue_field_look look = {
+            .editing = {.text = k->text},
+            .idle = {.text = k->text},
+            .hovered = {.text = k->text},
+            .placeholder = k->faint,
+            .selection = civue_alpha(k->brand, .45f),
+          };
+          civue_field_response field = civue_text_area(
+            ui, id, here(), &app->draft, placeholder, style, look);
+
+          if (field.changed && !blank(app->draft) && !app->editing) {
+            session_typing(app->session, c->id);
+          }
+        }
+
+        if (!app->editing) {
+          gif_button(app, box);
         }
       }
     }
   }
+
+  if (attachable(app, c) && !app->editing) {
+    upload_drop_zone(app, c);
+  }
+
+  upload_dialogs(app, c);
 
   // a field just focused selects its text, the caret goes after it instead.
   if (app->focus_composer && civue_field_caret_to_end(ui, id)) {

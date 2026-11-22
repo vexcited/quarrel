@@ -75,6 +75,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/settings_proto.c
   src/discord/session.c
   src/discord/store.c
+  src/discord/uploads.c
   src/discord/util.c
   src/voice/dave.c
   src/voice/denoise.c
@@ -156,6 +157,7 @@ add_executable(quarrel
   src/ui/settings.c
   src/ui/sidebar.c
   src/ui/stage.c
+  src/ui/uploads.c
   src/ui/voice.c
   src/ui/widgets.c)
 target_link_libraries(quarrel PRIVATE quarrel_core hcaptcha::civue)

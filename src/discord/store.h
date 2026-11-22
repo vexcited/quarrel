@@ -108,6 +108,9 @@ typedef struct {
   bool has_accent;
   uint64_t public_flags;
   bool bot, system;
+  // the nitro the user pays for, 0 for none. discord sends it for the
+  // current user only.
+  uint8_t premium_type;
 
   // offline until a presence says otherwise.
   UserStatus status;
@@ -284,6 +287,9 @@ struct Guild {
   uint32_t member_count;
   uint8_t premium_tier;
   uint32_t premium_subscription_count;
+  // the largest file its features allow uploading in bytes, 0 when none
+  // raises the limit.
+  uint64_t upload_feature;
   // an outage: nothing but the id is known.
   bool unavailable;
   bool large;

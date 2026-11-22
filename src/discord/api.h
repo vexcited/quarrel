@@ -191,8 +191,23 @@ void api_get_messages(Api *api, Snowflake channel_id, uint32_t limit,
                       Snowflake before, Snowflake after, Snowflake around,
                       ApiDone done, void *ctx);
 
+// a file put in discord's bucket through api_create_attachments, sent with
+// a message.
+typedef struct {
+  const char *filename;
+  // the `upload_filename` discord answered with.
+  const char *uploaded_filename;
+  // the alt text, null for none.
+  const char *description;
+  // the media type the file was found to have, null when unknown.
+  const char *content_type;
+  bool spoiler;
+} ApiAttachment;
+
 typedef struct {
   const char *content;
+  const ApiAttachment *attachments;
+  size_t nattachments;
   // echoed in MESSAGE_CREATE so the pending message is found again.
   Snowflake nonce;
   // 0 for a message that answers none.
@@ -206,6 +221,23 @@ typedef struct {
 
 void api_send_message(Api *api, Snowflake channel_id,
                       const ApiSendMessage *message, ApiDone done, void *ctx);
+
+typedef struct {
+  const char *filename;
+  uint64_t size;
+  // null when unknown.
+  const char *content_type;
+} ApiUploadFile;
+
+// asks for somewhere to put each file before sending them with a message,
+// at most 10. the answer's `attachments` hold an `upload_url` to PUT each
+// file to and the `upload_filename` to send it under, in the same order.
+void api_create_attachments(Api *api, Snowflake channel_id,
+                            const ApiUploadFile *files, size_t count,
+                            ApiDone done, void *ctx);
+// drops a file put in the bucket that no message used.
+void api_delete_attachment(Api *api, const char *uploaded_filename,
+                           ApiDone done, void *ctx);
 void api_edit_message(Api *api, Snowflake channel_id, Snowflake message_id,
                       const char *content, ApiDone done, void *ctx);
 void api_delete_message(Api *api, Snowflake channel_id, Snowflake message_id,

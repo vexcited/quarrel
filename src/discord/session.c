@@ -9,6 +9,7 @@
 #include "discord/gateway.h"
 #include "discord/remote_auth.h"
 #include "discord/settings_proto.h"
+#include "discord/uploads.h"
 #include "http.h"
 #include "platform/platform.h"
 #include "voice/voice.h"
@@ -1083,6 +1084,7 @@ static void clear_bookmarks(Session *s);
 static void qr_stop(Session *s);
 
 static void end_session(Session *s, const char *error) {
+  uploads_clear(s);
   qr_stop(s);
   clear_mentions(s);
   clear_bookmarks(s);
@@ -1570,6 +1572,7 @@ static void session_free(Session *s) {
   }
 
   clear_login(s);
+  uploads_clear(s);
   clear_mentions(s);
   clear_bookmarks(s);
   clear_frecency(s);
@@ -1955,8 +1958,12 @@ Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
                        Snowflake reply_to, bool reply_ping) {
   Channel *c = store_channel(s->store, channel_id);
 
-  if (c == nullptr || content == nullptr || content[0] == '\0' ||
-      s->store->self_id == 0) {
+  Upload *files[1];
+  bool attached = uploads_of(s, channel_id, 0, files, 1) != 0;
+
+  // files may go without text.
+  if (c == nullptr || content == nullptr ||
+      (content[0] == '\0' && !attached) || s->store->self_id == 0) {
     return 0;
   }
 
@@ -1967,7 +1974,13 @@ Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
 
   Message *pending = store_add_pending(s->store, c, content, nonce, reply_to);
 
-  transmit(s, c, pending, reply_ping);
+  if (uploads_attach(s, channel_id, nonce, reply_ping)) {
+    uploads_send(s, channel_id, nonce);
+  }
+  else {
+    transmit(s, c, pending, reply_ping);
+  }
+
   changed(s);
   return nonce;
 }
@@ -1996,11 +2009,22 @@ void session_retry(Session *s, Snowflake channel_id, Snowflake nonce) {
   str_set(&failed->error, nullptr);
   store_touch_channel(s->store, c);
 
-  transmit(s, c, failed, true);
+  if (uploads_owns(s, nonce)) {
+    uploads_send(s, channel_id, nonce);
+  }
+  else {
+    transmit(s, c, failed, true);
+  }
+
   changed(s);
 }
 
 void session_discard(Session *s, Snowflake channel_id, Snowflake nonce) {
+  if (uploads_owns(s, nonce)) {
+    uploads_cancel(s, channel_id, nonce);
+    return;
+  }
+
   store_remove_pending(s->store, channel_id, nonce);
   changed(s);
 }
