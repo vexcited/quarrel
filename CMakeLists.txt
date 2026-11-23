@@ -1,12 +1,25 @@
 cmake_minimum_required(VERSION 3.29)
+
+if(APPLE AND NOT CMAKE_C_COMPILER AND NOT DEFINED ENV{CC})
+  find_program(CMAKE_C_COMPILER clang
+    PATHS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin NO_DEFAULT_PATH)
+  set(CMAKE_OBJC_COMPILER ${CMAKE_C_COMPILER} CACHE FILEPATH "objc compiler")
+
+  # the voice libraries are C++ and stay with Xcode and the system's libc++.
+  set(CMAKE_CXX_COMPILER /usr/bin/c++ CACHE FILEPATH "c++ compiler")
+endif()
+
 project(quarrel VERSION 0.0.0 LANGUAGES C OBJC)
 
-set(CMAKE_C_STANDARD 23)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS ON)
-set(CMAKE_OBJC_STANDARD 23)
-set(CMAKE_OBJC_STANDARD_REQUIRED ON)
-set(CMAKE_OBJC_EXTENSIONS ON)
+set(QUARREL_C2Y -std=gnu2y -fdefer-ts)
+include(CheckCCompilerFlag)
+check_c_compiler_flag(-fdefer-ts QUARREL_HAS_DEFER)
+if(NOT QUARREL_HAS_DEFER)
+  message(FATAL_ERROR
+    "Quarrel is C2y, set CC to clang 22 or later. "
+    "A build directory made before C2y keeps its old compiler, run make clean.")
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ${PROJECT_IS_TOP_LEVEL})
 
 if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES
@@ -117,7 +130,7 @@ target_include_directories(quarrel_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(quarrel_core PUBLIC
   civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl)
-target_compile_options(quarrel_core PRIVATE -Wall -Wextra)
+target_compile_options(quarrel_core PRIVATE ${QUARREL_C2Y} -Wall -Wextra)
 
 find_package(PkgConfig)
 if(PkgConfig_FOUND)
@@ -172,7 +185,7 @@ add_executable(quarrel
   src/ui/voice.c
   src/ui/widgets.c)
 target_link_libraries(quarrel PRIVATE quarrel_core hcaptcha::civue)
-target_compile_options(quarrel PRIVATE -Wall -Wextra)
+target_compile_options(quarrel PRIVATE ${QUARREL_C2Y} -Wall -Wextra)
 
 civue_icons(quarrel)
 
