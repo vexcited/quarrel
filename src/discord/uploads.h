@@ -64,7 +64,7 @@ uint32_t uploads_add_bytes(Session *s, Snowflake channel_id, const void *bytes,
 // takes a file out of the composer, stopping it or dropping it from the
 // bucket.
 void uploads_remove(Session *s, uint32_t id);
-Upload *uploads_get(Session *s, uint32_t id);
+[[gnu::pure]] Upload *uploads_get(Session *s, uint32_t id);
 // the files of a pending message, or those of the composer for 0, in the
 // order they were added. answers how many there are, `out` taking at most
 // `cap` of them.
@@ -83,7 +83,7 @@ bool uploads_attach(Session *s, Snowflake channel_id, Snowflake nonce,
 // that failed.
 void uploads_send(Session *s, Snowflake channel_id, Snowflake nonce);
 // whether a pending message has files.
-bool uploads_owns(Session *s, Snowflake nonce);
+[[gnu::pure]] bool uploads_owns(Session *s, Snowflake nonce);
 // stops the files of a pending message and drops it.
 void uploads_cancel(Session *s, Snowflake channel_id, Snowflake nonce);
 // forgets every file, for a session that ends.

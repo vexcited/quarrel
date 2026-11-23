@@ -65,13 +65,13 @@ bool platform_secret_set(const char *key, const char *value);
 // from malloc, null when there is none or the keychain would not give it,
 // locked or asked by a build it does not trust. `missing`, when given, is
 // true only when it has none.
-char *platform_secret_get(const char *key, bool *missing);
+[[gnu::malloc]] char *platform_secret_get(const char *key, bool *missing);
 bool platform_secret_delete(const char *key);
 
 // a null value removes the key.
 void platform_pref_set(const char *key, const char *value);
 // from malloc, null when there is none.
-char *platform_pref_get(const char *key);
+[[gnu::malloc]] char *platform_pref_get(const char *key);
 
 /* ========================================================================== */
 /* the system.                                                                */
@@ -81,7 +81,7 @@ char *platform_pref_get(const char *key);
 // correction, row after row from the top, 1 for dark, without the quiet
 // zone around it. from malloc, `side` modules square, null when it does not
 // fit in one.
-uint8_t *platform_qr(const char *text, size_t *side);
+[[gnu::malloc]] uint8_t *platform_qr(const char *text, size_t *side);
 
 // the system's version like "27.2.0".
 void platform_os_version(char *out, size_t cap);

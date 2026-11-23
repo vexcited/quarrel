@@ -18,10 +18,11 @@
 
 // one term, with its version byte, as nul terminated json from malloc.
 // false when the term is malformed, `json` is then left alone.
-bool etf_to_json(const uint8_t *etf, size_t len, char **json, size_t *json_len);
+[[nodiscard]] bool etf_to_json(const uint8_t *etf, size_t len, char **json,
+                               size_t *json_len);
 
 // one json value as a term from malloc. false when `json` is no json.
-bool etf_from_json(const char *json, size_t len, uint8_t **etf,
-                   size_t *etf_len);
+[[nodiscard]] bool etf_from_json(const char *json, size_t len, uint8_t **etf,
+                                 size_t *etf_len);
 
 #endif

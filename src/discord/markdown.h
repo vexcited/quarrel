@@ -102,11 +102,12 @@ typedef struct {
 } MdOptions;
 
 // never null. `options` may be.
-MdDoc *md_parse(const char *text, size_t len, const MdOptions *options);
+[[gnu::returns_nonnull]] MdDoc *md_parse(const char *text, size_t len,
+                                         const MdOptions *options);
 void md_free(MdDoc *doc);
 
 // the text of a tree without any markup, for a notification or a one line
 // preview: mentions read as <@id>, custom emoji as :name:. from malloc.
-char *md_plain_text(const MdDoc *doc);
+[[gnu::malloc, gnu::returns_nonnull]] char *md_plain_text(const MdDoc *doc);
 
 #endif

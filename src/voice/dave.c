@@ -43,7 +43,8 @@ uint16_t dave_max_version(void) {
   return daveMaxSupportedProtocolVersion();
 }
 
-static void on_failure(const char *source, const char *reason, void *) {
+[[gnu::cold]] static void on_failure(const char *source, const char *reason,
+                                   void *) {
   fprintf(stderr, "quarrel: dave: %s: %s\n", source, reason);
 }
 

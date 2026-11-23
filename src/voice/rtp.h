@@ -41,6 +41,6 @@ bool rtp_open(RtpCipher *c, const uint8_t *packet, size_t len, RtpHeader *h,
               uint8_t *out, size_t cap, size_t *out_len);
 
 // whether a packet is rtcp, which shares the socket.
-bool rtp_is_rtcp(const uint8_t *packet, size_t len);
+[[gnu::pure]] bool rtp_is_rtcp(const uint8_t *packet, size_t len);
 
 #endif

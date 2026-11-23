@@ -456,7 +456,7 @@ struct Roster {
   size_t ndead;
 };
 
-Roster *roster_new(const SessionOptions *options);
+[[nodiscard]] Roster *roster_new(const SessionOptions *options);
 // closes every connection and frees every store. no callback runs after
 // this.
 void roster_free(Roster *r);
@@ -572,7 +572,8 @@ void session_fetch_frecency(Session *s);
 // the gifs of the picker, made as they are first asked for.
 Gifs *session_gifs(Session *s);
 // the favorite starred under `url`, null when it is not one.
-const FavoriteGif *session_favorite_gif(const Session *s, const char *url);
+[[gnu::pure]] const FavoriteGif *session_favorite_gif(const Session *s,
+                                                      const char *url);
 // stars a gif, newest first, or takes its star away. `gif` is copied.
 void session_set_favorite_gif(Session *s, const FavoriteGif *gif,
                               bool favorite);

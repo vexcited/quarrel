@@ -337,7 +337,7 @@ const char *store_display_name(const Store *s, Snowflake guild_id,
 }
 
 static uint32_t member_color(const Guild *g, Member *m) {
-  if (m->color_stamp == g->members_version + 1) {
+  if (m->color_stamp == g->members_version + 1) [[clang::likely]] {
     return m->color;
   }
 
@@ -3667,7 +3667,7 @@ Permissions store_permissions(Store *s, const Channel *c) {
     return 0;
   }
 
-  if (c->perms_stamp == g->layout_version + 1) {
+  if (c->perms_stamp == g->layout_version + 1) [[clang::likely]] {
     return c->perms;
   }
 
@@ -3882,7 +3882,7 @@ Unread store_guild_unread(Store *s, Guild *g) {
     return (Unread){};
   }
 
-  if (g->unread_stamp == g->version + 1) {
+  if (g->unread_stamp == g->version + 1) [[clang::likely]] {
     return g->unread;
   }
 

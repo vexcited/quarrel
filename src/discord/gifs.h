@@ -67,7 +67,7 @@ typedef struct {
 Gifs *gifs_new(Api *api, void (*on_change)(void));
 void gifs_free(Gifs *g);
 
-const char *gif_provider_name(GifProvider provider);
+[[gnu::const]] const char *gif_provider_name(GifProvider provider);
 // forgets what the last provider found.
 void gifs_set_provider(Gifs *g, GifProvider provider);
 

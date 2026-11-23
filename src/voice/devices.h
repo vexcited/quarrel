@@ -19,9 +19,9 @@ void devices_set(AudioKind kind, const char *id);
 uint32_t devices_version(void);
 
 // what the microphone's sound is multiplied by, 0 to 1.
-float devices_input_volume(void);
+float devices_input_volume(void) [[clang::nonblocking]];
 // the same for what plays, 0 to 2.
-float devices_output_volume(void);
+float devices_output_volume(void) [[clang::nonblocking]];
 void devices_set_input_volume(float volume);
 void devices_set_output_volume(float volume);
 // writes the volumes down, once a slider is let go.

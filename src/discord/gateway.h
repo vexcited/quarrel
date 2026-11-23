@@ -55,7 +55,7 @@ void gateway_free(Gateway *g);
 void gateway_start(Gateway *g);
 // closes the connection and ends the session.
 void gateway_stop(Gateway *g);
-GatewayStatus gateway_status(const Gateway *g);
+[[gnu::pure]] GatewayStatus gateway_status(const Gateway *g);
 // the network under the connection changed, or the machine woke up:
 // `online` for whether there is one, `returned` when there was none before.
 // a dead connection is found within seconds rather than at the next
@@ -63,7 +63,7 @@ GatewayStatus gateway_status(const Gateway *g);
 void gateway_network_changed(Gateway *g, bool online, bool returned);
 // the round trip of the last heartbeat in seconds, negative before the
 // first.
-double gateway_latency(const Gateway *g);
+[[gnu::pure]] double gateway_latency(const Gateway *g);
 
 // the token to resume and identify with from now on.
 void gateway_set_token(Gateway *g, const char *token);
@@ -83,7 +83,7 @@ bool gateway_update_presence(Gateway *g, const char *status, bool afk);
 bool gateway_voice_state(Gateway *g, Snowflake guild_id, Snowflake channel_id,
                          bool mute, bool deaf);
 // the session's id, null before the first READY.
-const char *gateway_session_id(const Gateway *g);
+[[gnu::pure]] const char *gateway_session_id(const Gateway *g);
 
 typedef struct {
   uint32_t first, last;

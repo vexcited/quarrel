@@ -339,7 +339,7 @@ void app_select_guild(App *app, Snowflake guild_id);
 void app_select_channel(App *app, Snowflake channel_id);
 Channel *app_channel(App *app);
 Guild *app_guild(App *app);
-bool ids_has(const Ids *ids, Snowflake id);
+[[gnu::pure]] bool ids_has(const Ids *ids, Snowflake id);
 // adds `id`, or removes it when it is there.
 void ids_toggle(Ids *ids, Snowflake id);
 

@@ -41,10 +41,10 @@ void media_tile(App *app, civue_id id, Snowflake message_id,
 
 // a value that changes while a message has a player alive, for its memo:
 // a player not drawn for a while is let go.
-uint64_t media_live(App *app, Snowflake message_id);
+[[nodiscard]] uint64_t media_live(App *app, Snowflake message_id);
 
 // whether the viewer is open, the keys going to it.
-bool media_viewing(App *app);
+[[nodiscard]] bool media_viewing(App *app);
 // the media opened over the window, while one is. once a frame, last.
 void media_viewer(App *app);
 // lets go of the players no frame drew lately. once a frame.

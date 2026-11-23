@@ -243,7 +243,8 @@ static void on_captured(void *ctx, const float *samples, size_t count) {
   }
 }
 
-static void on_render(void *ctx, float *samples, size_t count) {
+static void on_render(void *ctx, float *samples, size_t count)
+  [[clang::nonblocking]] {
   Voice *v = ctx;
 
   memset(samples, 0, count * sizeof *samples);
@@ -894,7 +895,7 @@ static void teardown(Voice *v) {
   v->resumes = 0;
 }
 
-static void fail(Voice *v, const char *why) {
+[[gnu::cold]] static void fail(Voice *v, const char *why) {
   teardown(v);
   v->status = VOICE_FAILED;
   snprintf(v->error, sizeof v->error, "%s", why);
@@ -902,7 +903,7 @@ static void fail(Voice *v, const char *why) {
 }
 
 // the call is over for the account, not by its own doing.
-static void end(Voice *v, const char *why) {
+[[gnu::cold]] static void end(Voice *v, const char *why) {
   fail(v, why);
 
   if (v->e.ended != nullptr) {

@@ -122,7 +122,7 @@ void react_with(App *app, const Message *m, ReactionPick pick);
 // one open.
 void message_popover(App *app, Popover popover, const Message *m,
                      civue_rect anchor);
-bool message_popover_open(const App *app, const Message *m);
+[[gnu::pure]] bool message_popover_open(const App *app, const Message *m);
 // what is open for a message of the channel: POPOVER_MESSAGE_MENU,
 // POPOVER_REACT or POPOVER_FORWARD.
 void message_popovers(App *app, Channel *c);

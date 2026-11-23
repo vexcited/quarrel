@@ -278,7 +278,7 @@ static void send(Session *s, Request *r, const char *method, const char *path,
 // discord's events, `events` a json array of {t, d}, applied to the store.
 static void apply_events(Session *s, const char *events) {
   if (events != nullptr) {
-    events_feed(s->store, events, strlen(events));
+    (void)events_feed(s->store, events, strlen(events));
   }
 }
 

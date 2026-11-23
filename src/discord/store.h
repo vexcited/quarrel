@@ -896,7 +896,7 @@ struct Store {
   double clock;
 };
 
-Store *store_new(void);
+[[nodiscard]] Store *store_new(void);
 void store_free(Store *s);
 // forgets everything, as after a logout. versions keep counting.
 void store_reset(Store *s);
@@ -908,23 +908,25 @@ double store_now(const Store *s);
 /* ========================================================================== */
 
 // null when unknown.
-User *store_user(const Store *s, Snowflake id);
-Guild *store_guild(const Store *s, Snowflake id);
-Channel *store_channel(const Store *s, Snowflake id);
-Role *store_role(const Guild *g, Snowflake id);
-Member *store_member(const Guild *g, Snowflake user_id);
-Emoji *store_emoji(const Guild *g, Snowflake id);
-Message *store_message(const Channel *c, Snowflake id);
-const Relationship *store_relationship(const Store *s, Snowflake user_id);
+[[gnu::pure]] User *store_user(const Store *s, Snowflake id);
+[[gnu::pure]] Guild *store_guild(const Store *s, Snowflake id);
+[[gnu::pure]] Channel *store_channel(const Store *s, Snowflake id);
+[[gnu::pure]] Role *store_role(const Guild *g, Snowflake id);
+[[gnu::pure]] Member *store_member(const Guild *g, Snowflake user_id);
+[[gnu::pure]] Emoji *store_emoji(const Guild *g, Snowflake id);
+[[gnu::pure]] Message *store_message(const Channel *c, Snowflake id);
+[[gnu::pure]] const Relationship *store_relationship(const Store *s,
+                                                     Snowflake user_id);
 // null when the user is in no voice channel the store heard of.
-const VoiceState *store_voice_state(const Store *s, Snowflake user_id);
+[[gnu::pure]] const VoiceState *store_voice_state(const Store *s,
+                                                  Snowflake user_id);
 
 // the name to show for a user: their display name, else their username.
 // "Unknown User" for null.
-const char *store_user_name(const User *u);
+[[gnu::pure]] const char *store_user_name(const User *u);
 // the same in a guild, where a nickname comes first. `guild_id` may be 0.
-const char *store_display_name(const Store *s, Snowflake guild_id,
-                               Snowflake user_id);
+[[gnu::pure]] const char *store_display_name(const Store *s, Snowflake guild_id,
+                                             Snowflake user_id);
 // 0xrrggbb of the member's highest role that has a color, 0 for none.
 uint32_t store_member_color(const Store *s, Snowflake guild_id,
                             Snowflake user_id);
@@ -974,9 +976,10 @@ static inline bool channel_is_forum(const Channel *c) {
 }
 
 // a tag of the forum by its id, null when it has none such.
-const ForumTag *store_forum_tag(const Channel *forum, Snowflake id);
+[[gnu::pure]] const ForumTag *store_forum_tag(const Channel *forum,
+                                              Snowflake id);
 // a thread of a forum, a post.
-bool store_is_post(const Store *s, const Channel *c);
+[[gnu::pure]] bool store_is_post(const Store *s, const Channel *c);
 
 // the posts of a forum the store knows of, in no order. a cache good until
 // the next change.
@@ -1029,13 +1032,14 @@ Unread store_guild_unread(Store *s, Guild *g);
 Unread store_private_unread(Store *s);
 // the last message acknowledged in the channel, 0 when unknown. the unread
 // divider goes after it.
-Snowflake store_last_acked(const Store *s, Snowflake channel_id);
+[[gnu::pure]] Snowflake store_last_acked(const Store *s, Snowflake channel_id);
 
 // whether the user bookmarked the message.
-bool store_bookmarked(const Store *s, Snowflake message_id);
+[[gnu::pure]] bool store_bookmarked(const Store *s, Snowflake message_id);
 // the message a bookmark is for: its own copy, else the one loaded in its
 // channel. null when neither is there, as for a deleted message.
-const Message *store_bookmark_message(const Store *s, const Bookmark *b);
+[[gnu::pure]] const Message *store_bookmark_message(const Store *s,
+                                                    const Bookmark *b);
 
 // the users typing in a channel but the current one, into `out`. returns how
 // many there are, which may be more than `cap`.
@@ -1105,7 +1109,7 @@ void store_put_starter(Store *s, Channel *post, const cima_json *message);
 // FORUM_UNREADS, the new messages of posts of a forum.
 void store_put_forum_unreads(Store *s, const cima_json *unreads);
 // whether discord holds a read state of the channel.
-bool store_has_read_state(const Store *s, Snowflake channel_id);
+[[gnu::pure]] bool store_has_read_state(const Store *s, Snowflake channel_id);
 // a channel's last message as passive updates tell it.
 void store_set_last_message(Store *s, Snowflake channel_id, Snowflake id);
 
@@ -1215,8 +1219,8 @@ void events_dispatch(Store *s, const char *type, const cima_json *data);
 
 // applies recorded gateway payloads: one payload, or an array of them, each
 // an object with "t" and "d". false when `text` is not that.
-bool events_feed(Store *s, const char *text, size_t len);
+[[nodiscard]] bool events_feed(Store *s, const char *text, size_t len);
 // the same from a file.
-bool events_feed_file(Store *s, const char *path);
+[[nodiscard]] bool events_feed_file(Store *s, const char *path);
 
 #endif

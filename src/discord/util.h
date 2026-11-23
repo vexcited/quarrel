@@ -34,14 +34,14 @@ static inline Snowflake snowflake_from_time_ms(int64_t unix_ms) {
 }
 
 // 0 when `s` is null, empty or not a decimal number.
-Snowflake snowflake_parse(const char *s);
+[[gnu::pure]] Snowflake snowflake_parse(const char *s);
 // the same over the first `len` bytes of `s`.
-Snowflake snowflake_parse_n(const char *s, size_t len);
+[[gnu::pure]] Snowflake snowflake_parse_n(const char *s, size_t len);
 // writes the decimal digits of `id` and returns `out`.
 char *snowflake_format(Snowflake id, char out[static 21]);
 // the id held by `v`, a string of digits as discord writes ids and
 // permissions, or a number. 0 for anything else.
-Snowflake snowflake_of(const cima_json *v);
+[[gnu::pure]] Snowflake snowflake_of(const cima_json *v);
 // `id` as a string, the way discord reads them.
 void snowflake_write(cima_json_writer *w, Snowflake id);
 
@@ -58,16 +58,17 @@ void str_set(char **dst, const char *src);
 // the same when `src` is not null, leaving `*dst` alone otherwise.
 void str_update(char **dst, const char *src);
 // a copy from malloc, null for null.
-char *str_dup(const char *src);
-char *str_dup_n(const char *src, size_t len);
+[[gnu::malloc]] char *str_dup(const char *src);
+[[gnu::malloc]] char *str_dup_n(const char *src, size_t len);
 
 // base64 with padding, from malloc.
-char *base64_encode(const void *bytes, size_t len);
+[[gnu::malloc, gnu::returns_nonnull]] char *base64_encode(const void *bytes,
+                                                           size_t len);
 // the bytes of standard or url safe base64, padded or not, from malloc.
 // null when `text` is null or holds anything else.
-uint8_t *base64_decode(const char *text, size_t *len);
+[[gnu::malloc]] uint8_t *base64_decode(const char *text, size_t *len);
 // percent encodes what an url's path or query cannot hold as it is.
-char *url_encode(const char *s);
+[[gnu::malloc, gnu::returns_nonnull]] char *url_encode(const char *s);
 
 // libc's malloc as a cilo allocator, for maps that live as long as the store
 // and that a leak checker should see.

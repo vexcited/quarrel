@@ -31,9 +31,9 @@ extern const size_t UNICODE_EMOJI_NAMES_COUNT;
 constexpr size_t EMOJI_URL_MAX = 64;
 
 // null when discord has no such emoji.
-const UnicodeEmoji *emoji_by_name(const char *name);
+[[gnu::pure]] const UnicodeEmoji *emoji_by_name(const char *name);
 // `utf8` with or without the selector that asks for the colored glyph.
-const UnicodeEmoji *emoji_by_utf8(const char *utf8);
+[[gnu::pure]] const UnicodeEmoji *emoji_by_utf8(const char *utf8);
 void emoji_url(char out[static EMOJI_URL_MAX], const UnicodeEmoji *emoji);
 
 #endif

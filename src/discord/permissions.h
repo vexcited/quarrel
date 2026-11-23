@@ -102,15 +102,15 @@ typedef enum : uint8_t {
 
 // what the member may do in the guild, before any channel. PERM_ALL for the
 // owner and for administrators.
-Permissions permissions_base(const PermissionSubject *who);
+[[gnu::pure]] Permissions permissions_base(const PermissionSubject *who);
 
 // what the member may do in a channel with these overwrites, the implicit
 // rules applied: nothing without VIEW_CHANNEL, no mentions or files without
 // SEND_MESSAGES, nothing of voice without CONNECT, only reading while timed
 // out, and SEND_MESSAGES in a thread being SEND_MESSAGES_IN_THREADS.
-Permissions permissions_in_channel(const PermissionSubject *who,
-                                   const Overwrite *overwrites,
-                                   size_t noverwrites,
-                                   PermissionChannelKind kind);
+[[gnu::pure]] Permissions permissions_in_channel(const PermissionSubject *who,
+                                                 const Overwrite *overwrites,
+                                                 size_t noverwrites,
+                                                 PermissionChannelKind kind);
 
 #endif

@@ -121,11 +121,11 @@ uint32_t devices_version(void) {
   return version;
 }
 
-float devices_input_volume(void) {
+float devices_input_volume(void) [[clang::nonblocking]] {
   return atomic_load_explicit(&input_volume, memory_order_relaxed);
 }
 
-float devices_output_volume(void) {
+float devices_output_volume(void) [[clang::nonblocking]] {
   return atomic_load_explicit(&output_volume, memory_order_relaxed);
 }
 

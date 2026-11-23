@@ -23,7 +23,7 @@ typedef struct Api Api;
 /* ========================================================================== */
 
 // the User-Agent of every request, also sent as browser_user_agent.
-const char *api_user_agent(void);
+[[gnu::const]] const char *api_user_agent(void);
 // writes the client properties object. `gateway` adds the fields only sent
 // when identifying.
 void api_write_client_properties(cima_json_writer *w, bool gateway);
@@ -139,7 +139,7 @@ Api *api_new(void);
 void api_free(Api *api);
 // null for none. requests made before login carry the fingerprint instead.
 void api_set_token(Api *api, const char *token);
-const char *api_token(const Api *api);
+[[gnu::pure]] const char *api_token(const Api *api);
 
 // a request to any route. `path` starts with a slash, after /api/v9. `route`
 // names what is rate limited together, the path with its minor ids left out,

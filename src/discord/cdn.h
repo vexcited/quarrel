@@ -17,11 +17,12 @@
 constexpr size_t CDN_URL_MAX = 1024;
 
 // a size the cdn serves that is at least `pixels`, between 16 and 4096.
-uint32_t cdn_size(uint32_t pixels);
+[[gnu::const]] uint32_t cdn_size(uint32_t pixels);
 
 // the index of the avatar drawn for a user without one. users with a unique
 // username have a discriminator of "0", or none.
-uint32_t cdn_default_avatar_index(Snowflake user_id, const char *discriminator);
+[[gnu::pure]] uint32_t cdn_default_avatar_index(Snowflake user_id,
+                                                const char *discriminator);
 
 // the user's avatar, or the default one when `hash` is null. always an url.
 char *cdn_avatar(char out[static CDN_URL_MAX], Snowflake user_id,

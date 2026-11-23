@@ -63,7 +63,8 @@ static void on_captured(void *, const float *heard, size_t count) {
   }
 }
 
-static void on_render(void *, float *samples, size_t count) {
+static void on_render(void *, float *samples, size_t count)
+  [[clang::nonblocking]] {
   uint32_t end = atomic_load_explicit(&head, memory_order_acquire);
   uint32_t at = atomic_load_explicit(&tail, memory_order_relaxed);
   uint32_t held = end - at;
