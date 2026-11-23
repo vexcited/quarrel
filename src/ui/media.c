@@ -1,6 +1,7 @@
 #include "media.h"
 
 #include <math.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -478,7 +479,7 @@ static void viewer_close(App *app) {
   for (size_t i = 0; i < m->count; i++) {
     player_drop(app, id_at(id("viewer-video"), i));
 
-    for (size_t j = 0; j < 4; j++) {
+    for (size_t j = 0; j < countof(m->held[i].strings); j++) {
       free(m->held[i].strings[j]);
     }
   }

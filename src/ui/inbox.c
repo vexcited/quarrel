@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -470,7 +471,7 @@ static void bookmarks_empty(App *app) {
     // word by word, so that the lines wrap around the middle.
     div(flex, flex_wrap, justify_center, gap_x(px(4)), w(full), mb(4),
         text_size(px(14)), line_height(px(18)), text_color(k->subtle)) {
-      for (size_t i = 0; i < sizeof HINT / sizeof *HINT; i++) {
+      for (size_t i = 0; i < countof(HINT); i++) {
         if (!strcmp(HINT[i], "Bookmark")) {
           text(HINT[i], font_weight(semibold), text_color(k->strong));
         }
@@ -489,7 +490,7 @@ static void bookmarks_empty(App *app) {
 
     div(relative, self_stretch, flex, flex_col, py(2), rounded(lg), bg(k->frame),
         border(1), border_color(k->border_strong)) {
-      for (size_t i = 0; i < 3; i++) {
+      for (size_t i = 0; i < countof(LINES); i++) {
         div(relative, flex, gap(4), px(4), py(px(2))) {
           if (i == 0) {
             avatar(app, &wumpus, 0, 40, false, k->frame);

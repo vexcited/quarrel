@@ -1,6 +1,7 @@
 #include "components.h"
 
 #include <math.h>
+#include <stddefer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -202,17 +203,19 @@ static const char *extension_of(const char *mime) {
 bool upload_paste(App *app, Channel *c) {
   Session *s = app->session;
   civue_strs files = civue_pasteboard_files();
+  defer free_strs(&files);
 
   if (files.len) {
     add_paths(app, c, (const char *const *)files.v, files.len);
-    free_strs(&files);
     return true;
   }
 
-  free_strs(&files);
-
   civue_bytes image = {};
   char *mime = nullptr;
+  defer {
+    free(image.v);
+    free(mime);
+  }
 
   if (civue_pasteboard_image(&image, &mime, nullptr) && image.len) {
     char name[32];
@@ -223,13 +226,8 @@ bool upload_paste(App *app, Channel *c) {
       uploads_add_bytes(s, c->id, image.v, image.len, name);
     }
 
-    free(image.v);
-    free(mime);
     return true;
   }
-
-  free(image.v);
-  free(mime);
 
   // a long text pasted goes as a file, as the web client offers.
   char *text = civue_clipboard_text();

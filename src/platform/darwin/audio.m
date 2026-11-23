@@ -4,6 +4,8 @@
 
 #include <sched.h>
 #include <stdatomic.h>
+#include <stdcountof.h>
+#include <stddefer.h>
 
 #include "voice/audio.h"
 
@@ -228,10 +230,11 @@ size_t audio_devices(AudioKind kind, AudioDevice **out) {
 
   AudioDeviceID *ids = malloc(size);
 
+  defer free(ids);
+
   if (ids == nullptr ||
       AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0, nullptr,
                                  &size, ids) != noErr) {
-    free(ids);
     return 0;
   }
 
@@ -261,7 +264,6 @@ size_t audio_devices(AudioKind kind, AudioDevice **out) {
     push(out, &count, id, name);
   }
 
-  free(ids);
   return count;
 }
 
@@ -301,7 +303,7 @@ uint32_t audio_devices_version(void (*changed)(void)) {
     kAudioHardwarePropertyDefaultOutputDevice,
   };
 
-  for (size_t i = 0; i < sizeof watched / sizeof *watched; i++) {
+  for (size_t i = 0; i < countof(watched); i++) {
     AudioObjectPropertyAddress address = {watched[i],
                                           kAudioObjectPropertyScopeGlobal,
                                           kAudioObjectPropertyElementMain};

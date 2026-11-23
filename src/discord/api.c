@@ -2,6 +2,8 @@
 
 #include <ctype.h>
 #include <inttypes.h>
+#include <stdcountof.h>
+#include <stddefer.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/utsname.h>
@@ -128,7 +130,7 @@ static void make_launch_signature(char out[static 37]) {
   }
 
   // bit 0 is the last bit of the last byte.
-  for (size_t i = 0; i < sizeof mod_bits; i++) {
+  for (size_t i = 0; i < countof(mod_bits); i++) {
     bytes[15 - mod_bits[i] / 8] &= (uint8_t)~(1u << (mod_bits[i] % 8));
   }
 
@@ -404,6 +406,8 @@ static void on_response(void *ctx, const HttpResponse *http) {
   double now = platform_now();
 
   cilo_arena arena = {};
+  defer cilo_arena_drop(&arena);
+
   const cima_json *json = nullptr;
 
   if (http->body_len > 0) {
@@ -448,7 +452,6 @@ static void on_response(void *ctx, const HttpResponse *http) {
         b->tail = r;
       }
 
-      cilo_arena_drop(&arena);
       pump(b);
       return;
     }
@@ -515,7 +518,6 @@ static void on_response(void *ctx, const HttpResponse *http) {
   }
 
   request_free(r);
-  cilo_arena_drop(&arena);
 }
 
 static void send_now(Bucket *b, Request *r) {
@@ -886,7 +888,7 @@ void api_mfa(Api *api, ApiMfaKind kind, const ApiMfa *mfa, const char *code,
   json_field(&w, "gift_code_sku_id", nullptr);
   json_end_object(&w);
 
-  const char *path = kind <= API_MFA_BACKUP ? paths[kind] : paths[0];
+  const char *path = kind < countof(paths) ? paths[kind] : paths[0];
   login_request(api, path, cima_json_writer_finish(&w, nullptr), nullptr, done,
                 ctx);
 }

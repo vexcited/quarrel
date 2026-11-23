@@ -1,6 +1,7 @@
 #include "components.h"
 
 #include <math.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -456,9 +457,8 @@ static const char *const ACTIVITY_VERBS[] = {
 static void activity_card(App *app, civue_id key, const Activity *a,
                           const Paint *c) {
   char url[CDN_URL_MAX], badge[CDN_URL_MAX];
-  const char *verb = a->type < sizeof ACTIVITY_VERBS / sizeof *ACTIVITY_VERBS
-                       ? ACTIVITY_VERBS[a->type]
-                       : nullptr;
+  const char *verb =
+    a->type < countof(ACTIVITY_VERBS) ? ACTIVITY_VERBS[a->type] : nullptr;
 
   cdn_application_icon(
     badge, a->application_id,
@@ -1236,7 +1236,7 @@ static civue_icon connection_icon(const char *type) {
     {"leagueoflegends", CIVUE_ICON(simple_icons, leagueoflegends)},
   };
 
-  for (size_t i = 0; i < sizeof icons / sizeof *icons; i++) {
+  for (size_t i = 0; i < countof(icons); i++) {
     if (strcmp(type, icons[i].type) == 0) {
       return icons[i].icon;
     }

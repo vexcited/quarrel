@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <stdcountof.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -138,7 +139,7 @@ static int64_t status_durations(App *app, civue_rect card, civue_rect *box) {
         shadow(lg)) {
       *box = here();
 
-      for (size_t i = 0; i < sizeof spans / sizeof *spans; i++) {
+      for (size_t i = 0; i < countof(spans); i++) {
         div(key(id_at(id("status-span"), i)), flex, items_center,
             flex_shrink_0, h(px(STATUS_HEIGHT)), px(3), rounded(lg),
             text_color(k->text), hover(bg(k->hover)), text_size(px(14)),
@@ -342,7 +343,7 @@ void account_switcher(App *app, civue_rect anchor) {
 
         separator(k);
 
-        for (size_t i = 0; i < 4; i++) {
+        for (size_t i = 0; i < countof(statuses); i++) {
           UserStatus status = statuses[i].status;
 
           bool lasts = status != STATUS_ONLINE;

@@ -1,6 +1,7 @@
 #include "components.h"
 
 #include <math.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -120,7 +121,7 @@ static void tiles(App *app, const Channel *c, civue_rect room) {
 static void take_devices(App *app) {
   app->devices_seen = audio_devices_version(civue_window_wake);
 
-  for (int kind = 0; kind < 3; kind++) {
+  for (size_t kind = 0; kind < countof(app->devices); kind++) {
     audio_devices_free(app->devices[kind], app->ndevices[kind]);
     app->ndevices[kind] =
       audio_devices((AudioKind)kind, &app->devices[kind]);

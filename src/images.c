@@ -1,5 +1,6 @@
 #include "images.h"
 
+#include <stdcountof.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,7 +73,7 @@ static uint64_t fetch(void *, uint64_t load, const char *url) {
   HttpRequest req = {
     .url = url,
     .headers = headers,
-    .nheaders = 1,
+    .nheaders = countof(headers),
     .max_response_len = IMAGES_MAX_DOWNLOAD,
   };
 

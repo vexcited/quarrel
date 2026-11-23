@@ -1,6 +1,7 @@
 #include "discord/store.h"
 
 #include <inttypes.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -343,7 +344,8 @@ static uint32_t member_color(const Guild *g, Member *m) {
   uint32_t color = 0;
 
   // roles are kept highest first, so the first colored one a member has wins.
-  for (size_t i = 0; i < g->nroles && color == 0; i++) {
+roles:
+  for (size_t i = 0; i < g->nroles; i++) {
     const Role *role = g->roles[i];
 
     if (role->color == 0) {
@@ -353,7 +355,7 @@ static uint32_t member_color(const Guild *g, Member *m) {
     for (size_t j = 0; j < m->nroles; j++) {
       if (m->roles[j] == role->id) {
         color = role->color;
-        break;
+        break roles;
       }
     }
   }
@@ -637,7 +639,8 @@ static char *activity_text(const cima_json *activities) {
     return nullptr;
   }
 
-  const char *verb = type >= 0 && type <= 5 ? verbs[type] : nullptr;
+  const char *verb =
+    type >= 0 && (size_t)type < countof(verbs) ? verbs[type] : nullptr;
   snprintf(text, sizeof text, "%s %s", verb != nullptr ? verb : "Playing",
            name);
   return str_dup(text);
@@ -1787,7 +1790,7 @@ void store_update_message(Store *s, const cima_json *message) {
   Message *found[] = {store_message(c, id), starter_of(c, id)};
   Bookmark *b = find_bookmark(s, id);
 
-  for (size_t i = 0; i < 2; i++) {
+  for (size_t i = 0; i < countof(found); i++) {
     if (found[i] != nullptr) {
       fill_message(s, found[i], message, store_guild(s, c->guild_id), 0);
       store_touch_channel(s, c);
@@ -2097,7 +2100,7 @@ void store_reaction_add(Store *s, Snowflake channel_id, Snowflake message_id,
                         Snowflake user_id, const cima_json *emoji) {
   ReactionTargets t = reaction_targets(s, channel_id, message_id);
 
-  for (size_t i = 0; i < 3; i++) {
+  for (size_t i = 0; i < countof(t.found); i++) {
     if (t.found[i] != nullptr) {
       add_reaction(s, t.found[i], user_id, emoji);
       touch_target(s, &t, i);
@@ -2109,7 +2112,7 @@ void store_reaction_remove(Store *s, Snowflake channel_id, Snowflake message_id,
                            Snowflake user_id, const cima_json *emoji) {
   ReactionTargets t = reaction_targets(s, channel_id, message_id);
 
-  for (size_t i = 0; i < 3; i++) {
+  for (size_t i = 0; i < countof(t.found); i++) {
     if (t.found[i] != nullptr) {
       remove_reaction(s, t.found[i], user_id, emoji);
       touch_target(s, &t, i);
@@ -2121,7 +2124,7 @@ void store_reaction_clear(Store *s, Snowflake channel_id, Snowflake message_id,
                           const cima_json *emoji) {
   ReactionTargets t = reaction_targets(s, channel_id, message_id);
 
-  for (size_t i = 0; i < 3; i++) {
+  for (size_t i = 0; i < countof(t.found); i++) {
     if (t.found[i] != nullptr) {
       clear_reactions(t.found[i], emoji);
       touch_target(s, &t, i);
@@ -2534,7 +2537,7 @@ static void fill_guild(Guild *g, const cima_json *guild) {
 
       g->features[g->nfeatures++] = str_dup(name);
 
-      for (size_t i = 0; i < sizeof uploads / sizeof uploads[0]; i++) {
+      for (size_t i = 0; i < countof(uploads); i++) {
         if (strcmp(name, uploads[i].name) == 0 &&
             uploads[i].bytes > g->upload_feature) {
           g->upload_feature = uploads[i].bytes;
@@ -3759,7 +3762,7 @@ static bool shows_unreads(const Store *s, const Channel *c) {
   uint32_t flags[] = {c->override_flags,
                       parent != nullptr ? parent->override_flags : 0};
 
-  for (size_t i = 0; i < 2; i++) {
+  for (size_t i = 0; i < countof(flags); i++) {
     if ((flags[i] & OVERRIDE_UNREADS_ALL_MESSAGES) != 0) {
       return true;
     }

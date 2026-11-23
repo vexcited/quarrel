@@ -1,5 +1,6 @@
 #include "discord/gateway.h"
 
+#include <stdcountof.h>
 #include <stdio.h>
 
 #ifdef QUARREL_ZSTD
@@ -732,7 +733,7 @@ static void connect_now(Gateway *g) {
   set_status(g, GATEWAY_CONNECTING);
 
   g->greeted = false;
-  g->ws = platform_ws_connect(url, headers, 2, &events);
+  g->ws = platform_ws_connect(url, headers, countof(headers), &events);
   g->watchdog = platform_timer(HANDSHAKE_TIMEOUT, on_watchdog, g);
 }
 

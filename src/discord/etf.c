@@ -1,6 +1,7 @@
 #include "discord/etf.h"
 
 #include <math.h>
+#include <stddefer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -649,10 +650,11 @@ static void encode_value(Buffer *out, const cima_json *v) {
 bool etf_from_json(const char *json, size_t len, uint8_t **etf,
                    size_t *etf_len) {
   cilo_arena arena = {};
+  defer cilo_arena_drop(&arena);
+
   const cima_json *value = json_parse(&arena, json, len, nullptr);
 
   if (value == nullptr) {
-    cilo_arena_drop(&arena);
     return false;
   }
 
@@ -660,7 +662,6 @@ bool etf_from_json(const char *json, size_t len, uint8_t **etf,
 
   buffer_byte(&out, ETF_VERSION);
   encode_value(&out, value);
-  cilo_arena_drop(&arena);
 
   *etf = (uint8_t *)out.data;
   *etf_len = out.len;

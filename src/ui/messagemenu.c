@@ -1,6 +1,7 @@
 #include "components.h"
 
 #include <ctype.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -174,7 +175,7 @@ static void menu(App *app, const Channel *c, const Message *m) {
   bool bookmarks = bookmarked || channel_is_private(c) ||
                    store_can(store, c, PERM_READ_MESSAGE_HISTORY);
   ReactionPick picks[4];
-  size_t npicks = reacts ? quick_reactions(app, c, picks, 4) : 0;
+  size_t npicks = reacts ? quick_reactions(app, c, picks, countof(picks)) : 0;
 
   size_t rows = reacts + (own && plain) + (writes && plain) + plain + has_text +
                 pins + bookmarks + 3 + removable;
@@ -386,11 +387,11 @@ static size_t search_emojis(App *app, const Channel *c, const char *query,
   }
 
   for (int pass = 0; pass < 2; pass++) {
+  names:
     for (size_t i = 0; i < UNICODE_EMOJI_NAMES_COUNT && n < max; i++) {
       const UnicodeEmojiName *name = &UNICODE_EMOJI_NAMES[i];
       const UnicodeEmoji *emoji = &UNICODE_EMOJIS[name->index];
       bool starts = !strncasecmp(name->name, query, len);
-      bool seen = false;
 
       if (emoji->toned || starts != (pass == 0) ||
           (!starts && !contains(name->name, query))) {
@@ -398,13 +399,13 @@ static size_t search_emojis(App *app, const Channel *c, const char *query,
       }
 
       // an emoji found by two of its names shows once.
-      for (size_t j = 0; j < n && !seen; j++) {
-        seen = !out[j].id && out[j].name == emoji->utf8;
+      for (size_t j = 0; j < n; j++) {
+        if (!out[j].id && out[j].name == emoji->utf8) {
+          continue names;
+        }
       }
 
-      if (!seen) {
-        out[n++] = (ReactionPick){.name = emoji->utf8};
-      }
+      out[n++] = (ReactionPick){.name = emoji->utf8};
     }
   }
 

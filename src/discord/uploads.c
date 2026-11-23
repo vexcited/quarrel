@@ -1,6 +1,7 @@
 #include "discord/uploads.h"
 
 #include <fcntl.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -152,7 +153,7 @@ static const char *content_type_of(const char *filename) {
 
   const char *dot = strrchr(filename, '.');
 
-  for (size_t i = 0; dot != nullptr && i < sizeof types / sizeof *types; i++) {
+  for (size_t i = 0; dot != nullptr && i < countof(types); i++) {
     if (strcasecmp(dot + 1, types[i].ext) == 0) {
       return types[i].type;
     }
@@ -236,7 +237,7 @@ static void put(Session *s, Upload *u) {
     .method = "PUT",
     .url = u->upload_url,
     .headers = headers,
-    .nheaders = 1,
+    .nheaders = countof(headers),
     .body_file = u->path,
     .timeout = PUT_TIMEOUT,
   };
@@ -409,7 +410,7 @@ uint32_t uploads_add_bytes(Session *s, Snowflake channel_id, const void *bytes,
     return 0;
   }
 
-  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600);
 
   if (fd < 0) {
     return 0;

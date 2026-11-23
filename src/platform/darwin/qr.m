@@ -1,6 +1,8 @@
 #import <CoreImage/CoreImage.h>
 #import <Foundation/Foundation.h>
 
+#include <stddefer.h>
+
 #include "platform/platform.h"
 
 // a finder pattern, the square in three corners of every code, at `row`
@@ -45,8 +47,9 @@ uint8_t *platform_qr(const char *text, size_t *side) {
     size_t height = (size_t)extent.size.height;
     uint8_t *pixels = malloc(width * height);
 
+    defer free(pixels);
+
     if (pixels == nullptr || width == 0 || width != height) {
-      free(pixels);
       return nullptr;
     }
 
@@ -74,7 +77,6 @@ uint8_t *platform_qr(const char *text, size_t *side) {
     uint8_t *modules = n >= 21 ? malloc(n * n) : nullptr;
 
     if (modules == nullptr) {
-      free(pixels);
       return nullptr;
     }
 
@@ -83,8 +85,6 @@ uint8_t *platform_qr(const char *text, size_t *side) {
         modules[y * n + x] = pixels[(first + y) * width + first + x] < 128;
       }
     }
-
-    free(pixels);
 
     // core image's rows may come from the bottom: then the corner without
     // a finder is the top right one rather than the bottom right one.

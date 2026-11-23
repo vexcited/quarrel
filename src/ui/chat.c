@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,7 +163,7 @@ static void typing_line(App *app, const Channel *c) {
   const Look *k = &app->look;
   Store *store = app->session->store;
   Snowflake users[3];
-  size_t count = store_typing(store, c, users, 3);
+  size_t count = store_typing(store, c, users, countof(users));
   char line[320] = "";
 
   if (count == 1) {

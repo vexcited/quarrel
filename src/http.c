@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -443,7 +444,7 @@ static ciphon_method method_of(const char *name) {
     {"PATCH", CIPHON_METHOD_PATCH}, {"DELETE", CIPHON_METHOD_DELETE},
   };
 
-  for (size_t i = 0; i < sizeof methods / sizeof methods[0]; i++) {
+  for (size_t i = 0; i < countof(methods); i++) {
     if (name != nullptr && strcasecmp(name, methods[i].name) == 0) {
       return methods[i].method;
     }

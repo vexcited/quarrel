@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,11 +102,11 @@ static bool attachment_media(const Attachment *a, MediaItem *out) {
   const char *dot = a->filename ? strrchr(a->filename, '.') : nullptr;
   bool image = false, video = false;
 
-  for (size_t i = 0; dot && i < sizeof pictures / sizeof *pictures; i++) {
+  for (size_t i = 0; dot && i < countof(pictures); i++) {
     image |= !strcasecmp(dot + 1, pictures[i]);
   }
 
-  for (size_t i = 0; dot && i < sizeof videos / sizeof *videos; i++) {
+  for (size_t i = 0; dot && i < countof(videos); i++) {
     video |= !strcasecmp(dot + 1, videos[i]);
   }
 
@@ -214,7 +215,7 @@ static void attachments(App *app, const Message *m) {
   civue_id ids[10];
   size_t n = 0;
 
-  for (size_t i = 0; i < m->nattachments && n < 10; i++) {
+  for (size_t i = 0; i < m->nattachments && n < countof(items); i++) {
     if (!m->attachments[i].thumbnail &&
         attachment_media(&m->attachments[i], &items[n])) {
       ids[n++] = id_at(message_key(m), 0x100 + i);
@@ -234,7 +235,7 @@ static void attachments(App *app, const Message *m) {
       continue;
     }
 
-    if (attachment_media(a, &item) && shown < 10) {
+    if (attachment_media(a, &item) && shown < countof(items)) {
       shown++;
       continue;
     }
@@ -778,23 +779,22 @@ static void embeds(App *app, const Message *m, Snowflake guild_id) {
     return;
   }
 
+embeds:
   for (size_t i = 0; i < m->nembeds; i++) {
     const Embed *e = &m->embeds[i];
     EmbedView v = embed_view(e);
-    bool merged = false;
 
     v.message_id = m->id ? m->id : m->nonce;
 
     // embeds sharing a url are one embed: the first, with every picture.
-    for (size_t j = 0; e->url && j < i && !merged; j++) {
-      merged = m->embeds[j].url && !strcmp(m->embeds[j].url, e->url);
+    for (size_t j = 0; e->url && j < i; j++) {
+      if (m->embeds[j].url && !strcmp(m->embeds[j].url, e->url)) {
+        continue embeds;
+      }
     }
 
-    if (merged) {
-      continue;
-    }
-
-    for (size_t j = i + 1; e->url && j < m->nembeds && v.nimages < 4; j++) {
+    for (size_t j = i + 1;
+         e->url && j < m->nembeds && v.nimages < countof(v.images); j++) {
       const Embed *next = &m->embeds[j];
 
       if (next->url && !strcmp(next->url, e->url)) {
@@ -1067,7 +1067,7 @@ static void toolbar(App *app, Channel *c, const Message *m) {
   bool plain = !message_is_system(m);
   bool reacts = store_can(store, c, PERM_ADD_REACTIONS);
   ReactionPick picks[3];
-  size_t npicks = reacts ? quick_reactions(app, c, picks, 3) : 0;
+  size_t npicks = reacts ? quick_reactions(app, c, picks, countof(picks)) : 0;
   civue_rect bar = {};
   Popover opens = POPOVER_NONE;
 

@@ -9,6 +9,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -605,7 +606,7 @@ static void *media_thread(void *arg) {
       keep_alive(m);
     }
 
-    poll(fds, 2, 250);
+    poll(fds, countof(fds), 250);
 
     if (fds[1].revents & POLLIN) {
       uint8_t woken[64];
@@ -839,7 +840,7 @@ static void stop_media(Voice *v) {
     v->udp = -1;
   }
 
-  for (int i = 0; i < 2; i++) {
+  for (size_t i = 0; i < countof(v->wake); i++) {
     if (v->wake[i] >= 0) {
       close(v->wake[i]);
       v->wake[i] = -1;
@@ -1427,7 +1428,7 @@ static void open_socket(Voice *v) {
     .closed = on_closed,
   };
 
-  v->ws = platform_ws_connect(url, headers, 2, &events);
+  v->ws = platform_ws_connect(url, headers, countof(headers), &events);
   platform_timer_cancel(v->watchdog);
   v->watchdog = platform_timer(HANDSHAKE_TIMEOUT, on_watchdog, v);
 }

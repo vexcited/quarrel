@@ -2,6 +2,8 @@
 
 #include <ctype.h>
 #include <pthread.h>
+#include <stdcountof.h>
+#include <stddefer.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -226,9 +228,10 @@ static void on_remote_init(RemoteAuth *ra, const cima_json *payload) {
   const char *sent = json_get_or(payload, "fingerprint", nullptr);
   char *ours = fingerprint_of(ra->key);
 
+  defer free(ours);
+
   // the session discord made is not for this key.
   if (ours == nullptr || sent == nullptr || strcmp(ours, sent) != 0) {
-    free(ours);
     fail(ra);
     return;
   }
@@ -236,8 +239,6 @@ static void on_remote_init(RemoteAuth *ra, const cima_json *payload) {
   if (ra->events.ready != nullptr) {
     ra->events.ready(ra->events.ctx, ours);
   }
-
-  free(ours);
 }
 
 static bool all_of(const char *s, size_t n, int (*accepts)(int)) {
@@ -291,8 +292,9 @@ static void on_pending_ticket(RemoteAuth *ra, const cima_json *payload) {
     ra->key, json_get_or(payload, "encrypted_user_payload", nullptr), &len);
   RemoteAuthUser user;
 
+  defer free(text);
+
   if (text == nullptr || strlen(text) != len || !parse_user(text, &user)) {
-    free(text);
     fail(ra);
     return;
   }
@@ -300,8 +302,6 @@ static void on_pending_ticket(RemoteAuth *ra, const cima_json *payload) {
   if (ra->events.scanned != nullptr) {
     ra->events.scanned(ra->events.ctx, &user);
   }
-
-  free(text);
 }
 
 static void on_text(void *ctx, const char *text, size_t len) {
@@ -432,7 +432,8 @@ RemoteAuth *remote_auth_new(const RemoteAuthEvents *events) {
     .closed = on_closed,
   };
 
-  ra->ws = platform_ws_connect(REMOTE_AUTH_URL, headers, 2, &socket);
+  ra->ws = platform_ws_connect(REMOTE_AUTH_URL, headers, countof(headers),
+                               &socket);
   return ra;
 }
 

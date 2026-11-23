@@ -1,6 +1,7 @@
 #include "components.h"
 
 #include <math.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1349,7 +1350,7 @@ static void posts(App *app, Channel *forum, Channel **list, size_t count,
     div(flex, flex_col, gap(px(CARD_GAP)), mt(px(CARD_GAP))) {
       float shades[] = {.33f, 1, .66f};
 
-      for (size_t i = 0; i < 3; i++) {
+      for (size_t i = 0; i < countof(shades); i++) {
         div(h(px(102)), rounded(xl), bg(civue_alpha(k->panel, shades[i]))) {}
       }
     }

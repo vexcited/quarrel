@@ -1,6 +1,7 @@
 #include "voice/devices.h"
 
 #include <stdatomic.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,7 +57,7 @@ static void load(void) {
 
   loaded = true;
 
-  for (int kind = 0; kind < 3; kind++) {
+  for (size_t kind = 0; kind < countof(picked); kind++) {
     picked[kind] = platform_pref_get(KEYS[kind]);
 
     if (picked[kind] != nullptr && picked[kind][0] == '\0') {

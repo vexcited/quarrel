@@ -1,6 +1,7 @@
 #include "discord/markdown.h"
 
 #include <inttypes.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -230,9 +231,8 @@ static size_t emoji_length(const char *s, size_t len) {
   }
 
   for (;;) {
-    bool emoji =
-      in_ranges(emoji_ranges, sizeof emoji_ranges / sizeof(Range), cp);
-    bool text = in_ranges(text_ranges, sizeof text_ranges / sizeof(Range), cp);
+    bool emoji = in_ranges(emoji_ranges, countof(emoji_ranges), cp);
+    bool text = in_ranges(text_ranges, countof(text_ranges), cp);
 
     if (!emoji && !text) {
       return 0;
@@ -280,9 +280,8 @@ static size_t emoji_length(const char *s, size_t len) {
     // a joiner glues the next emoji on, when one follows.
     size_t joined;
     uint32_t after = peek(s, len, at + n, &joined);
-    bool more =
-      in_ranges(emoji_ranges, sizeof emoji_ranges / sizeof(Range), after) ||
-      in_ranges(text_ranges, sizeof text_ranges / sizeof(Range), after);
+    bool more = in_ranges(emoji_ranges, countof(emoji_ranges), after) ||
+                in_ranges(text_ranges, countof(text_ranges), after);
 
     if (!more) {
       return at;
@@ -315,7 +314,7 @@ static void format_relative(char *out, size_t cap, int64_t time, int64_t now) {
     return;
   }
 
-  for (size_t i = 0; i < sizeof units / sizeof units[0]; i++) {
+  for (size_t i = 0; i < countof(units); i++) {
     if (distance < units[i].seconds) {
       continue;
     }

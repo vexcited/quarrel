@@ -1,6 +1,8 @@
 #include "discord/session.h"
 
 #include <inttypes.h>
+#include <stdcountof.h>
+#include <stddefer.h>
 #include <stdio.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -157,7 +159,7 @@ static void request_unknown_members(Session *s, const Channel *c) {
   Snowflake ids[100];
   size_t count = 0;
 
-  for (size_t i = 0; i < c->nmessages && count < 100; i++) {
+  for (size_t i = 0; i < c->nmessages && count < countof(ids); i++) {
     const Message *m = c->messages[i];
     bool known = m->webhook_id != 0 || m->author_id == 0 ||
                  store_member(g, m->author_id) != nullptr;
@@ -234,7 +236,8 @@ static void subscribe(Session *s) {
   uint32_t first = s->list_first / LIST_BLOCK;
   uint32_t last = s->list_last / LIST_BLOCK;
 
-  for (uint32_t block = first; block <= last && count < 3; block++) {
+  for (uint32_t block = first; block <= last && count < countof(ranges);
+       block++) {
     if (block != 0) {
       ranges[count++] = (GatewayRange){
         block * LIST_BLOCK,
@@ -855,7 +858,7 @@ static void snapshot_save(Session *s, const char *with, size_t with_len) {
   }
 
   // it holds what the account can see: for its owner alone.
-  chmod(writing, 0600);
+  chmod(writing, 0o600);
 
   bool ok = fputc('[', file) != EOF && fputs(s->ready_text, file) != EOF;
 
@@ -1516,15 +1519,14 @@ static void qr_on_token(void *ctx, const ApiResponse *res) {
   const char *encrypted =
     res->ok ? json_get_or(res->json, "encrypted_token", nullptr) : nullptr;
   char *token = remote_auth_decrypt(s->remote_auth, encrypted);
+  defer wipe(&token);
 
   if (token == nullptr || token[0] == '\0') {
-    wipe(&token);
     qr_failed(s);
     return;
   }
 
   enter(s, token, false);
-  wipe(&token);
 }
 
 static void qr_on_ticket(void *ctx, const char *ticket) {
@@ -1642,13 +1644,13 @@ static bool open_account(Roster *r, Snowflake id) {
   char key[32];
   bool missing = false;
   char *token = platform_secret_get(token_key(id, key), &missing);
+  defer wipe(&token);
 
   if (token == nullptr || token[0] == '\0') {
     if (missing || token != nullptr) {
       forget(r, id);
     }
 
-    wipe(&token);
     return false;
   }
 
@@ -1656,7 +1658,6 @@ static bool open_account(Roster *r, Snowflake id) {
 
   account_add(r, id)->session = s;
   enter(s, token, true);
-  wipe(&token);
   return true;
 }
 
@@ -1996,7 +1997,7 @@ Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
   Channel *c = store_channel(s->store, channel_id);
 
   Upload *files[1];
-  bool attached = uploads_of(s, channel_id, 0, files, 1) != 0;
+  bool attached = uploads_of(s, channel_id, 0, files, countof(files)) != 0;
 
   // files may go without text.
   if (c == nullptr || content == nullptr ||
@@ -2550,7 +2551,7 @@ static void rank_reactions(Session *s, FrecencyUse *uses, size_t count) {
     "100",   "thumbsup", "thumbsdown",       "heart", "point_up", "eyes",
     "weary", "laughing", "white_check_mark", "x",
   };
-  constexpr size_t NSTARTERS = sizeof STARTERS / sizeof *STARTERS;
+  constexpr size_t NSTARTERS = countof(STARTERS);
 
   Ranked *ranked = calloc(count + NSTARTERS, sizeof *ranked);
   size_t n = 0;
@@ -3234,7 +3235,9 @@ void session_add_friend(Session *s, const char *tag, const char *note) {
   clear_friend(s);
 
   char *wanted = trimmed(tag);
+  defer free(wanted);
   char *said = nullptr;
+  defer free(said);
   const char *name = wanted;
 
   if (!strchr(name, '#') && name[0] == '@') {
@@ -3243,7 +3246,6 @@ void session_add_friend(Session *s, const char *tag, const char *note) {
 
   if (note != nullptr) {
     if (utf16_length(note) > 120) {
-      free(wanted);
       friend_tell(s,
                   "Notes can only contain plain text and must be under 120 "
                   "characters.",
@@ -3285,9 +3287,6 @@ void session_add_friend(Session *s, const char *tag, const char *note) {
     send_friend_request(s, nullptr);
     changed(s);
   }
-
-  free(said);
-  free(wanted);
 }
 
 void session_add_friend_captcha(Session *s, const char *solution) {
@@ -4278,7 +4277,7 @@ static void request_forum_unreads(Session *s, Snowflake forum_id) {
   Channel *const *posts = store_forum_posts(s->store, forum, &count);
   GatewayForumAck acks[180];
 
-  for (size_t i = 0; i < count && asked < 180; i++) {
+  for (size_t i = 0; i < count && asked < countof(acks); i++) {
     const Channel *post = posts[i];
     Snowflake acked = store_last_acked(s->store, post->id);
 
