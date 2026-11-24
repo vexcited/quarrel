@@ -910,7 +910,8 @@ void api_mfa_send_sms(Api *api, const char *ticket, ApiDone done, void *ctx) {
   cima_json_writer_dispose(&w);
 }
 
-void api_remote_auth_login(Api *api, const char *ticket, ApiDone done,
+void api_remote_auth_login(Api *api, const char *ticket,
+                           const ApiCaptchaSolution *captcha, ApiDone done,
                            void *ctx) {
   cima_json_writer w = {};
 
@@ -922,6 +923,7 @@ void api_remote_auth_login(Api *api, const char *ticket, ApiDone done,
     .method = "POST",
     .path = "/users/@me/remote-auth/login",
     .body = cima_json_writer_text(&w),
+    .captcha = captcha,
   };
 
   api_request(api, &req, done, ctx);

@@ -396,6 +396,10 @@ struct Session {
   void *remote_auth, *qr_timer;
   double qr_backoff;
   uint64_t qr_attempt;
+  // a qr code's ticket that discord answered with a challenge, sent again
+  // once solved, and the attempt whose key decrypts the token it gives.
+  char *qr_ticket;
+  void *qr_held;
   bool was_ready;
   // the store came from the account's last READY, kept on disk, and waits
   // for the gateway to say how things are now.

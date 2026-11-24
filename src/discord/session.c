@@ -126,6 +126,9 @@ static void clear_captcha(Session *s) {
 }
 
 static void clear_login(Session *s) {
+  remote_auth_free(s->qr_held);
+  s->qr_held = nullptr;
+  wipe(&s->qr_ticket);
   wipe(&s->login);
   wipe(&s->password);
   wipe(&s->mfa_ticket);
@@ -1383,8 +1386,16 @@ void session_request_sms(Session *s) {
   }
 }
 
+// the call of a qr code's ticket sent again with a solved challenge, which
+// no attempt of the code's is.
+constexpr Snowflake QR_HELD = UINT64_MAX;
+
+static void qr_on_token(void *ctx, const ApiResponse *res);
+
 void session_submit_captcha(Session *s, const char *solution) {
-  if (s->state != SESSION_CAPTCHA || s->login == nullptr ||
+  bool qr = s->qr_held != nullptr && s->qr_ticket != nullptr;
+
+  if (s->state != SESSION_CAPTCHA || (s->login == nullptr && !qr) ||
       solution == nullptr) {
     return;
   }
@@ -1396,7 +1407,14 @@ void session_submit_captcha(Session *s, const char *solution) {
     .rqtoken = s->captcha.rqtoken,
   };
 
-  api_login(s->api, s->login, s->password, &solved, on_login, s);
+  if (qr) {
+    api_remote_auth_login(s->api, s->qr_ticket, &solved, qr_on_token,
+                          call_new(s, 0, QR_HELD));
+  }
+  else {
+    api_login(s->api, s->login, s->password, &solved, on_login, s);
+  }
+
   clear_captcha(s);
   set_error(s, nullptr);
   set_state(s, SESSION_LOGGING_IN);
@@ -1501,10 +1519,35 @@ static void qr_on_failed(void *ctx) {
   qr_failed(ctx);
 }
 
+// discord wants a challenge solved before it gives the token: the ticket
+// and the attempt's key are kept through it, the code is hidden meanwhile.
+static void qr_challenged(Session *s, const ApiCaptcha *asked, bool held) {
+  // a challenge answered with another one keeps the key it holds.
+  if (!held) {
+    remote_auth_free(s->qr_held);
+    s->qr_held = s->remote_auth;
+    s->remote_auth = nullptr;
+  }
+
+  clear_captcha(s);
+  s->captcha = (SessionCaptcha){
+    .service = str_dup(asked->service),
+    .sitekey = str_dup(asked->sitekey),
+    .rqdata = str_dup(asked->rqdata),
+    .session_id = str_dup(asked->session_id),
+    .rqtoken = str_dup(asked->rqtoken),
+    .serve_invisible = asked->serve_invisible,
+  };
+  set_error(s, nullptr);
+  set_state(s, SESSION_CAPTCHA);
+}
+
 static void qr_on_token(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
   Session *s = call->s;
-  bool current = call->id == s->qr_attempt;
+  bool held = call->id == QR_HELD;
+  bool current = held ? s->qr_held != nullptr && s->state == SESSION_LOGGING_IN
+                      : call->id == s->qr_attempt;
 
   if (call_stale(call)) {
     return;
@@ -1516,17 +1559,31 @@ static void qr_on_token(void *ctx, const ApiResponse *res) {
     return;
   }
 
-  const char *encrypted =
-    res->ok ? json_get_or(res->json, "encrypted_token", nullptr) : nullptr;
-  char *token = remote_auth_decrypt(s->remote_auth, encrypted);
-  defer wipe(&token);
-
-  if (token == nullptr || token[0] == '\0') {
-    qr_failed(s);
+  if (res->captcha != nullptr) {
+    qr_challenged(s, res->captcha, held);
     return;
   }
 
-  enter(s, token, false);
+  const char *encrypted =
+    res->ok ? json_get_or(res->json, "encrypted_token", nullptr) : nullptr;
+  char *token =
+    remote_auth_decrypt(held ? s->qr_held : s->remote_auth, encrypted);
+  defer wipe(&token);
+
+  if (token != nullptr && token[0] != '\0') {
+    enter(s, token, false);
+  }
+  else if (held) {
+    // the code starts over, with what went wrong under the form.
+    set_error(s, res->ok ? "The QR code login failed, try again."
+                         : res->error.message);
+    clear_login(s);
+    set_state(s, SESSION_LOGGED_OUT);
+  }
+  else {
+    wipe(&s->qr_ticket);
+    qr_failed(s);
+  }
 }
 
 static void qr_on_ticket(void *ctx, const char *ticket) {
@@ -1536,8 +1593,9 @@ static void qr_on_ticket(void *ctx, const char *ticket) {
     s->api = api_new();
   }
 
+  str_set(&s->qr_ticket, ticket);
   qr_set(s, SESSION_QR_LOGGING_IN);
-  api_remote_auth_login(s->api, ticket, qr_on_token,
+  api_remote_auth_login(s->api, ticket, nullptr, qr_on_token,
                         call_new(s, 0, s->qr_attempt));
 }
 
