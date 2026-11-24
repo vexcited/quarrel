@@ -26,7 +26,7 @@ static _Atomic float level;
 static bool primed;
 // made before the sound starts, freed after it stopped.
 static Denoise *denoise;
-// the most the system hands at a time, see audio.m.
+// the most the system hands at a time, see the platform's audio.
 constexpr size_t HEARD_MAX = 4096;
 
 static void on_captured(void *, const float *heard, size_t count) {

@@ -162,10 +162,10 @@ static void picked_name(const App *app, AudioKind kind, char *out, size_t cap) {
     snprintf(out, cap, "No camera");
   }
   else if (app->default_names[kind][0]) {
-    snprintf(out, cap, "macOS Default (%s)", app->default_names[kind]);
+    snprintf(out, cap, AUDIO_SYSTEM_DEFAULT " (%s)", app->default_names[kind]);
   }
   else {
-    snprintf(out, cap, "macOS Default");
+    snprintf(out, cap, AUDIO_SYSTEM_DEFAULT);
   }
 }
 
@@ -268,7 +268,7 @@ static void select_list(App *app) {
       list = here();
 
       if (standard) {
-        snprintf(name, sizeof name, "macOS Default%s%s%s",
+        snprintf(name, sizeof name, AUDIO_SYSTEM_DEFAULT "%s%s%s",
                  app->default_names[kind][0] ? " (" : "",
                  app->default_names[kind],
                  app->default_names[kind][0] ? ")" : "");
@@ -462,7 +462,9 @@ static void input_profile(App *app) {
   };
   static const char *const ABOUT[PROFILES] = {
     [PROFILE_ISOLATION] = "Just your voice: Quarrel cuts through the noise",
-    [PROFILE_STUDIO] = "Open mic: Quarrel leaves it to the Mic Mode of macOS",
+    [PROFILE_STUDIO] =
+      AUDIO_HAS_MODES ? "Open mic: Quarrel leaves it to the Mic Mode of macOS"
+                      : "Open mic: Quarrel only takes out the echo",
     [PROFILE_CUSTOM] = "Advanced mode: set each part yourself",
   };
   VoiceProfile now = devices_profile();
@@ -479,7 +481,7 @@ static void input_profile(App *app) {
     }
   }
 
-  if (now == PROFILE_STUDIO) {
+  if (now == PROFILE_STUDIO && AUDIO_HAS_MODES) {
     div(key(id("mic-modes")), flex, items_center, justify_center, self_start,
         h(8), px(3), ml(9), mt(3), flex_shrink_0, rounded(lg),
         bg(k->surface_high), hover(bg(k->hover)), text_color(k->strong),
@@ -627,8 +629,11 @@ static void custom_input(App *app, float level) {
 
     noise_row(app);
     switch_row(app, VOICE_ECHO, "Echo Cancellation",
-               "macOS takes what your speakers play out of your microphone. "
-               "Its Mic Mode only applies with this on.");
+               AUDIO_HAS_MODES
+                 ? "macOS takes what your speakers play out of your "
+                   "microphone. Its Mic Mode only applies with this on."
+                 : "Quarrel takes what your speakers play out of your "
+                   "microphone.");
   }
 }
 

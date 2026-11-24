@@ -54,6 +54,15 @@ void audio_stop(Audio *a);
 // the system's own menu, which no app may make for them. opens that menu.
 void audio_show_modes(void);
 
+// the system has that menu, and says which device is its own by its name.
+#ifdef __APPLE__
+constexpr bool AUDIO_HAS_MODES = true;
+#define AUDIO_SYSTEM_DEFAULT "macOS Default"
+#else
+constexpr bool AUDIO_HAS_MODES = false;
+#define AUDIO_SYSTEM_DEFAULT "System Default"
+#endif
+
 /* ========================================================================== */
 /* what the machine has to hear, play and film with. main thread.             */
 /* ========================================================================== */

@@ -168,7 +168,7 @@ static void device_row(App *app, AudioKind kind, const char *label) {
   int current = device_picked(app, kind);
   bool open = app->voice_side == (int8_t)kind;
   const char *name =
-    current >= 0 ? app->devices[kind][current].name : "macOS Default";
+    current >= 0 ? app->devices[kind][current].name : AUDIO_SYSTEM_DEFAULT;
 
   div(key(id_at(id("device-row"), kind)), flex, items_center, gap(2),
       flex_shrink_0, h(px(52)), px(2), rounded(lg),
@@ -257,7 +257,7 @@ static civue_rect side_list(App *app, civue_rect card) {
       list = here();
 
       if (standard &&
-          radio_row(app, id("device-default"), "macOS Default",
+          radio_row(app, id("device-default"), AUDIO_SYSTEM_DEFAULT,
                     app->default_names[kind], current < 0)) {
         devices_set(kind, nullptr);
       }
