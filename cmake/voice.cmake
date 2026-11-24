@@ -42,6 +42,13 @@ FetchContent_Declare(rnnoise
 
 FetchContent_MakeAvailable(nlohmann_json mlspp libdave rnnoise)
 
+# mlspp builds with -Werror, and openssl 4.1 deprecates calls it makes.
+foreach(target mlspp hpke bytes tls_syntax mls_ds mls_vectors)
+  if(TARGET ${target})
+    target_compile_options(${target} PRIVATE -Wno-deprecated-declarations)
+  endif()
+endforeach()
+
 set(rnnoise ${rnnoise_SOURCE_DIR})
 add_library(quarrel_rnnoise STATIC
   ${rnnoise}/src/celt_lpc.c
