@@ -50,33 +50,28 @@ if(QUARREL_CCACHE)
   endforeach()
 endif()
 
+# the libraries are fetched from code.vexcited.com, from checkouts next to
+# this one when there are. cilo comes first for the others to share it.
 include(FetchContent)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cilo/CMakeLists.txt)
-  set(FETCHCONTENT_SOURCE_DIR_CILO ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cilo
-    CACHE PATH "the cilo checkout")
-endif()
-if(NOT TARGET civue::civue)
-  set(CIVUE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(civue
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-civue)
-  FetchContent_MakeAvailable(civue)
-endif()
-if(NOT TARGET cinc::cinc)
-  FetchContent_Declare(cinc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cinc)
-  FetchContent_MakeAvailable(cinc)
-endif()
-if(NOT TARGET cima::cima)
-  FetchContent_Declare(cima
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cima)
-  FetchContent_MakeAvailable(cima)
-endif()
-if(NOT TARGET ciphon::curl)
-  set(CIPHON_BINDINGS OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(ciphon
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ciko-cilent)
-  FetchContent_MakeAvailable(ciphon)
-endif()
+foreach(dep cilo:ciko/cilo civue:ciko/civue cinc:ciko/cinc cima:ciko/cima
+    ciphon:ciko/cilent hcaptcha-civue:hcaptcha/civue)
+  string(REPLACE ":" ";" dep ${dep})
+  list(GET dep 0 name)
+  list(GET dep 1 repo)
+  string(TOUPPER ${name} NAME)
+  string(REPLACE "/" "-" checkout ${repo})
+  get_filename_component(local ${CMAKE_CURRENT_SOURCE_DIR}/../${checkout} ABSOLUTE)
+  if(NOT FETCHCONTENT_SOURCE_DIR_${NAME} AND EXISTS ${local}/CMakeLists.txt)
+    set(FETCHCONTENT_SOURCE_DIR_${NAME} ${local})
+  endif()
+  FetchContent_Declare(${name}
+    GIT_REPOSITORY https://code.vexcited.com/${repo}.git
+    GIT_TAG main)
+endforeach()
+
+set(CIVUE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(CIPHON_BINDINGS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cilo civue cinc cima ciphon)
 if(NOT TARGET ciphon::curl)
   message(FATAL_ERROR "Quarrel needs libcurl ")
 endif()
@@ -185,12 +180,8 @@ include(cmake/voice.cmake)
 target_link_libraries(quarrel_core PUBLIC
   quarrel_dave quarrel_rnnoise OpenSSL::Crypto PkgConfig::OPUS)
 
-if(NOT TARGET hcaptcha::civue)
-  set(HCAPTCHA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(hcaptcha-civue
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../hcaptcha-civue)
-  FetchContent_MakeAvailable(hcaptcha-civue)
-endif()
+set(HCAPTCHA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(hcaptcha-civue)
 
 add_executable(quarrel
   src/main.c
