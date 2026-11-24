@@ -7,8 +7,9 @@
 /* ========================================================================== */
 /* what Quarrel asks of the system. everything here is called from the main   */
 /* thread and every callback runs on the main thread, from the run loop       */
-/* civue_window_run spins. src/platform/darwin implements it. http is not     */
-/* here: it goes through ciphon and cinc, see http.h.                         */
+/* civue_window_run spins. src/platform/darwin and src/platform/linux         */
+/* implement it. http is not here: it goes through ciphon and cinc, see       */
+/* http.h.                                                                    */
 /* ========================================================================== */
 
 /* ========================================================================== */

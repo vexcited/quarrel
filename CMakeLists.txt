@@ -1,15 +1,24 @@
 cmake_minimum_required(VERSION 3.29)
 
-if(APPLE AND NOT CMAKE_C_COMPILER AND NOT DEFINED ENV{CC})
-  find_program(CMAKE_C_COMPILER clang
-    PATHS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin NO_DEFAULT_PATH)
-  set(CMAKE_OBJC_COMPILER ${CMAKE_C_COMPILER} CACHE FILEPATH "objc compiler")
+if(NOT CMAKE_C_COMPILER AND NOT DEFINED ENV{CC})
+  if(APPLE)
+    find_program(CMAKE_C_COMPILER clang
+      PATHS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin NO_DEFAULT_PATH)
+    set(CMAKE_OBJC_COMPILER ${CMAKE_C_COMPILER} CACHE FILEPATH "objc compiler")
 
-  # the voice libraries are C++ and stay with Xcode and the system's libc++.
-  set(CMAKE_CXX_COMPILER /usr/bin/c++ CACHE FILEPATH "c++ compiler")
+    # the voice libraries are C++ and stay with Xcode and the system's libc++.
+    set(CMAKE_CXX_COMPILER /usr/bin/c++ CACHE FILEPATH "c++ compiler")
+  else()
+    find_program(CMAKE_C_COMPILER clang)
+    find_program(CMAKE_CXX_COMPILER clang++)
+  endif()
 endif()
 
-project(quarrel VERSION 0.0.0 LANGUAGES C OBJC)
+project(quarrel VERSION 0.0.0 LANGUAGES C)
+
+if(APPLE)
+  enable_language(OBJC)
+endif()
 
 set(QUARREL_C2Y -std=gnu2y -fdefer-ts)
 include(CheckCCompilerFlag)
@@ -111,6 +120,16 @@ set(QUARREL_DARWIN_SOURCES
   src/platform/darwin/timer.m
   src/platform/darwin/websocket.m)
 
+set(QUARREL_LINUX_SOURCES
+  src/platform/linux/audio.c
+  src/platform/linux/camera.c
+  src/platform/linux/loop.c
+  src/platform/linux/pipe.c
+  src/platform/linux/qr.c
+  src/platform/linux/storage.c
+  src/platform/linux/system.c
+  src/platform/linux/websocket.c)
+
 if(APPLE)
   add_library(quarrel_core STATIC
     ${QUARREL_CORE_SOURCES} ${QUARREL_DARWIN_SOURCES})
@@ -122,8 +141,29 @@ if(APPLE)
     "-framework AudioToolbox" "-framework AVFoundation"
     "-framework CoreAudio" "-framework CoreMedia" "-framework CoreVideo"
     "-framework Metal" "-framework AppKit" "-framework Network" z)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(PkgConfig REQUIRED)
+  find_package(CURL REQUIRED)
+  pkg_check_modules(QUARREL_LINUX REQUIRED IMPORTED_TARGET
+    glib-2.0 gio-2.0 libsecret-1 libpipewire-0.3)
+
+  add_library(quarrel_core STATIC
+    ${QUARREL_CORE_SOURCES} ${QUARREL_LINUX_SOURCES})
+  target_compile_definitions(quarrel_core PRIVATE _GNU_SOURCE)
+  target_link_libraries(quarrel_core PUBLIC
+    PkgConfig::QUARREL_LINUX CURL::libcurl z)
+
+  # a camera that films in jpeg, as most do at 720p, is read through it.
+  pkg_check_modules(QUARREL_TURBOJPEG IMPORTED_TARGET libturbojpeg)
+
+  if(QUARREL_TURBOJPEG_FOUND)
+    target_link_libraries(quarrel_core PUBLIC PkgConfig::QUARREL_TURBOJPEG)
+    target_compile_definitions(quarrel_core PRIVATE QUARREL_TURBOJPEG)
+  else()
+    message(STATUS "quarrel: no libturbojpeg, cameras that film in jpeg are left out")
+  endif()
 else()
-  message(FATAL_ERROR "Quarrel only has a macOS backend for now")
+  message(FATAL_ERROR "Quarrel runs on macOS and Linux")
 endif()
 
 target_include_directories(quarrel_core PUBLIC
@@ -215,4 +255,12 @@ if(APPLE)
     --sign [==[${QUARREL_SIGN_IDENTITY}]==]
     \"\${CMAKE_INSTALL_PREFIX}/$<TARGET_BUNDLE_DIR_NAME:quarrel>\"
     COMMAND_ERROR_IS_FATAL ANY)" COMPONENT quarrel)
+else()
+  include(GNUInstallDirs)
+  target_link_options(quarrel PRIVATE LINKER:--gc-sections,--as-needed,-s)
+
+  install(TARGETS quarrel RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT quarrel)
+  install(FILES cmake/quarrel.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT quarrel)
 endif()

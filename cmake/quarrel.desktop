@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Quarrel
+Comment=Chat on Discord
+Exec=quarrel
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=quarrel
