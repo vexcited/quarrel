@@ -88,7 +88,7 @@ static void append(char **value, const char *more, size_t n) {
 
 // a field showing a dot for each character, typed at its end only: civue's
 // fields have no way to hide what they hold.
-static bool secret_field(App *app, civue_id id, char **value) {
+static bool password_field(App *app, civue_id id, char **value) {
   civue_ui *ui = civue_ui_current();
   civue_field_look look = field_look(&app->look);
   bool submitted = false;
@@ -202,7 +202,7 @@ static void credentials(App *app) {
   }
 
   field_label(k, "Password");
-  submit = secret_field(app, password, &app->password);
+  submit = password_field(app, password, &app->password);
 
   div(mt(1), mb(5)) {
     if (link_button(k, id("login-forgot"), "Forgot your password?")) {
