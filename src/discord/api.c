@@ -5,6 +5,7 @@
 #include <stdcountof.h>
 #include <stddefer.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/utsname.h>
 
@@ -14,7 +15,8 @@
 #define API_BASE "https://discord.com/api/v9"
 #define INSTALLATION_KEY "installation_id"
 
-// Quarrel says it is the desktop client of the system it runs on. these are
+// Quarrel says it is the desktop client of the system it runs on.
+#ifdef __APPLE__
 // read from Discord.app 0.0.422 for macOS: its Info.plist, the Electron
 // framework it ships and the metadata_version of its installer.db, which
 // DiscordNative.app.getBuildNumber answers with.
@@ -23,10 +25,29 @@
 #define CHROME_VERSION "152.0.7977.169"
 #define CHROME_MAJOR "152"
 constexpr uint64_t NATIVE_BUILD_NUMBER = 98625;
-
+#define OS_NAME "Mac OS X"
+#define CH_PLATFORM "\"macOS\""
 // chromium freezes the system's version at 10.15.7 whatever it really is.
+#define UA_SYSTEM "Macintosh; Intel Mac OS X 10_15_7"
+#else
+// read from Discord 1.0.171 for linux: the version
+// discord.com/api/updates/stable?platform=linux names, the Electron its host
+// package on updates.discord.com ships, and the metadata_version that update
+// server gives an install, which DiscordNative.app.getBuildNumber answers
+// with.
+#define CLIENT_VERSION "1.0.171"
+#define ELECTRON_VERSION "44.11.4"
+#define CHROME_VERSION "152.0.7977.169"
+#define CHROME_MAJOR "152"
+constexpr uint64_t NATIVE_BUILD_NUMBER = 98981;
+#define OS_NAME "Linux"
+#define CH_PLATFORM "\"Linux\""
+// chromium says x86_64 whatever the machine is.
+#define UA_SYSTEM "X11; Linux x86_64"
+#endif
+
 #define USER_AGENT                                                 \
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "               \
+  "Mozilla/5.0 (" UA_SYSTEM ") "                                   \
   "AppleWebKit/537.36 (KHTML, like Gecko) discord/" CLIENT_VERSION \
   " Chrome/" CHROME_VERSION " Electron/" ELECTRON_VERSION " Safari/537.36"
 
@@ -190,13 +211,144 @@ const char *api_user_agent(void) {
   return USER_AGENT;
 }
 
+#ifndef __APPLE__
+static const char *env_or(const char *name, const char *otherwise) {
+  const char *value = getenv(name);
+
+  return value != nullptr ? value : otherwise;
+}
+
+static bool env_set(const char *name) {
+  const char *value = getenv(name);
+
+  return value != nullptr && value[0] != '\0';
+}
+
+// learned from the client's crash reporter: a value of os-release as a shell
+// reads it, single quoted, double quoted with its escapes, or bare. false
+// for one that does not parse.
+static bool unquote_os_release(const char *raw, char *out, size_t cap) {
+  size_t n = 0, len = strlen(raw);
+
+  while (len > 0 && isspace((unsigned char)raw[len - 1])) {
+    len--;
+  }
+
+  while (len > 0 && isspace((unsigned char)*raw)) {
+    raw++;
+    len--;
+  }
+
+  if (len > 0 && raw[0] == '\'') {
+    const char *close = memchr(raw + 1, '\'', len - 1);
+
+    if (close == nullptr) {
+      return false;
+    }
+
+    snprintf(out, cap, "%.*s", (int)(close - raw - 1), raw + 1);
+    return true;
+  }
+
+  bool quoted = len > 0 && raw[0] == '"';
+
+  for (size_t i = quoted; i < len && n + 1 < cap; i++) {
+    char c = raw[i];
+
+    if (c == '\\' && i + 1 < len && strchr("\"\\$`", raw[i + 1])) {
+      out[n++] = raw[++i];
+    }
+    else if (c == '"') {
+      out[n] = '\0';
+      return quoted;
+    }
+    else if (c == '\'' && !quoted) {
+      return false;
+    }
+    else {
+      out[n++] = c;
+    }
+  }
+
+  out[n] = '\0';
+  return !quoted;
+}
+
+// the PRETTY_NAME of the first os-release found, the last one it has. a
+// file that is there without one leaves the distro out.
+static bool pretty_name(const char *path, char *out, size_t cap, bool *found) {
+  FILE *f = fopen(path, "r");
+  char line[512];
+
+  *found = f != nullptr;
+
+  if (f == nullptr) {
+    return false;
+  }
+
+  defer fclose(f);
+
+  bool named = false;
+
+  while (fgets(line, sizeof line, f) != nullptr) {
+    const char *at = line;
+
+    while (isspace((unsigned char)*at)) {
+      at++;
+    }
+
+    if (strncmp(at, "PRETTY_NAME=", 12) == 0) {
+      named = unquote_os_release(at + 12, out, cap) && out[0] != '\0';
+    }
+  }
+
+  return named;
+}
+
+// the distro the client names, the host's one first from a sandbox.
+static const char *distro(void) {
+  static char name[128];
+  static bool looked, named;
+  static const char *const SANDBOXED[] = {
+    "/run/host/os-release",
+    "/var/lib/snapd/hostfs/etc/os-release",
+    "/var/lib/snapd/hostfs/usr/lib/os-release",
+  };
+  static const char *const OWN[] = {"/etc/os-release", "/usr/lib/os-release"};
+
+  if (looked) {
+    return named ? name : nullptr;
+  }
+
+  looked = true;
+
+  bool found = false;
+  bool flatpak = env_set("FLATPAK_ID");
+  bool snap = env_set("SNAP") || env_set("SNAP_NAME");
+
+  for (size_t i = 0; i < countof(SANDBOXED) && !found; i++) {
+    if ((i == 0 && flatpak) || (i > 0 && snap)) {
+      named = pretty_name(SANDBOXED[i], name, sizeof name, &found);
+    }
+  }
+
+  for (size_t i = 0; i < countof(OWN) && !found; i++) {
+    named = pretty_name(OWN[i], name, sizeof name, &found);
+  }
+
+  return named ? name : nullptr;
+}
+#endif
+
 // the fields the desktop client sends, in the order its bundle builds them:
 // the native ones first, the build numbers next, then what is added once
 // the app runs. the docs show os_version as the kernel's on macOS, the
 // client now sends what process.getSystemVersion says with
 // os_version_is_release, and keeps the kernel's major in os_sdk_version.
+// on linux it sends the kernel's release and what its crash reporter knows
+// of the desktop.
 void api_write_client_properties(cima_json_writer *w, bool gateway) {
-  char locale[32], os_version[32], sdk[16];
+  char locale[32], os_version[64], sdk[16];
   struct utsname sys = {};
 
   make_identity();
@@ -210,13 +362,15 @@ void api_write_client_properties(cima_json_writer *w, bool gateway) {
   const char *arch = strcmp(sys.machine, "x86_64") == 0 ? "x64" : sys.machine;
 
   json_begin_object(w);
-  json_field(w, "os", "Mac OS X");
+  json_field(w, "os", OS_NAME);
   json_field(w, "browser", "Discord Client");
   json_field(w, "release_channel", "stable");
   json_field(w, "client_version", CLIENT_VERSION);
   json_field(w, "os_version", os_version);
   json_field(w, "os_version_is_release", true);
+#ifdef __APPLE__
   json_field(w, "os_sdk_version", sdk);
+#endif
   json_field(w, "os_arch", arch);
   json_field(w, "app_arch", arch);
   json_field(w, "system_locale", locale);
@@ -224,6 +378,27 @@ void api_write_client_properties(cima_json_writer *w, bool gateway) {
   json_field(w, "client_launch_id", identity.launch_id);
   json_field(w, "browser_user_agent", USER_AGENT);
   json_field(w, "browser_version", ELECTRON_VERSION);
+
+#ifndef __APPLE__
+  char wm[128];
+  const char *runtime =
+    getenv("FLATPAK_ID") != nullptr                               ? "flatpak"
+    : getenv("SNAP") != nullptr || getenv("SNAP_NAME") != nullptr ? "snap"
+    : getenv("APPDIR") != nullptr                                 ? "appimage"
+                                                                  : "native";
+
+  snprintf(wm, sizeof wm, "%s,%s", env_or("XDG_CURRENT_DESKTOP", "unknown"),
+           env_or("GDMSESSION", "unknown"));
+  json_field(w, "window_manager", wm);
+
+  if (distro() != nullptr) {
+    json_field(w, "distro", distro());
+  }
+
+  json_field(w, "runtime_environment", runtime);
+  json_field(w, "display_server", env_or("XDG_SESSION_TYPE", "unknown"));
+#endif
+
   json_field(w, "client_build_number", DISCORD_BUILD_NUMBER);
   json_field(w, "native_build_number", NATIVE_BUILD_NUMBER);
   json_field(w, "client_event_source", nullptr);
@@ -536,7 +711,7 @@ static void send_now(Bucket *b, Request *r) {
   headers[n++] = (HttpHeader){"Referer", "https://discord.com/channels/@me"};
   headers[n++] = (HttpHeader){"Sec-CH-UA", SEC_CH_UA};
   headers[n++] = (HttpHeader){"Sec-CH-UA-Mobile", "?0"};
-  headers[n++] = (HttpHeader){"Sec-CH-UA-Platform", "\"macOS\""};
+  headers[n++] = (HttpHeader){"Sec-CH-UA-Platform", CH_PLATFORM};
   headers[n++] = (HttpHeader){"Sec-Fetch-Dest", "empty"};
   headers[n++] = (HttpHeader){"Sec-Fetch-Mode", "cors"};
   headers[n++] = (HttpHeader){"Sec-Fetch-Site", "same-origin"};
