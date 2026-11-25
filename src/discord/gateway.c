@@ -461,6 +461,9 @@ static void on_payload(Gateway *g, const char *text, size_t len) {
 
 // a message may not grow past this, whatever the stream says.
 constexpr size_t MESSAGE_MAX = 256u << 20;
+// the room kept from a message to the next. a ready takes megabytes, once
+// a connection, and what follows it a few kilobytes.
+constexpr size_t MESSAGE_KEPT = 256u << 10;
 
 // makes room for more of the message, false once it is too large.
 static bool message_room(Gateway *g) {
@@ -601,6 +604,12 @@ static void on_binary(void *ctx, const uint8_t *data, size_t len) {
     etf_to_json((const uint8_t *)g->message, g->message_len, &json, &json_len);
 
   g->message_len = 0;
+
+  if (g->message_cap > MESSAGE_KEPT) {
+    free(g->message);
+    g->message = nullptr;
+    g->message_cap = 0;
+  }
 
   if (!decoded) {
     reconnect(g, g->session_id != nullptr, g->backoff);
