@@ -358,8 +358,11 @@ void api_write_client_properties(cima_json_writer *w, bool gateway) {
   snprintf(sdk, sizeof sdk, "%.*s", (int)strcspn(sys.release, "."),
            sys.release);
 
-  // node names the architectures its own way.
-  const char *arch = strcmp(sys.machine, "x86_64") == 0 ? "x64" : sys.machine;
+  // node names the architectures its own way, linux's aarch64 being its
+  // arm64.
+  const char *arch = strcmp(sys.machine, "x86_64") == 0    ? "x64"
+                     : strcmp(sys.machine, "aarch64") == 0 ? "arm64"
+                                                           : sys.machine;
 
   json_begin_object(w);
   json_field(w, "os", OS_NAME);
