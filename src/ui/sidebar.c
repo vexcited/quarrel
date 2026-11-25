@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <stddefer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -367,6 +368,30 @@ void private_list(App *app) {
   bool searching = app->dm_search && *app->dm_search;
   Channel *first = nullptr;
   bool submitted = false;
+  // the conversations listed: all of them, or the ones a search finds.
+  Channel *const *listed = channels;
+  Channel **found = nullptr;
+
+  defer free(found);
+
+  if (searching) {
+    found = count ? malloc(count * sizeof *found) : nullptr;
+
+    for (size_t i = 0; found != nullptr && i < count; i++) {
+      if (private_matches(app, channels[i])) {
+        found[shown++] = channels[i];
+      }
+    }
+
+    listed = found;
+  }
+  else {
+    shown = count;
+  }
+
+  if (shown) {
+    first = listed[0];
+  }
 
   div(flex, items_center, gap(1), flex_shrink_0, mx(2), mb(2)) {
     civue_id id = id("new-dm");
@@ -414,17 +439,10 @@ void private_list(App *app) {
            line_height(px(16)), font_weight(semibold), text_color(k->faint));
     }
 
-    for (size_t i = 0; i < count; i++) {
-      if (!private_matches(app, channels[i])) {
-        continue;
-      }
-
-      if (!first) {
-        first = channels[i];
-      }
-
-      private_row(app, channels[i]);
-      shown++;
+    // a row is built for the conversations in view alone, however many
+    // there are. each holds the gap to the next.
+    rows((uint32_t)shown, PRIVATE_ROW + 2, i) {
+      private_row(app, listed[i]);
     }
 
     if (!shown) {
