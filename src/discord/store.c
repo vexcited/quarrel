@@ -3379,7 +3379,18 @@ void store_put_guild_settings(Store *s, const cima_json *settings) {
   }
 
   // the whole list replaces the overrides: one that is gone was removed.
-  if (json_type(overrides) == CIMA_JSON_ARRAY) {
+  // a guild knows its channels, and a ready has one of these for every
+  // guild, the ones left since included, which have no channel here.
+  if (json_type(overrides) == CIMA_JSON_ARRAY && g != nullptr) {
+    for (size_t i = 0; i < g->nchannels; i++) {
+      Channel *c = g->channels[i];
+
+      if (!channel_is_thread(c)) {
+        clear_override(c);
+      }
+    }
+  }
+  else if (json_type(overrides) == CIMA_JSON_ARRAY && guild_id == 0) {
     CILO_MAP_EACH(entry, &s->channels) {
       Channel *c = entry->val;
 
