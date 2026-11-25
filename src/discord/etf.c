@@ -158,6 +158,22 @@ static size_t utf8_sequence(const uint8_t *s, size_t left) {
   return bad ? 0 : n;
 }
 
+// whether one of eight bytes is not in a json string as it is: a control
+// character, a quote, a backslash or a byte past ascii. a borrow may mark
+// the bytes after the first such one, never a word without any.
+static bool has_special(const uint8_t *s) {
+  constexpr uint64_t ONES = 0x0101010101010101, HIGHS = 0x8080808080808080;
+  uint64_t v;
+
+  memcpy(&v, s, sizeof v);
+
+  uint64_t quote = v ^ (ONES * '"'), slash = v ^ (ONES * '\\');
+
+  return (((quote - ONES) & ~quote) | ((slash - ONES) & ~slash) |
+          ((v - ONES * 0x20) & ~v) | v) &
+         HIGHS;
+}
+
 // a json string out of any bytes: what is not utf-8 becomes U+FFFD.
 static void write_string(Buffer *out, const uint8_t *s, size_t len) {
   static const char hex[] = "0123456789abcdef";
@@ -166,6 +182,15 @@ static void write_string(Buffer *out, const uint8_t *s, size_t len) {
   buffer_byte(out, '"');
 
   for (size_t i = 0; i < len;) {
+    // plain ascii, most of what discord sends, goes eight bytes at a time.
+    while (len - i >= 8 && !has_special(s + i)) {
+      i += 8;
+    }
+
+    if (i == len) {
+      break;
+    }
+
     uint8_t c = s[i];
     size_t n = utf8_sequence(s + i, len - i);
 
