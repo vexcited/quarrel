@@ -119,6 +119,7 @@ set(QUARREL_LINUX_SOURCES
   src/platform/linux/audio.c
   src/platform/linux/camera.c
   src/platform/linux/loop.c
+  src/platform/linux/memory.c
   src/platform/linux/pipe.c
   src/platform/linux/qr.c
   src/platform/linux/storage.c
