@@ -41,6 +41,48 @@ if(PROJECT_IS_TOP_LEVEL AND APPLE
   set(CMAKE_INSTALL_PREFIX /Applications CACHE PATH "install prefix" FORCE)
 endif()
 
+# on linux quarrel is built for the machine it is built on, with every
+# instruction its processor has: civue draws on the cpu there. that is avx2
+# on x86. on arm64, where neon is every processor's, it is the atomics of
+# armv8.1 without a call, the dot products the noise suppression multiplies
+# with, and code laid out for the core. a build meant for other machines
+# turns QUARREL_NATIVE off.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  option(QUARREL_NATIVE "build for the processor of this machine"
+    ${PROJECT_IS_TOP_LEVEL})
+  option(QUARREL_LTO "optimize across quarrel and its libraries at link time"
+    ${PROJECT_IS_TOP_LEVEL})
+
+  # arm64 names its processors with -mcpu, which sets what -march would.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
+    set(QUARREL_NATIVE_FLAG -mcpu=native)
+  else()
+    set(QUARREL_NATIVE_FLAG -march=native)
+  endif()
+
+  check_c_compiler_flag(${QUARREL_NATIVE_FLAG} QUARREL_HAS_NATIVE)
+  if(QUARREL_NATIVE AND QUARREL_HAS_NATIVE AND NOT CMAKE_CROSSCOMPILING)
+    add_compile_options(${QUARREL_NATIVE_FLAG})
+  endif()
+
+  # lld links the bitcode the libraries are then made of, and folds what
+  # the linker of binutils leaves twice.
+  find_program(QUARREL_LLD ld.lld)
+  if(QUARREL_LLD AND NOT CMAKE_LINKER_TYPE)
+    set(CMAKE_LINKER_TYPE LLD)
+  endif()
+
+  if(QUARREL_LTO AND QUARREL_LLD AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT QUARREL_HAS_LTO LANGUAGES C)
+    if(QUARREL_HAS_LTO)
+      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+    endif()
+  endif()
+
+  add_compile_options(-fno-math-errno -ffunction-sections -fdata-sections)
+endif()
+
 find_program(QUARREL_CCACHE ccache)
 if(QUARREL_CCACHE)
   foreach(lang C CXX OBJC)
@@ -250,6 +292,13 @@ if(APPLE)
 else()
   include(GNUInstallDirs)
   target_link_options(quarrel PRIVATE LINKER:--gc-sections,--as-needed,-s)
+
+  # identical functions are kept once, and the addresses the loader fixes at
+  # every launch are packed: fewer pages of the binary are its own.
+  if(CMAKE_LINKER_TYPE STREQUAL "LLD")
+    target_link_options(quarrel PRIVATE
+      LINKER:--icf=safe,-O2,-z,pack-relative-relocs)
+  endif()
 
   install(TARGETS quarrel RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     COMPONENT quarrel)
