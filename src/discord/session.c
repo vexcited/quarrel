@@ -721,6 +721,7 @@ static void on_voice_state(Session *s, const cima_json *d) {
   // someone moved the account to another channel.
   if (channel_id != s->voice_channel_id) {
     s->voice_channel_id = channel_id;
+    s->voice_moves++;
     s->voice_live = false;
   }
 

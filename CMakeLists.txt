@@ -96,7 +96,7 @@ endif()
 # this one when there are. cilo comes first for the others to share it.
 include(FetchContent)
 foreach(dep cilo:ciko/cilo civue:ciko/civue cinc:ciko/cinc cima:ciko/cima
-    ciphon:ciko/cilent hcaptcha-civue:hcaptcha/civue)
+    ciphon:ciko/cilent ciren:ciko/ciren hcaptcha-civue:hcaptcha/civue)
   string(REPLACE ":" ";" dep ${dep})
   list(GET dep 0 name)
   list(GET dep 1 repo)
@@ -113,7 +113,7 @@ endforeach()
 
 set(CIVUE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CIPHON_BINDINGS OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(cilo civue cinc cima ciphon)
+FetchContent_MakeAvailable(cilo civue cinc cima ciphon ciren)
 if(NOT TARGET ciphon::curl)
   message(FATAL_ERROR "Quarrel needs libcurl ")
 endif()
@@ -121,6 +121,7 @@ endif()
 set(QUARREL_CORE_SOURCES
   src/http.c
   src/images.c
+  src/sounds.c
   src/discord/admin.c
   src/discord/api.c
   src/discord/cdn.c
@@ -207,7 +208,7 @@ endif()
 target_include_directories(quarrel_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(quarrel_core PUBLIC
-  civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl)
+  civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl ciren::ciren)
 target_compile_options(quarrel_core PRIVATE ${QUARREL_C2Y} -Wall -Wextra)
 
 find_package(PkgConfig)
@@ -237,6 +238,7 @@ add_executable(quarrel
   src/ui/app.c
   src/ui/chat.c
   src/ui/composer.c
+  src/ui/cues.c
   src/ui/forum.c
   src/ui/friends.c
   src/ui/gifs.c

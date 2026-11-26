@@ -336,6 +336,9 @@ struct Session {
   // until discord said where to connect.
   Voice *voice;
   bool voice_mute, voice_deaf;
+  // bumped each time someone else moved the account to another voice
+  // channel.
+  uint32_t voice_moves;
   // why discord did not open the call, null when it did or may still.
   char *voice_error;
   // the forum the ui shows, see session_forum_query.

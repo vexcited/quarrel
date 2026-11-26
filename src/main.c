@@ -5,6 +5,7 @@
 
 #include "http.h"
 #include "ui/components.h"
+#include "ui/cues.h"
 #include "ui/media.h"
 #include "ui/server.h"
 #include "ui/widgets.h"
@@ -183,12 +184,20 @@ static civue_color background(void *ctx) {
   return app->look.frame;
 }
 
+static void on_change(void) {
+  civue_window_wake();
+  cues_follow();
+}
+
 static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
   App *app = arg;
 
   platform_stay_responsive();
   app->images = images_new();
-  app->roster = roster_new(&(SessionOptions){.on_change = civue_window_wake});
+  app->roster = roster_new(&(SessionOptions){
+    .on_change = on_change,
+  });
+  cues_start(app);
   app->session = app->roster->current;
   roster_start(app->roster);
   app->session = app->roster->current;
