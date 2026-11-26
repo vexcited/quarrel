@@ -134,6 +134,11 @@ char *cdn_guild_splash(char out[static CDN_URL_MAX], Snowflake guild_id,
   return hashed(out, "splashes", guild_id, hash, size);
 }
 
+char *cdn_discovery_splash(char out[static CDN_URL_MAX], Snowflake guild_id,
+                           const char *hash, uint32_t size) {
+  return hashed(out, "discovery-splashes", guild_id, hash, size);
+}
+
 char *cdn_role_icon(char out[static CDN_URL_MAX], Snowflake role_id,
                     const char *hash, uint32_t size) {
   if (!hash_ok(hash)) {

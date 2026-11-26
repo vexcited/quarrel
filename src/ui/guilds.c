@@ -525,7 +525,7 @@ void guild_switcher(App *app, civue_rect anchor) {
   }
   else if (explore) {
     app->popover = POPOVER_NONE;
-    civue_open_url("https://discord.com/servers");
+    explore_open(app);
   }
   else if (create) {
     app->popover = POPOVER_NEW_GUILD;

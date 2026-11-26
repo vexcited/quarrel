@@ -64,6 +64,7 @@ typedef enum : uint8_t {
   POPOVER_POST_MENU,
   POPOVER_PROFILE,
   POPOVER_DIRECTORY_MENU,
+  POPOVER_EXPLORE_LANGUAGE,
   POPOVER_COMPONENT_SELECT,
 } Popover;
 
@@ -331,6 +332,17 @@ typedef struct {
   civue_rect directory_anchor;
   // a guild joined from a directory, opened once it arrives.
   Snowflake directory_join;
+
+  // the servers anyone may find show in place of the friends: the tab, a
+  // DiscoveryTab or the hubs after them, what the search field holds, and
+  // the button its languages open under.
+  bool exploring;
+  uint8_t explore_tab;
+  char *explore_field;
+  civue_rect explore_anchor;
+  // what the page lists, an ExploreMode, and what its applications keep,
+  // see apps.c.
+  uint8_t explore_mode;
 
   // the hub's dialog, the directory it is about, and the guild it adds,
   // edits or removes, or the hub it leaves.

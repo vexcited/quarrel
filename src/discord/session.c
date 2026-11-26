@@ -1860,6 +1860,8 @@ static void session_free(Session *s) {
   api_free(s->api);
   // after the api, whose answers it would wait for.
   gifs_free(s->gifs);
+  discovery_free(s->discovery);
+  free(s->previews);
   admin_free(s->admin);
   commands_free(s->commands);
   platform_timer_cancel(s->typing_timer);
@@ -5712,6 +5714,9 @@ static void clear_directories(Session *s) {
   free(s->hub.error);
   s->hub = (SessionHubJoin){};
   s->leaving_guild = 0;
+  s->npreviews = 0;
+  s->preview_opening = 0;
+  s->preview_joining = 0;
   s->directory_checking = false;
   str_set(&s->directory_join_error, nullptr);
   str_set(&s->directory_error, nullptr);
@@ -6437,6 +6442,18 @@ void session_hub_waitlist(Session *s, const char *school) {
 /* membership.                                                                */
 /* ========================================================================== */
 
+// forgets a guild was only looked at. true when it was.
+static bool preview_drop(Session *s, Snowflake guild_id) {
+  for (size_t i = 0; i < s->npreviews; i++) {
+    if (s->previews[i] == guild_id) {
+      s->previews[i] = s->previews[--s->npreviews];
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static void on_left(void *ctx, [[maybe_unused]] const ApiResponse *res) {
   Call *call = ctx;
 
@@ -6473,6 +6490,7 @@ void session_leave_guild(Session *s, Snowflake guild_id) {
   }
 
   char path[64];
+  bool lurking = preview_drop(s, guild_id);
 
   snprintf(path, sizeof path, "/users/@me/guilds/%" PRIu64, guild_id);
 
@@ -6481,9 +6499,247 @@ void session_leave_guild(Session *s, Snowflake guild_id) {
               &(ApiRequest){.method = "DELETE",
                             .path = path,
                             .route = "/users/@me/guilds/:id",
-                            .body = "{\"lurking\":false}"},
+                            .body = lurking ? "{\"lurking\":true}"
+                                            : "{\"lurking\":false}"},
               on_left, call_new(s, 0, guild_id));
   changed(s);
+}
+
+/* ========================================================================== */
+/* discovery, and the guilds looked at without being joined.                  */
+/* ========================================================================== */
+
+// discord's codes for what refuses a preview or a join.
+constexpr uint32_t USER_BANNED = 40007;
+constexpr uint32_t INVITES_DISABLED = 40069;
+constexpr uint32_t TOO_MANY_USER_GUILDS = 30001;
+constexpr uint32_t GUILD_AT_CAPACITY = 30019;
+
+Discovery *session_discovery(Session *s) {
+  if (s->api == nullptr) {
+    s->api = api_new();
+  }
+
+  if (s->discovery == nullptr) {
+    s->discovery = discovery_new(s->api, s->options.on_change, !online(s));
+  }
+
+  return s->discovery;
+}
+
+bool session_previewing(const Session *s, Snowflake guild_id) {
+  for (size_t i = 0; i < s->npreviews; i++) {
+    if (s->previews[i] == guild_id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// the client's words for the refusals it knows, discord's for the others.
+static const char *refusal(const ApiResponse *res) {
+  switch (res->error.code) {
+    case USER_BANNED:
+      return "Uh-oh. Looks like you've been banned.";
+    case INVITES_DISABLED:
+      return "Invites to this server are currently paused.";
+    case TOO_MANY_USER_GUILDS:
+      return "You are at the server limit. You must leave a server first "
+             "to join.";
+    case GUILD_AT_CAPACITY:
+      return "This server is currently full. Please try again later.";
+    default:
+      return res->error.message;
+  }
+}
+
+static void on_preview(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake guild_id = call->id;
+
+  call_end(call);
+
+  // the guild itself comes through the gateway's GUILD_CREATE.
+  if (res->ok) {
+    return;
+  }
+
+  preview_drop(s, guild_id);
+
+  if (s->preview_opening == guild_id) {
+    s->preview_opening = 0;
+  }
+
+  notify(s, refusal(res), true);
+  changed(s);
+}
+
+void session_preview_guild(Session *s, Snowflake guild_id, PreviewFrom from) {
+  if (guild_id == 0 || s->preview_opening == guild_id ||
+      store_guild(s->store, guild_id) != nullptr) {
+    return;
+  }
+
+  const char *session_id =
+    s->gateway != nullptr ? gateway_session_id(s->gateway) : nullptr;
+
+  if (!online(s) || session_id == nullptr) {
+    notify(s, "Previewing a server needs a connection.", true);
+    changed(s);
+    return;
+  }
+
+  char path[256];
+
+  // the client's query, in its order, the page named as it names it. only
+  // its discovery tells which visit of the page the server was opened in.
+  if (from == PREVIEW_FROM_APPS) {
+    snprintf(path, sizeof path,
+             "/guilds/%" PRIu64 "/members/@me?lurker=true&session_id=%s"
+             "&location=Application%%20Directory",
+             guild_id, session_id);
+  }
+  else {
+    snprintf(path, sizeof path,
+             "/guilds/%" PRIu64 "/members/@me?lurker=true&session_id=%s"
+             "&recommendation_load_id=%s&location=Guild%%20Discovery",
+             guild_id, session_id, session_discovery(s)->load_id);
+  }
+
+  if (!session_previewing(s, guild_id)) {
+    s->previews =
+      realloc(s->previews, (s->npreviews + 1) * sizeof *s->previews);
+
+    if (s->previews == nullptr) {
+      cilo_oom((s->npreviews + 1) * sizeof *s->previews);
+    }
+
+    s->previews[s->npreviews++] = guild_id;
+  }
+
+  s->preview_opening = guild_id;
+  api_request(s->api,
+              &(ApiRequest){.method = "PUT",
+                            .path = path,
+                            .route = "/guilds/:id/members/@me",
+                            .body = "{}",
+                            .context = "{}"},
+              on_preview, call_new(s, 0, guild_id));
+  changed(s);
+}
+
+static void on_preview_joined(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake guild_id = call->id;
+  Guild *g = store_guild(s->store, guild_id);
+
+  call_end(call);
+
+  if (s->preview_joining == guild_id) {
+    s->preview_joining = 0;
+  }
+
+  if (!res->ok) {
+    notify(s, refusal(res), true);
+    changed(s);
+    return;
+  }
+
+  preview_drop(s, guild_id);
+
+  // the gateway tells it again, with the member the user now is.
+  if (g != nullptr && g->joined_at == 0) {
+    g->joined_at = (int64_t)(platform_now() * 1000);
+  }
+
+  changed(s);
+}
+
+void session_join_preview(Session *s, Snowflake guild_id) {
+  if (!session_previewing(s, guild_id) || s->preview_joining != 0 ||
+      !online(s)) {
+    return;
+  }
+
+  char path[96];
+
+  snprintf(path, sizeof path, "/guilds/%" PRIu64 "/members/@me?lurker=false",
+           guild_id);
+
+  s->preview_joining = guild_id;
+  api_request(s->api,
+              &(ApiRequest){.method = "PUT",
+                            .path = path,
+                            .route = "/guilds/:id/members/@me",
+                            .body = "{}",
+                            .context =
+                              "{\"source\":\"Notice - Lurker Mode\"}"},
+              on_preview_joined, call_new(s, 0, guild_id));
+  changed(s);
+}
+
+static void on_preview_left(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  const Guild *g = store_guild(s->store, call->id);
+
+  call_end(call);
+
+  // the gateway's GUILD_DELETE takes it away, this does when none came.
+  if (res->ok && g != nullptr && g->joined_at == 0 &&
+      !session_previewing(s, g->id)) {
+    store_remove_guild(s->store, g->id);
+    changed(s);
+  }
+}
+
+void session_end_previews(Session *s, Snowflake keep) {
+  if (s->preview_opening != 0 &&
+      store_guild(s->store, s->preview_opening) != nullptr) {
+    s->preview_opening = 0;
+  }
+
+  for (size_t i = s->npreviews; i-- > 0;) {
+    Snowflake id = s->previews[i];
+
+    if (id == keep || id == s->preview_opening || id == s->preview_joining) {
+      continue;
+    }
+
+    s->previews[i] = s->previews[--s->npreviews];
+
+    if (!online(s)) {
+      continue;
+    }
+
+    char path[64];
+
+    snprintf(path, sizeof path, "/users/@me/guilds/%" PRIu64, id);
+    api_request(s->api,
+                &(ApiRequest){.method = "DELETE",
+                              .path = path,
+                              .route = "/users/@me/guilds/:id",
+                              .body = "{\"lurking\":true}"},
+                on_preview_left, call_new(s, 0, id));
+  }
 }
 
 void session_set_nick(Session *s, Snowflake guild_id, const char *nick) {

@@ -8,6 +8,7 @@
 #include "ui/complete.h"
 #include "ui/components.h"
 #include "ui/cues.h"
+#include "ui/explore.h"
 #include "ui/media.h"
 #include "ui/server.h"
 #include "ui/widgets.h"
@@ -94,9 +95,11 @@ static void shell(App *app) {
       line_height(px(22))) {
     sidebar(app);
 
-    div(flex, flex_1, min_w(0), h(full), py(2), pr(2)) {
-      div(flex, flex_1, min_w(0), h(full), rounded(xl), bg(k->chat), border(1),
-          border_color(k->frame_border), overflow_hidden) {
+    div(flex, flex_col, flex_1, min_w(0), h(full), py(2), pr(2)) {
+      preview_bar(app);
+
+      div(flex, flex_1, min_w(0), min_h(0), rounded(xl), bg(k->chat),
+          border(1), border_color(k->frame_border), overflow_hidden) {
         if (channel && channel_is_forum(channel)) {
           forum_page(app, channel);
         }
@@ -105,6 +108,9 @@ static void shell(App *app) {
         }
         else if (channel) {
           chat(app, channel);
+        }
+        else if (app->exploring) {
+          explore_page(app);
         }
         else {
           friends_page(app);
@@ -154,6 +160,7 @@ static void frame(void *ctx, civue_ui *ui) {
     case SESSION_READY:
     case SESSION_RECONNECTING:
       open_asked(app);
+      explore_frame(app);
       shell(app);
       profile_popout(app);
       profile_modal(app);
@@ -285,6 +292,7 @@ int main() {
   free(app.post_tags.v);
   free(app.directory_field);
   free(app.directory_query);
+  free(app.explore_field);
   free(app.new_server_name);
   free(app.entry_description);
   free(app.hub_email);

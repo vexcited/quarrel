@@ -1,5 +1,6 @@
 #include "app.h"
 #include "complete.h"
+#include "explore.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -152,6 +153,7 @@ void app_reset(App *app) {
 
   drop(&app->directory_field);
   drop(&app->directory_query);
+  drop(&app->explore_field);
   drop(&app->new_server_name);
   drop(&app->entry_description);
   drop(&app->hub_email);
@@ -162,6 +164,9 @@ void app_reset(App *app) {
 
   app->directory_tab = -1;
   app->directory_join = 0;
+  app->exploring = false;
+  app->explore_tab = 0;
+  app->explore_mode = 0;
   app->hub_dialog = HUB_DIALOG_NONE;
   app->nick_guild = 0;
 
@@ -201,6 +206,7 @@ void app_select_channel(App *app, Snowflake channel_id) {
   }
 
   leave_composer(app);
+  app->exploring = false;
 
   // a directory opens on its home, its search forgotten.
   if (channel_id != app->session->selected_channel_id) {

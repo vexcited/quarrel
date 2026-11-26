@@ -544,13 +544,19 @@ void composer(App *app, Channel *c) {
   civue_ui *ui = civue_ui_current();
   bool allowed =
     store_can(app->session->store, c, PERM_SEND_MESSAGES) || !c->guild_id;
+  // a guild only looked at takes no message.
+  bool preview = session_previewing(app->session, c->guild_id);
 
   // the foot of the chat, as flush with it as its header.
   div(relative, flex, flex_col, flex_shrink_0, bg(k->input), border_t(1),
       border_color(k->border)) {
     typing_tab(app, c);
 
-    if (!allowed) {
+    if (preview) {
+      closed_row(k, CIVUE_ICON(lucide, eye),
+                 "You are in preview mode. Join this server to talk.");
+    }
+    else if (!allowed) {
       closed_row(
         k, CIVUE_ICON(lucide, lock),
         "You do not have permission to send messages in this channel.");
@@ -560,7 +566,7 @@ void composer(App *app, Channel *c) {
     }
   }
 
-  if (!allowed) {
+  if (preview || !allowed) {
     return;
   }
 

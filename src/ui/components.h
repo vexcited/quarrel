@@ -241,6 +241,21 @@ void directory_page(App *app, Channel *channel);
 void hub_dialogs(App *app);
 // asks for the email that joins a school's hub.
 void hub_join_open(App *app);
+// the blue that fades from the left of discord's discovery banners, over
+// `r`.
+void discovery_gradient(const Look *k, civue_rect r);
+
+// the servers anyone may find, in place of the friends while the app is
+// `exploring`.
+void explore_page(App *app);
+// shows them.
+void explore_open(App *app);
+// opens the server asked for from the page once it came, and stops looking
+// at the ones left. for every frame of a ready session.
+void explore_frame(App *app);
+// what says the open guild is only looked at, with the way to join it.
+// nothing for a guild the user is in.
+void preview_bar(App *app);
 // asks for the name the user goes by in a hub.
 void hub_nick_open(App *app, Snowflake guild_id);
 // asks before leaving a hub.

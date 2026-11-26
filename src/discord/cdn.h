@@ -45,6 +45,9 @@ char *cdn_banner(char out[static CDN_URL_MAX], Snowflake owner_id,
                  const char *hash, uint32_t size);
 char *cdn_guild_splash(char out[static CDN_URL_MAX], Snowflake guild_id,
                        const char *hash, uint32_t size);
+// the picture of a guild's card in discord's discovery.
+char *cdn_discovery_splash(char out[static CDN_URL_MAX], Snowflake guild_id,
+                           const char *hash, uint32_t size);
 char *cdn_role_icon(char out[static CDN_URL_MAX], Snowflake role_id,
                     const char *hash, uint32_t size);
 // a custom emoji as webp, its first frame when animated.

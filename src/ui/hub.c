@@ -245,7 +245,7 @@ static void dashed(civue_rect r, civue_color color, float width) {
 // discord's banner: a radial gradient from blue at its left to clear,
 // over black, the whole at .7 over the page. its ellipse is far taller
 // than the banner, so it changes from left to right only.
-static void banner_paint(const Look *k, civue_rect r) {
+void discovery_gradient(const Look *k, civue_rect r) {
   constexpr int STRIPS = 96;
   civue_color stops[3] = {
     rgb(0x2f72c1),
@@ -869,7 +869,7 @@ static void banner(App *app, const Channel *dir) {
 
   div(key(id("directory-banner")), relative, flex, justify_center,
       flex_shrink_0, min_h(px(200)), rounded(lg), overflow_hidden) {
-    banner_paint(k, here());
+    discovery_gradient(k, here());
 
     div(flex, flex_col, items_center, flex_1, max_w(px(700)), py(8),
         mx(px(narrow ? 36 : 60))) {

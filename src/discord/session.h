@@ -1,6 +1,7 @@
 #ifndef QUARREL_DISCORD_SESSION_H
 #define QUARREL_DISCORD_SESSION_H
 
+#include "discord/discovery.h"
 #include "discord/gifs.h"
 #include "discord/settings_proto.h"
 #include "discord/store.h"
@@ -446,6 +447,14 @@ struct Session {
   SessionHubJoin hub;
   // the guild session_leave_guild is leaving.
   Snowflake leaving_guild;
+  // the servers anyone may find, see session_discovery. null until used.
+  Discovery *discovery;
+  // the guilds looked at without being joined, see session_preview_guild.
+  Snowflake *previews;
+  size_t npreviews;
+  // the one asked for whose guild has yet to come, and the one being
+  // joined, 0 for none.
+  Snowflake preview_opening, preview_joining;
   // what managing a guild needs, see discord/admin.h. null until used.
   struct Admin *admin;
   // the slash commands and what running them waits for, see
@@ -809,6 +818,25 @@ void session_hub_reset(Session *s);
 
 // leaves a guild the user does not own. see `leaving_guild`.
 void session_leave_guild(Session *s, Snowflake guild_id);
+
+// the servers anyone may find, made as they are first asked for.
+Discovery *session_discovery(Session *s);
+
+// the page of the client a guild is previewed from.
+typedef enum : uint8_t {
+  PREVIEW_FROM_DISCOVERY,
+  PREVIEW_FROM_APPS,
+} PreviewFrom;
+
+// looks at a discoverable guild without joining it, as the client's lurker
+// does. the guild comes through the gateway, see `preview_opening`, and a
+// refusal is told by `notice`.
+void session_preview_guild(Session *s, Snowflake guild_id, PreviewFrom from);
+[[gnu::pure]] bool session_previewing(const Session *s, Snowflake guild_id);
+// joins a guild being previewed. see `preview_joining`.
+void session_join_preview(Session *s, Snowflake guild_id);
+// stops looking at every guild previewed but `keep` and the one on its way.
+void session_end_previews(Session *s, Snowflake keep);
 // the user's nickname in a guild, null or empty for none.
 void session_set_nick(Session *s, Snowflake guild_id, const char *nick);
 

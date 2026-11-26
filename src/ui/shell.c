@@ -264,7 +264,7 @@ static size_t friends_online(const Store *store) {
 
 static void friends_button(App *app) {
   const Look *k = &app->look;
-  bool selected = !app->session->selected_channel_id;
+  bool selected = !app->session->selected_channel_id && !app->exploring;
   civue_id id = id("friends");
   char label[40];
 
