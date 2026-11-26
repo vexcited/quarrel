@@ -716,6 +716,8 @@ constexpr uint32_t MESSAGE_FLAG_EPHEMERAL = 1u << 6;
 constexpr uint32_t MESSAGE_FLAG_LOADING = 1u << 7;
 constexpr uint32_t MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS = 1u << 12;
 constexpr uint32_t MESSAGE_FLAG_VOICE_MESSAGE = 1u << 13;
+// laid out with its components alone, without words or embeds.
+constexpr uint32_t MESSAGE_FLAG_COMPONENTS_V2 = 1u << 15;
 
 typedef struct {
   Snowflake id;
@@ -782,6 +784,98 @@ typedef struct {
   uint8_t format;
 } Sticker;
 
+// what an application builds its message with, numbered as discord's.
+typedef enum : uint8_t {
+  // buttons side by side, or one menu.
+  COMPONENT_ACTION_ROW = 1,
+  COMPONENT_BUTTON = 2,
+  COMPONENT_STRING_SELECT = 3,
+  COMPONENT_USER_SELECT = 5,
+  COMPONENT_ROLE_SELECT = 6,
+  COMPONENT_MENTIONABLE_SELECT = 7,
+  COMPONENT_CHANNEL_SELECT = 8,
+  // texts with a thumbnail or a button on their right.
+  COMPONENT_SECTION = 9,
+  COMPONENT_TEXT_DISPLAY = 10,
+  COMPONENT_THUMBNAIL = 11,
+  COMPONENT_MEDIA_GALLERY = 12,
+  COMPONENT_FILE = 13,
+  COMPONENT_SEPARATOR = 14,
+  // a card around other components.
+  COMPONENT_CONTAINER = 17,
+} ComponentType;
+
+typedef enum : uint8_t {
+  BUTTON_STYLE_PRIMARY = 1,
+  BUTTON_STYLE_SECONDARY = 2,
+  BUTTON_STYLE_SUCCESS = 3,
+  BUTTON_STYLE_DANGER = 4,
+  // opens `url` rather than telling the application.
+  BUTTON_STYLE_LINK = 5,
+  BUTTON_STYLE_PREMIUM = 6,
+} ButtonStyle;
+
+typedef struct {
+  EmbedMedia media;
+  char *description, *content_type;
+  bool spoiler;
+} ComponentMedia;
+
+// one of the values a string menu offers.
+typedef struct {
+  char *label, *value, *description;
+  // as a Reaction's, a null `emoji_name` for none.
+  Snowflake emoji_id;
+  char *emoji_name;
+  bool emoji_animated;
+  // picked before the user touched the menu.
+  bool chosen;
+} ComponentOption;
+
+typedef struct Component Component;
+
+struct Component {
+  // a ComponentType, or a number this build does not know.
+  uint8_t type;
+  // what a row, a section or a container holds.
+  Component *children;
+  size_t nchildren;
+  // what stands right of a section, a button or a thumbnail. null for none.
+  Component *accessory;
+  // the markdown of a text, the label of a button, the placeholder of a
+  // menu, the name of a file.
+  char *text;
+
+  // a button or a menu: what the application knows it by, and where a
+  // link button leads.
+  char *custom_id, *url;
+  // a ButtonStyle.
+  uint8_t style;
+  bool disabled;
+  // a button's, as a Reaction's, a null `emoji_name` for none.
+  Snowflake emoji_id;
+  char *emoji_name;
+  bool emoji_animated;
+  ComponentOption *options;
+  size_t noptions;
+  // how many values a menu takes.
+  uint32_t min_values, max_values;
+
+  // the picture of a thumbnail, the ones of a gallery, a file.
+  ComponentMedia *media;
+  size_t nmedia;
+  // a file's, in bytes.
+  uint64_t size;
+
+  // a container or a thumbnail hidden until pressed.
+  bool spoiler;
+  // a separator: whether it draws a line, and whether it is the tall one.
+  bool divider, large;
+  // the edge of a container, 0xrrggbb when `has_color`.
+  uint32_t color;
+  bool has_color;
+};
+
 struct Message {
   Snowflake id, channel_id;
   // look the author up with store_user, or use store_author.
@@ -813,6 +907,10 @@ struct Message {
   size_t nreactions;
   Sticker *stickers;
   size_t nstickers;
+  Component *components;
+  size_t ncomponents;
+  // the application the components answer to, 0 for the author's own.
+  Snowflake application_id;
 
   // what the message answers or forwards, 0 for none.
   Snowflake reference_id, reference_channel_id;
@@ -841,6 +939,9 @@ size_t message_sticker_ids(const Message *m,
 // the `sticker_items` of a message as discord sends them, into the object
 // being written. nothing for a message without stickers.
 void message_write_stickers(cima_json_writer *w, const Message *m);
+
+// the first words a message's components show, null when they show none.
+[[gnu::pure]] const char *message_component_text(const Message *m);
 
 static inline bool message_is_system(const Message *m) {
   return m->type != MESSAGE_DEFAULT && m->type != MESSAGE_REPLY &&

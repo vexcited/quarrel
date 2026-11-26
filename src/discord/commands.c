@@ -2270,6 +2270,126 @@ void commands_run(Session *s, Snowflake channel_id, const Slash *slash,
 }
 
 /* ========================================================================== */
+/* components.                                                                */
+/* ========================================================================== */
+
+bool commands_component_busy(const Session *s, Snowflake message_id,
+                             const char *custom_id) {
+  const struct Commands *cs = s->commands;
+
+  for (const Waiting *w = cs != nullptr ? cs->waiting : nullptr; w != nullptr;
+       w = w->next) {
+    if (w->message_id == message_id && w->custom_id != nullptr &&
+        custom_id != nullptr && strcmp(w->custom_id, custom_id) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static void on_component(void *ctx, const ApiResponse *res) {
+  Ask *ask = ctx;
+  Session *s = ask->s;
+  Snowflake nonce = ask->nonce;
+
+  // the answer comes through the gateway: only a refusal ends it here.
+  if (!ask_end(ask) || res->ok) {
+    return;
+  }
+
+  fail(s, nonce, res->status != 0 ? res->error.message : nullptr);
+}
+
+void commands_component(Session *s, const Message *m, const Component *c,
+                        const char *const *values, size_t count) {
+  Channel *channel = store_channel(s->store, m->channel_id);
+  const char *session_id =
+    s->gateway != nullptr ? gateway_session_id(s->gateway) : nullptr;
+
+  if (channel == nullptr || c->custom_id == nullptr || m->id == 0 ||
+      commands_component_busy(s, m->id, c->custom_id)) {
+    return;
+  }
+
+  if (!online(s) || session_id == nullptr) {
+    notify(s, "Not connected.", true);
+    changed(s);
+    return;
+  }
+
+  struct Commands *cs = commands_of(s);
+  Snowflake nonce = new_nonce(s);
+  // a webhook's message names its application, a bot is its own.
+  Snowflake application_id =
+    m->application_id != 0 ? m->application_id : m->author_id;
+  Waiting *waiting = xcalloc(1, sizeof *waiting);
+
+  *waiting = (Waiting){
+    .next = cs->waiting,
+    .s = s,
+    .nonce = nonce,
+    .channel_id = channel->id,
+    .guild_id = channel->guild_id,
+    .application_id = application_id,
+    .message_id = m->id,
+    .custom_id = str_dup(c->custom_id),
+  };
+  waiting->timer = platform_timer(INTERACTION_PATIENCE, on_patience, waiting);
+  cs->waiting = waiting;
+
+  // in the order discord's client writes it.
+  cima_json_writer w = {};
+  Ask *ask = ask_new(s, ASK_RUN);
+
+  ask->nonce = nonce;
+  ask->guild_id = channel->guild_id;
+  ask->channel_id = channel->id;
+
+  json_begin_object(&w);
+  json_field(&w, "type", (int64_t)3);
+  json_key(&w, "nonce"), snowflake_write(&w, nonce);
+
+  if (channel->guild_id != 0) {
+    json_key(&w, "guild_id"), snowflake_write(&w, channel->guild_id);
+  }
+
+  json_key(&w, "channel_id"), snowflake_write(&w, channel->id);
+  json_field(&w, "message_flags", (int64_t)m->flags);
+  json_key(&w, "message_id"), snowflake_write(&w, m->id);
+  json_key(&w, "application_id"), snowflake_write(&w, application_id);
+  json_field(&w, "session_id", session_id);
+  json_key(&w, "data");
+  json_begin_object(&w);
+  json_field(&w, "component_type", (int64_t)c->type);
+  json_field(&w, "custom_id", c->custom_id);
+
+  if (c->type != COMPONENT_BUTTON) {
+    json_field(&w, "type", (int64_t)c->type);
+    json_key(&w, "values");
+    json_begin_array(&w);
+
+    for (size_t i = 0; i < count; i++) {
+      cima_json_write_string(&w, values[i]);
+    }
+
+    json_end_array(&w);
+  }
+
+  json_end_object(&w);
+  json_end_object(&w);
+
+  api_request(s->api,
+              &(ApiRequest){.method = "POST",
+                            .path = "/interactions",
+                            .body = cima_json_writer_text(&w)},
+              on_component, ask);
+  cima_json_writer_dispose(&w);
+  store_touch_channel(s->store, channel);
+  changed(s);
+}
+
+/* ========================================================================== */
 /* what an application completes an option with.                              */
 /* ========================================================================== */
 

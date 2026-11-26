@@ -172,6 +172,17 @@ void commands_suggest(Session *s, Snowflake channel_id, const Slash *slash,
 const CommandChoice *commands_suggestions(const Session *s, size_t *count,
                                           bool *loading, bool *failed);
 
+// presses a button of a message, or gives a menu the `values` picked in it.
+// its application answers through the gateway, by changing the message, by
+// another one or by nothing, and a failure is told through
+// `session->notice`. nothing for a link button, which the ui opens.
+void commands_component(Session *s, const Message *m, const Component *c,
+                        const char *const *values, size_t count);
+// the component was pressed and its application has not answered yet.
+[[gnu::pure]] bool commands_component_busy(const Session *s,
+                                           Snowflake message_id,
+                                           const char *custom_id);
+
 /* ========================================================================== */
 /* for session.c.                                                             */
 /* ========================================================================== */

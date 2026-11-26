@@ -241,6 +241,7 @@ add_executable(quarrel
   src/ui/forms.c
   src/ui/inbox.c
   src/ui/messagemenu.c
+  src/ui/messagecomponents.c
   src/ui/newdm.c
   src/ui/app.c
   src/ui/chat.c

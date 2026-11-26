@@ -203,6 +203,16 @@ void message_popover(App *app, Popover popover, const Message *m,
 // what is open for a message of the channel: POPOVER_MESSAGE_MENU,
 // POPOVER_REACT or POPOVER_FORWARD.
 void message_popovers(App *app, Channel *c);
+// what an application built the message with, its cards, texts, pictures,
+// buttons and menus, under the open node in `room` points. `id` is what
+// their keys hang from. nothing for a message without any.
+void message_components(App *app, const Message *m, Snowflake guild_id,
+                        civue_id id, float room);
+// the options of the menu pressed in a message of the channel, while the
+// app shows POPOVER_COMPONENT_SELECT.
+void component_select(App *app, Channel *channel);
+// a file as a card: its name, which opens it, and its size.
+void file_card(App *app, civue_id id, const Attachment *a);
 // puts the message's text in the composer to be edited.
 void app_edit_message(App *app, const Message *m);
 void member_list(App *app, Channel *channel);

@@ -1194,6 +1194,48 @@ static void free_stickers(Message *m) {
   m->nstickers = 0;
 }
 
+static void free_component(Component *c) {
+  for (size_t i = 0; i < c->nchildren; i++) {
+    free_component(&c->children[i]);
+  }
+
+  if (c->accessory != nullptr) {
+    free_component(c->accessory);
+  }
+
+  for (size_t i = 0; i < c->noptions; i++) {
+    free(c->options[i].label);
+    free(c->options[i].value);
+    free(c->options[i].description);
+    free(c->options[i].emoji_name);
+  }
+
+  for (size_t i = 0; i < c->nmedia; i++) {
+    free_media(&c->media[i].media);
+    free(c->media[i].description);
+    free(c->media[i].content_type);
+  }
+
+  free(c->children);
+  free(c->accessory);
+  free(c->options);
+  free(c->media);
+  free(c->text);
+  free(c->custom_id);
+  free(c->url);
+  free(c->emoji_name);
+}
+
+static void free_components(Message *m) {
+  for (size_t i = 0; i < m->ncomponents; i++) {
+    free_component(&m->components[i]);
+  }
+
+  free(m->components);
+  m->components = nullptr;
+  m->ncomponents = 0;
+}
+
 static void free_message(Message *m) {
   if (m == nullptr) {
     return;
@@ -1203,6 +1245,7 @@ static void free_message(Message *m) {
   free_embeds(m);
   free_reactions(m);
   free_stickers(m);
+  free_components(m);
   free_message(m->referenced);
   free(m->content);
   free(m->mentions);
@@ -1395,6 +1438,148 @@ static void fill_stickers(Message *m, const cima_json *stickers) {
   }
 }
 
+// discord nests a button in a row in a container, and no deeper.
+constexpr int COMPONENT_DEPTH = 4;
+
+static void fill_component_media(ComponentMedia *media, const cima_json *item,
+                                 const cima_json *file) {
+  fill_media(&media->media, file);
+  media->content_type = str_dup(json_get_or(file, "content_type", nullptr));
+  media->description = str_dup(json_get_or(item, "description", nullptr));
+  media->spoiler = json_get_coerce(item, "spoiler", false);
+}
+
+static void fill_component(Component *c, const cima_json *json, int depth);
+
+static Component *component_array(const cima_json *items, size_t *count,
+                                  int depth) {
+  size_t n = json_type(items) == CIMA_JSON_ARRAY ? json_len(items) : 0;
+
+  *count = 0;
+
+  if (n == 0 || depth >= COMPONENT_DEPTH) {
+    return nullptr;
+  }
+
+  Component *out = xcalloc(n, sizeof *out);
+
+  CIMA_EACH(item, json_items(items)) {
+    fill_component(&out[(*count)++], item, depth);
+  }
+
+  return out;
+}
+
+static void fill_component(Component *c, const cima_json *json, int depth) {
+  const cima_json *emoji = json_get(json, "emoji");
+  const cima_json *accessory = json_get(json, "accessory");
+  const cima_json *color = json_get(json, "accent_color");
+  const cima_json *options = json_get(json, "options");
+  const cima_json *items = json_get(json, "items");
+
+  c->type = (uint8_t)json_get_coerce(json, "type", (uint64_t)0);
+  c->children =
+    component_array(json_get(json, "components"), &c->nchildren, depth + 1);
+
+  if (json_type(accessory) == CIMA_JSON_OBJECT && depth + 1 < COMPONENT_DEPTH) {
+    c->accessory = xcalloc(1, sizeof *c->accessory);
+    fill_component(c->accessory, accessory, depth + 1);
+  }
+
+  const char *text = c->type == COMPONENT_TEXT_DISPLAY ? "content"
+                     : c->type == COMPONENT_BUTTON     ? "label"
+                     : c->type == COMPONENT_FILE       ? "name"
+                                                       : "placeholder";
+
+  c->text = str_dup(json_get_or(json, text, nullptr));
+  c->custom_id = str_dup(json_get_or(json, "custom_id", nullptr));
+  c->url = str_dup(json_get_or(json, "url", nullptr));
+  c->style = (uint8_t)json_get_coerce(json, "style", (uint64_t)0);
+  c->disabled = json_get_coerce(json, "disabled", false);
+  c->emoji_id = snowflake_of(json_get(emoji, "id"));
+  c->emoji_name = str_dup(json_get_or(emoji, "name", nullptr));
+  c->emoji_animated = json_get_coerce(emoji, "animated", false);
+  c->min_values = (uint32_t)json_get_coerce(json, "min_values", (uint64_t)1);
+  c->max_values = (uint32_t)json_get_coerce(json, "max_values", (uint64_t)1);
+  c->size = json_get_coerce(json, "size", (uint64_t)0);
+  c->spoiler = json_get_coerce(json, "spoiler", false);
+  c->divider = json_get_coerce(json, "divider", true);
+  c->large = json_get_coerce(json, "spacing", (uint64_t)1) == 2;
+  c->has_color = cima_json_is_number(color);
+  c->color = (uint32_t)snowflake_of(color) & 0xffffff;
+
+  if (json_type(options) == CIMA_JSON_ARRAY && json_len(options) != 0) {
+    c->options = xcalloc(json_len(options), sizeof *c->options);
+
+    CIMA_EACH(item, json_items(options)) {
+      ComponentOption *o = &c->options[c->noptions++];
+      const cima_json *picture = json_get(item, "emoji");
+
+      o->label = str_dup(json_get_or(item, "label", nullptr));
+      o->value = str_dup(json_get_or(item, "value", nullptr));
+      o->description = str_dup(json_get_or(item, "description", nullptr));
+      o->emoji_id = snowflake_of(json_get(picture, "id"));
+      o->emoji_name = str_dup(json_get_or(picture, "name", nullptr));
+      o->emoji_animated = json_get_coerce(picture, "animated", false);
+      o->chosen = json_get_coerce(item, "default", false);
+    }
+  }
+
+  // a gallery lists its pictures, a thumbnail and a file have one.
+  if (json_type(items) == CIMA_JSON_ARRAY && json_len(items) != 0) {
+    c->media = xcalloc(json_len(items), sizeof *c->media);
+
+    CIMA_EACH(item, json_items(items)) {
+      fill_component_media(&c->media[c->nmedia++], item,
+                           json_get(item, "media"));
+    }
+  }
+  else if (json_type(json_get(json, "media")) == CIMA_JSON_OBJECT ||
+           json_type(json_get(json, "file")) == CIMA_JSON_OBJECT) {
+    const cima_json *media = json_get(json, "media");
+
+    c->media = xcalloc(1, sizeof *c->media);
+    c->nmedia = 1;
+    fill_component_media(
+      c->media, json,
+      json_type(media) == CIMA_JSON_OBJECT ? media : json_get(json, "file"));
+  }
+}
+
+static void fill_components(Message *m, const cima_json *components) {
+  free_components(m);
+  m->components = component_array(components, &m->ncomponents, 0);
+}
+
+static const char *component_text(const Component *c) {
+  if (c->type == COMPONENT_TEXT_DISPLAY && c->text != nullptr &&
+      c->text[0] != '\0') {
+    return c->text;
+  }
+
+  for (size_t i = 0; i < c->nchildren; i++) {
+    const char *text = component_text(&c->children[i]);
+
+    if (text != nullptr) {
+      return text;
+    }
+  }
+
+  return nullptr;
+}
+
+const char *message_component_text(const Message *m) {
+  for (size_t i = 0; i < m->ncomponents; i++) {
+    const char *text = component_text(&m->components[i]);
+
+    if (text != nullptr) {
+      return text;
+    }
+  }
+
+  return nullptr;
+}
+
 static bool channel_muted(const Store *s, const Channel *c);
 static int64_t mute_end(const cima_json *settings);
 
@@ -1511,6 +1696,12 @@ static void fill_message(Store *s, Message *m, const cima_json *json, Guild *g,
   if ((v = json_get(json, "sticker_items")) != nullptr) {
     fill_stickers(m, v);
   }
+
+  if ((v = json_get(json, "components")) != nullptr) {
+    fill_components(m, v);
+  }
+
+  put_id(&m->application_id, json, "application_id");
 
   if ((v = json_get(json, "message_reference")) != nullptr) {
     m->reference_id = snowflake_of(json_get(v, "message_id"));

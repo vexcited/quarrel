@@ -277,7 +277,9 @@ static void describe(Store *store, const Channel *c, const Message *m,
     return;
   }
 
-  const char *words = m->content[0] != '\0' ? m->content : nullptr;
+  // an application may write with its components alone.
+  const char *words =
+    m->content[0] != '\0' ? m->content : message_component_text(m);
 
   if (m->forwarded) {
     put(&text, "Forwarded a message");

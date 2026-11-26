@@ -58,7 +58,7 @@ static void format_bytes(uint64_t size, char *out, size_t cap) {
   }
 }
 
-static void file_card(App *app, civue_id id, const Attachment *a) {
+void file_card(App *app, civue_id id, const Attachment *a) {
   const Look *k = &app->look;
   char size[32];
 
@@ -928,7 +928,7 @@ static void command_line(App *app, const Message *m, Snowflake guild_id) {
 // of discord's client. null once it has one.
 static const char *command_wait(App *app, const Message *m, char *out,
                                 size_t cap) {
-  if (*m->content || m->nembeds || m->nattachments ||
+  if (*m->content || m->nembeds || m->nattachments || m->ncomponents ||
       m->state == MESSAGE_FAILED) {
     return nullptr;
   }
@@ -1251,6 +1251,15 @@ static void message_body(App *app, const Channel *c, const Message *m,
   attachments(app, m);
   embeds(app, m, c->guild_id);
   stickers(app, m);
+  message_components(app, m, c->guild_id, id_at(id, 0x7000),
+                     width - GUTTER - 48);
+
+  // words carry the mark of an edit themselves.
+  if (m->ncomponents && !*m->content && m->edited_at) {
+    text("(edited)", text_size(px(10)), line_height(px(16)),
+         text_color(app->look.muted));
+  }
+
   reactions(app, m);
 }
 
@@ -1538,6 +1547,8 @@ void message_list(App *app, Channel *c) {
           media_live(app, known),
           app->hover_message == known,
           app->editing == known,
+          app->popover == POPOVER_COMPONENT_SELECT &&
+            app->select_message == known,
           head,
           (uint64_t)width,
           (uint64_t)day_of((int64_t)store_now(store) * 1000),

@@ -64,6 +64,7 @@ typedef enum : uint8_t {
   POPOVER_POST_MENU,
   POPOVER_PROFILE,
   POPOVER_DIRECTORY_MENU,
+  POPOVER_COMPONENT_SELECT,
 } Popover;
 
 // the side of what was clicked a profile card opens on.
@@ -235,6 +236,14 @@ typedef struct {
   civue_rect emoji_anchor, emoji_button;
   bool emoji_fresh;
   struct EmojiPicker *emojis;
+  // the menu of a message open while the app shows POPOVER_COMPONENT_SELECT:
+  // its message, what its application knows it by, where it was drawn, the
+  // options ticked, a bit each, and whether the user ticked any.
+  Snowflake select_message;
+  char *select_custom;
+  civue_rect select_anchor;
+  uint32_t select_picked;
+  bool select_changed;
   // the emoji of a message whose card is open while the app shows
   // POPOVER_EMOJI_CARD, and where it was drawn.
   Snowflake card_emoji;

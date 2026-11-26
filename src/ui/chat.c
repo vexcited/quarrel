@@ -201,6 +201,7 @@ void chat(App *app, Channel *c) {
           message_list(app, c);
           composer(app, c);
           message_popovers(app, c);
+          component_select(app, c);
           gif_picker(app, c);
           sticker_picker(app, c);
           sticker_info(app, c);
