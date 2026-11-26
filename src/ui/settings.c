@@ -46,6 +46,7 @@ typedef enum : uint8_t {
 
 static const char *const PART_NAMES[PARTS] = {"Voice", "Camera", "Advanced"};
 static const char *const PAGE_NAMES[] = {
+  [SETTINGS_APPEARANCE] = "Appearance",
   [SETTINGS_VOICE] = "Voice & Video",
   [SETTINGS_NOTIFICATIONS] = "Notifications",
 };
@@ -156,6 +157,13 @@ static int sidebar(App *app, bool *leave) {
         bool voice = now == SETTINGS_VOICE;
 
         section_label(k, "Experience");
+
+        if (nav_item(app, id("settings-appearance"),
+                     CIVUE_ICON(lucide, palette),
+                     PAGE_NAMES[SETTINGS_APPEARANCE],
+                     now == SETTINGS_APPEARANCE, false)) {
+          open_page(app, SETTINGS_APPEARANCE);
+        }
 
         if (nav_item(app, id("settings-voice"), CIVUE_ICON(lucide, mic),
                      PAGE_NAMES[SETTINGS_VOICE], voice, false) &&
@@ -775,6 +783,98 @@ static void camera_preview(App *app, float wide) {
   }
 }
 
+// a small window drawn in the colors of `theme`, its name under it. true
+// when pressed.
+static bool theme_tile(App *app, Theme theme) {
+  const Look *k = &app->look;
+  Look t = look_of(theme);
+  bool on = app->theme == theme, pressed = false;
+
+  div(key(id_at(id("settings-theme"), theme)), flex, flex_col, gap(3), flex_1,
+      min_w(0), p(2), rounded(xl), border(2),
+      border_color(on ? k->primary : k->border),
+      hover(border_color(on ? k->primary : k->border_strong)),
+      cursor_pointer) {
+    pressed = button().activated;
+
+    div(flex, gap(2), h(px(120)), p(2), rounded(lg), bg(t.frame),
+        overflow_hidden) {
+      div(flex, flex_col, gap(2), w(px(56)), flex_shrink_0, pt(1)) {
+        for (int i = 0; i < 4; i++) {
+          div(h(px(8)), rounded(sm), bg(i == 1 ? t.selected : t.hover)) {}
+        }
+      }
+
+      div(flex, flex_col, justify_end, gap(2), flex_1, min_w(0), p(2),
+          rounded(md), bg(t.chat), border(1), border_color(t.frame_border)) {
+        for (int i = 0; i < 2; i++) {
+          div(flex, items_center, gap(2), flex_shrink_0) {
+            div(size(px(14)), flex_shrink_0, rounded(full),
+                bg(t.surface_high)) {}
+
+            div(flex, flex_col, gap(1), flex_1, min_w(0)) {
+              div(h(px(4)), w(px(36)), rounded(full), bg(t.strong)) {}
+              div(h(px(4)), rounded(full), bg(t.subtle),
+                  style(.w = civue_relative(i ? .55f : .8f))) {}
+            }
+          }
+        }
+
+        div(flex, items_center, justify_end, h(px(20)), px(1), flex_shrink_0,
+            rounded(sm), bg(t.input), border(1), border_color(t.border)) {
+          div(w(px(20)), h(px(12)), rounded(px(3)), bg(t.primary)) {}
+        }
+      }
+    }
+
+    div(flex, items_center, gap(2), px(1), flex_shrink_0) {
+      div(flex, items_center, justify_center, size(4), flex_shrink_0,
+          rounded(full), border(1), bg(k->field),
+          border_color(on ? k->primary : k->border_strong)) {
+        if (on) {
+          div(size(2), rounded(full), bg(k->primary)) {}
+        }
+      }
+
+      text(THEME_NAMES[theme], flex_1, min_w(0), truncate, text_size(px(14)),
+           line_height(px(20)), font_weight(medium), text_color(k->strong));
+    }
+  }
+
+  return pressed;
+}
+
+// how the app looks. the themes change its colors and nothing else.
+static void appearance_page(App *app, bool narrow, bool stacked) {
+  const Look *k = &app->look;
+  Theme picked = app->theme;
+
+  div(flex, justify_center, flex_shrink_0, px(4),
+      style(.padding[0] = civue_px(narrow ? 80 : 64),
+            .padding[2] = civue_px(narrow ? 80 : 64))) {
+    div(flex, flex_col, flex_1, min_w(0), max_w(px(PAGE_MAX))) {
+      heading(k, "Appearance");
+      field_label(k, "Theme");
+      text("Only the colors change, everything stays where it is.",
+           flex_shrink_0, mb(4), text_size(px(14)), line_height(px(18)),
+           text_color(k->subtle));
+
+      div(flex, gap(4), flex_shrink_0,
+          style(.direction = stacked ? CIVUE_COL : CIVUE_ROW)) {
+        for (int i = 0; i < THEMES; i++) {
+          if (theme_tile(app, (Theme)i)) {
+            picked = (Theme)i;
+          }
+        }
+      }
+    }
+  }
+
+  if (picked != app->theme) {
+    app_set_theme(app, picked);
+  }
+}
+
 // what the user is told of while they look elsewhere. which messages are
 // worth it stays with their notification settings on discord.
 static void notifications_page(App *app, bool narrow) {
@@ -941,7 +1041,10 @@ void settings_dialog(App *app) {
 
           div(key(body), flex, flex_col, flex_1, min_h(0), overflow_y_scroll,
               scrollbars(&app->bars)) {
-            if (app->settings_page == SETTINGS_NOTIFICATIONS) {
+            if (app->settings_page == SETTINGS_APPEARANCE) {
+              appearance_page(app, full, width <= STACK_UNDER);
+            }
+            else if (app->settings_page == SETTINGS_NOTIFICATIONS) {
               notifications_page(app, full);
             }
             else {

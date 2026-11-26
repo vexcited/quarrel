@@ -89,6 +89,13 @@ void app_reveal(App *app, civue_id spoiler) {
   app->revealed.v[app->revealed.len++] = spoiler;
 }
 
+void app_set_theme(App *app, Theme theme) {
+  app->theme = theme;
+  app->look = look_of(theme);
+  theme_save(theme);
+  civue_window_wake();
+}
+
 void app_reset(App *app) {
   app->account_id = app->session->account_id;
   app->popover = POPOVER_NONE;

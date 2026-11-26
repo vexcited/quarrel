@@ -100,8 +100,11 @@ typedef struct {
   civue_color thumb;
 } Look;
 
+extern const char *const THEME_NAMES[THEMES];
+
 Look look_of(Theme theme);
 // the theme kept in the preferences, the monochrome one when none is.
 Theme theme_saved(void);
+void theme_save(Theme theme);
 
 #endif

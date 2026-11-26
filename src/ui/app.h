@@ -110,6 +110,7 @@ typedef enum : uint8_t {
 
 // the pages of the settings.
 typedef enum : uint8_t {
+  SETTINGS_APPEARANCE,
   SETTINGS_VOICE,
   SETTINGS_NOTIFICATIONS,
 } SettingsPage;
@@ -125,7 +126,7 @@ typedef struct {
   // the roster's current one, taken at the start of each frame.
   Session *session;
   civue_images *images;
-  // the theme kept in the preferences, and its colors.
+  // the theme picked in the settings, and its colors.
   Theme theme;
   Look look;
   civue_scrollbar_look bars, thin_bars;
@@ -430,6 +431,8 @@ void ids_toggle(Ids *ids, Snowflake id);
 // whether a spoiler was pressed, and presses one.
 [[gnu::pure]] bool app_revealed(const App *app, civue_id spoiler);
 void app_reveal(App *app, civue_id spoiler);
+// draws the window in `theme` from now on, and at the next launch.
+void app_set_theme(App *app, Theme theme);
 
 static inline void app_toggle(App *app, Popover popover) {
   app->popover = app->popover == popover ? POPOVER_NONE : popover;

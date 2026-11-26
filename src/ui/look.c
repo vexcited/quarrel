@@ -9,6 +9,11 @@
 
 #define THEME_KEY "theme"
 
+const char *const THEME_NAMES[THEMES] = {
+  [THEME_MONOCHROME] = "Monochrome",
+  [THEME_DISCORD] = "Discord",
+};
+
 // what the preferences keep of each.
 static const char *const THEME_KEYS[THEMES] = {
   [THEME_MONOCHROME] = "monochrome",
@@ -168,4 +173,8 @@ Theme theme_saved(void) {
 
   free(kept);
   return theme;
+}
+
+void theme_save(Theme theme) {
+  platform_pref_set(THEME_KEY, THEME_KEYS[theme]);
 }
