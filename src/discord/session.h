@@ -446,6 +446,10 @@ struct Session {
   // discord confirmed the channel for this gateway session, the call was
   // started with what is known, and a new gateway session has to join again.
   bool voice_stated, voice_live, voice_rejoin;
+  // the private channel whose others are rung once its call is made, 0
+  // for none, and a count of the joins asked for.
+  Snowflake voice_ring_id;
+  uint64_t voice_asked;
 };
 
 struct Roster {
@@ -723,8 +727,13 @@ SessionLink session_link(const Session *s);
 /* ========================================================================== */
 
 // joins a voice channel, leaving the one the account was in. see
-// `voice_channel_id`, `voice` and `voice_error` for how it goes.
+// `voice_channel_id`, `voice` and `voice_error` for how it goes. a private
+// channel is joined the same way, which answers its call when the account
+// is rung, and starts one that rings the others when nobody is in it.
 void session_voice_join(Session *s, Snowflake channel_id);
+// turns down the call the account is rung for in a private channel, see
+// store_call. the call goes on for the others.
+void session_call_decline(Session *s, Snowflake channel_id);
 void session_voice_leave(Session *s);
 // a muted microphone sends nothing. deafened, the call plays nothing and
 // sends nothing either, as discord has it.

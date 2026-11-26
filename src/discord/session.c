@@ -624,6 +624,7 @@ static void voice_reset(Session *s) {
   str_set(&s->voice_endpoint, nullptr);
   str_set(&s->voice_error, nullptr);
   s->voice_guild_id = s->voice_channel_id = 0;
+  s->voice_ring_id = 0;
   s->voice_stated = s->voice_live = s->voice_rejoin = false;
 }
 
@@ -764,6 +765,70 @@ static void on_voice_server(Session *s, const cima_json *d) {
   voice_try(s);
 }
 
+// learned from the web client: a call nobody is in yet is made by joining
+// its private channel, and the others are rung once discord tells of the
+// call, with null for everyone.
+static void ring_try(Session *s) {
+  char path[96];
+
+  if (s->voice_ring_id == 0 || s->voice_ring_id != s->voice_channel_id ||
+      store_call(s->store, s->voice_ring_id) == nullptr) {
+    return;
+  }
+
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/call/ring",
+           s->voice_ring_id);
+  s->voice_ring_id = 0;
+
+  ApiRequest req = {
+    .method = "POST",
+    .path = path,
+    .body = "{\"recipients\":null}",
+  };
+
+  api_request(s->api, &req, nullptr, nullptr);
+}
+
+static void voice_begin(Session *s) {
+  voice_tell(s, s->voice_channel_id);
+  s->voice_timer = platform_timer(VOICE_JOIN_TIMEOUT, on_voice_timeout, s);
+  ring_try(s);
+}
+
+// the client asks whether the other of a dm may be called before it joins,
+// and rings only when discord says they may be rung.
+static void on_ringable(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake channel_id = call->channel_id;
+  uint64_t asked = call->id;
+
+  call_end(call);
+
+  // left, or joined again, while it asked.
+  if (s->voice_channel_id != channel_id || s->voice_asked != asked) {
+    return;
+  }
+
+  if (!res->ok) {
+    str_set(&s->voice_error, "Discord does not let you call them.");
+    changed(s);
+    return;
+  }
+
+  if (json_get_coerce(res->json, "ringable", false)) {
+    s->voice_ring_id = channel_id;
+  }
+
+  voice_begin(s);
+  changed(s);
+}
+
 void session_voice_join(Session *s, Snowflake channel_id) {
   const Channel *c = store_channel(s->store, channel_id);
   bool failed = s->voice_error != nullptr ||
@@ -774,11 +839,54 @@ void session_voice_join(Session *s, Snowflake channel_id) {
     return;
   }
 
+  // a private channel nobody is in a call of: this starts one.
+  bool starts =
+    channel_is_private(c) && store_voice_count(s->store, channel_id) == 0;
+
   voice_reset(s);
   s->voice_guild_id = c->guild_id;
   s->voice_channel_id = channel_id;
-  voice_tell(s, channel_id);
-  s->voice_timer = platform_timer(VOICE_JOIN_TIMEOUT, on_voice_timeout, s);
+  s->voice_asked++;
+  // joining answers the call.
+  store_stop_ringing(s->store, channel_id);
+
+  if (starts && c->type == CHANNEL_DM) {
+    char path[96];
+
+    snprintf(path, sizeof path, "/channels/%" PRIu64 "/call", channel_id);
+
+    ApiRequest req = {.method = "GET", .path = path};
+
+    api_request(s->api, &req, on_ringable,
+                call_new(s, channel_id, s->voice_asked));
+  }
+  else {
+    s->voice_ring_id = starts ? channel_id : 0;
+    voice_begin(s);
+  }
+
+  changed(s);
+}
+
+void session_call_decline(Session *s, Snowflake channel_id) {
+  const PrivateCall *call = store_call(s->store, channel_id);
+  char path[96];
+
+  if (call == nullptr || call->ringer_id == 0) {
+    return;
+  }
+
+  store_stop_ringing(s->store, channel_id);
+  snprintf(path, sizeof path, "/channels/%" PRIu64 "/call/stop-ringing",
+           channel_id);
+
+  // no recipients: the account alone, wherever it is logged in.
+  ApiRequest req = {.method = "POST", .path = path, .body = "{}"};
+
+  if (online(s)) {
+    api_request(s->api, &req, nullptr, nullptr);
+  }
+
   changed(s);
 }
 
@@ -950,6 +1058,9 @@ static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   }
   else if (strcmp(type, "VOICE_SERVER_UPDATE") == 0) {
     on_voice_server(s, data);
+  }
+  else if (strcmp(type, "CALL_CREATE") == 0) {
+    ring_try(s);
   }
 
   if (strcmp(type, "READY") == 0) {

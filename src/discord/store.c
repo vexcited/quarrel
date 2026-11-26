@@ -879,6 +879,135 @@ void store_put_voice_state(Store *s, const cima_json *state,
   s->version++;
 }
 
+const PrivateCall *store_call(const Store *s, Snowflake channel_id) {
+  for (size_t i = 0; i < s->ncalls; i++) {
+    if (s->calls[i].channel_id == channel_id) {
+      return &s->calls[i];
+    }
+  }
+
+  return nullptr;
+}
+
+size_t store_voice_count(const Store *s, Snowflake channel_id) {
+  size_t count = 0;
+
+  for (size_t i = 0; i < s->nvoice_states; i++) {
+    count += s->voice_states[i].channel_id == channel_id;
+  }
+
+  return count;
+}
+
+static void ring_add(Store *s, PrivateCall *call, Snowflake user_id,
+                     Snowflake ringer_id) {
+  if (user_id == 0) {
+    return;
+  }
+
+  call->ringing =
+    resized(call->ringing, call->nringing + 1, sizeof *call->ringing);
+  call->ringing[call->nringing++] = user_id;
+
+  if (user_id == s->self_id) {
+    // an array of who is rung does not say by whom: the call's channel
+    // stands for them.
+    call->ringer_id = ringer_id != 0 ? ringer_id : call->channel_id;
+  }
+}
+
+void store_put_call(Store *s, const cima_json *json) {
+  Snowflake channel_id = snowflake_of(json_get(json, "channel_id"));
+  PrivateCall *call = nullptr;
+
+  if (channel_id == 0) {
+    return;
+  }
+
+  for (size_t i = 0; i < s->ncalls; i++) {
+    if (s->calls[i].channel_id == channel_id) {
+      call = &s->calls[i];
+    }
+  }
+
+  if (call == nullptr) {
+    s->calls = resized(s->calls, s->ncalls + 1, sizeof *s->calls);
+    call = &s->calls[s->ncalls++];
+    *call = (PrivateCall){.channel_id = channel_id};
+  }
+
+  call->nringing = 0;
+  call->ringer_id = 0;
+
+  // learned from the web client: the gateway names who is rung in
+  // `ongoing_rings`, each with who rang them, which the documented
+  // `ringing` array of ids does not say.
+  const cima_json *rings = json_get(json, "ongoing_rings");
+
+  if (rings != nullptr && rings->type == CIMA_JSON_OBJECT) {
+    CIMA_EACH(member, json_members(rings)) {
+      if (member->value.type != CIMA_JSON_NULL) {
+        ring_add(s, call,
+                 snowflake_parse_n(member->key, cima_json_key_len(member)),
+                 snowflake_of(&member->value));
+      }
+    }
+  }
+  else {
+    CIMA_EACH(user_id, json_items(json_get(json, "ringing"))) {
+      ring_add(s, call, snowflake_of(user_id), 0);
+    }
+  }
+
+  // CALL_CREATE alone tells who is in a call made before the gateway
+  // connected.
+  CIMA_EACH(state, json_items(json_get(json, "voice_states"))) {
+    store_put_voice_state(s, state, 0);
+  }
+
+  s->version++;
+}
+
+void store_remove_call(Store *s, Snowflake channel_id) {
+  for (size_t i = 0; i < s->ncalls; i++) {
+    if (s->calls[i].channel_id == channel_id) {
+      free(s->calls[i].ringing);
+      s->calls[i] = s->calls[--s->ncalls];
+      s->version++;
+      break;
+    }
+  }
+
+  for (size_t i = s->nvoice_states; i > 0; i--) {
+    if (s->voice_states[i - 1].channel_id == channel_id &&
+        s->voice_states[i - 1].guild_id == 0) {
+      s->voice_states[i - 1] = s->voice_states[--s->nvoice_states];
+      s->users_version++;
+      s->version++;
+    }
+  }
+}
+
+void store_stop_ringing(Store *s, Snowflake channel_id) {
+  for (size_t i = 0; i < s->ncalls; i++) {
+    PrivateCall *call = &s->calls[i];
+
+    if (call->channel_id != channel_id || call->ringer_id == 0) {
+      continue;
+    }
+
+    call->ringer_id = 0;
+
+    for (size_t j = call->nringing; j > 0; j--) {
+      if (call->ringing[j - 1] == s->self_id) {
+        call->ringing[j - 1] = call->ringing[--call->nringing];
+      }
+    }
+
+    s->version++;
+  }
+}
+
 void store_put_affinities(Store *s, const cima_json *affinities) {
   free(s->affinities);
   s->affinities = nullptr;
@@ -3036,6 +3165,7 @@ void store_remove_channel(Store *s, Snowflake id) {
     touch_layout(s, g);
   }
   else {
+    store_remove_call(s, id);
     s->private_version++;
     s->version++;
   }
@@ -4629,6 +4759,11 @@ void store_reset(Store *s) {
   MAP_DROP(&s->users);
   MAP_DROP(&s->read_states);
 
+  for (size_t i = 0; i < s->ncalls; i++) {
+    free(s->calls[i].ringing);
+  }
+
+  free(s->calls);
   free(s->relationships);
   free(s->voice_states);
   free(s->affinities);

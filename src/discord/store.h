@@ -91,6 +91,17 @@ typedef struct {
   bool muted, deafened;
 } VoiceState;
 
+// a call in a private channel, there from its first member joining until
+// its last one left.
+typedef struct {
+  Snowflake channel_id;
+  // who is being rung to join it, in no order.
+  Snowflake *ringing;
+  size_t nringing;
+  // who rings the account, 0 when nobody does.
+  Snowflake ringer_id;
+} PrivateCall;
+
 typedef struct {
   Snowflake id;
   char *username;
@@ -853,6 +864,9 @@ struct Store {
   // everyone known to be in a voice channel, in no order.
   VoiceState *voice_states;
   size_t nvoice_states;
+  // the calls of the private channels, in no order.
+  PrivateCall *calls;
+  size_t ncalls;
 
   // the messages the user bookmarked, by id, as discord last listed them.
   // `bookmarks_known` once it did since READY.
@@ -920,6 +934,18 @@ double store_now(const Store *s);
 // null when the user is in no voice channel the store heard of.
 [[gnu::pure]] const VoiceState *store_voice_state(const Store *s,
                                                   Snowflake user_id);
+// null when the private channel has no call the store heard of.
+[[gnu::pure]] const PrivateCall *store_call(const Store *s,
+                                            Snowflake channel_id);
+// how many are in the voice channel or in the private channel's call.
+[[gnu::pure]] size_t store_voice_count(const Store *s, Snowflake channel_id);
+
+// whether the call rings for the account to answer. learned from the web
+// client: one who is not to be disturbed is rung in silence, with nothing
+// shown.
+static inline bool call_rings(const Store *s, const PrivateCall *call) {
+  return call->ringer_id != 0 && s->self_status != STATUS_DND;
+}
 
 // the name to show for a user: their display name, else their username.
 // "Unknown User" for null.
@@ -1178,6 +1204,12 @@ void store_put_user_settings(Store *s, const cima_json *settings);
 void store_put_voice_state(Store *s, const cima_json *state,
                            Snowflake guild_id);
 void store_remove_voice_state(Store *s, Snowflake user_id, Snowflake guild_id);
+// CALL_CREATE and CALL_UPDATE.
+void store_put_call(Store *s, const cima_json *call);
+// the call ended, and whoever was in it is not anymore.
+void store_remove_call(Store *s, Snowflake channel_id);
+// the account is not rung in the channel anymore, before discord says so.
+void store_stop_ringing(Store *s, Snowflake channel_id);
 // the `user_affinities` of the affinities route, replacing the ones known.
 void store_put_affinities(Store *s, const cima_json *affinities);
 void store_put_relationship(Store *s, const cima_json *relationship);

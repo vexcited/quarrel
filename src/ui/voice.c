@@ -127,15 +127,18 @@ void voice_panel(App *app) {
   bool live = s->voice && voice_status(s->voice) == VOICE_CONNECTED;
   civue_color color;
   const char *status = status_line(app, &color);
-  char where[192], detail[64] = "";
+  char where[192], name[128] = "", detail[64] = "";
 
-  snprintf(where, sizeof where, "%s%s%s", c && c->name ? c->name : "",
+  if (c) {
+    store_channel_name(store, c, name, sizeof name);
+  }
+
+  snprintf(where, sizeof where, "%s%s%s", name,
            guild && guild->name ? " / " : "",
            guild && guild->name ? guild->name : "");
 
   if (live && voice_latency(s->voice) >= 0) {
-    snprintf(detail, sizeof detail, "%.0f ms",
-             voice_latency(s->voice) * 1000);
+    snprintf(detail, sizeof detail, "%.0f ms", voice_latency(s->voice) * 1000);
   }
 
   div(key(id("voice-panel")), flex, flex_col, gap(2), flex_shrink_0, mx(2),
@@ -214,7 +217,7 @@ void voice_switch_dialog(App *app) {
   const Channel *to = store_channel(s->store, app->voice_switch);
   const Channel *from = store_channel(s->store, s->voice_channel_id);
   bool close = false, join = false;
-  char line[256];
+  char line[384], left[128], joined[128];
 
   if (app->voice_switch == 0) {
     return;
@@ -226,15 +229,16 @@ void voice_switch_dialog(App *app) {
     return;
   }
 
-  snprintf(line, sizeof line,
-           "You are in a call in %s. Joining %s leaves it.",
-           from->name != nullptr ? from->name : "another channel",
-           to->name != nullptr ? to->name : "this one");
+  // a private channel is named after who is in it.
+  snprintf(line, sizeof line, "You are in a call %s %s. Joining %s leaves it.",
+           channel_is_private(from) ? "with" : "in",
+           store_channel_name(s->store, from, left, sizeof left),
+           store_channel_name(s->store, to, joined, sizeof joined));
 
   overlay() {
-    div(key(id("voice-switch-backdrop")), left(0), top(0),
-        w(px(ui->size.x)), h(px(ui->size.y)), flex, items_center,
-        justify_center, bg(rgba(0x000000b3))) {
+    div(key(id("voice-switch-backdrop")), left(0), top(0), w(px(ui->size.x)),
+        h(px(ui->size.y)), flex, items_center, justify_center,
+        bg(rgba(0x000000b3))) {
       close = button().activated;
 
       div(key(id("voice-switch")), flex, flex_col, gap(2), w(px(400)), p(6),

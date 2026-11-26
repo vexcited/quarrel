@@ -140,6 +140,19 @@ static void chat_header(App *app, Channel *c) {
       div(flex_1) {}
     }
 
+    // a private channel is called from here, the call then shows over its
+    // messages with the rest of its buttons.
+    if (channel_is_private(c) && app->session->voice_channel_id != c->id) {
+      bool going = store_call(store, c->id) != nullptr;
+
+      if (icon_button(app, id("call-start"),
+                      going ? CIVUE_ICON(lucide, phone_incoming)
+                            : CIVUE_ICON(lucide, phone),
+                      32, 20, going ? "Join Call" : "Start Voice Call")) {
+        voice_join(app, c->id);
+      }
+    }
+
     if (channel_is_voice(c) &&
         icon_button(app, id("call-toggle"),
                     app->voice_chat ? CIVUE_ICON(lucide, volume_2)
@@ -158,8 +171,16 @@ static void chat_header(App *app, Channel *c) {
 }
 
 void chat(App *app, Channel *c) {
+  const Session *s = app->session;
   bool call = channel_is_voice(c) && !app->voice_chat;
   bool members = has_member_list(c) && !app->members_hidden;
+  // the call of a private channel shows over its messages, as the client
+  // has it.
+  bool calling =
+    channel_is_private(c) &&
+    (s->voice_channel_id == c->id || store_call(s->store, c->id) != nullptr);
+  float window = civue_ui_current()->size.y;
+  float stage = window * 0.36f < 220 ? 220 : window * 0.36f;
 
   div(flex, flex_col, flex_1, min_w(0), h(full)) {
     chat_header(app, c);
@@ -170,6 +191,13 @@ void chat(App *app, Channel *c) {
     else {
       div(flex, flex_1, min_h(0)) {
         div(flex, flex_col, flex_1, min_w(0), h(full)) {
+          if (calling) {
+            div(key(id("private-call")), flex, flex_col, flex_shrink_0,
+                h(px(stage))) {
+              voice_stage(app, c);
+            }
+          }
+
           message_list(app, c);
           composer(app, c);
           message_popovers(app, c);

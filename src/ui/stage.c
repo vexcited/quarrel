@@ -22,8 +22,9 @@ constexpr int METER_BARS = 28;
 /* who is in the call.                                                        */
 /* ========================================================================== */
 
-static void tile(App *app, const Channel *c, const VoiceState *v,
-                 civue_rect at) {
+// `rung` for one who is not in the call but is rung to join it.
+static void tile(App *app, const Channel *c, const VoiceState *v, civue_rect at,
+                 bool rung) {
   const Look *k = &app->look;
   const Session *s = app->session;
   Store *store = s->store;
@@ -40,9 +41,16 @@ static void tile(App *app, const Channel *c, const VoiceState *v,
     avatar(app, store_user(store, v->user_id), c->guild_id, face, false,
            k->surface);
 
+    if (rung) {
+      div(absolute, left(0), top(0), size(full), bg(rgba(0x00000099))) {}
+    }
+
     div(absolute, left(2), bottom(2), flex, items_center, gap(1p5), h(7), px(2),
         rounded(lg), bg(rgba(0x000000b3)), max_w(2_3)) {
-      if (v->deafened) {
+      if (rung) {
+        glyph(CIVUE_ICON(lucide, phone_outgoing), 14, k->faint);
+      }
+      else if (v->deafened) {
         glyph(CIVUE_ICON(lucide, headphone_off), 14, k->danger);
       }
       else if (v->muted) {
@@ -63,12 +71,27 @@ static void tile(App *app, const Channel *c, const VoiceState *v,
 // the tiles as a grid of 16 by 9 ones, as large as the room allows.
 static void tiles(App *app, const Channel *c, civue_rect room) {
   const Store *store = app->session->store;
+  const PrivateCall *call = store_call(store, c->id);
   const VoiceState *shown[TILES_MAX];
-  size_t count = 0;
+  VoiceState rung[TILES_MAX];
+  size_t count = 0, here_count = 0;
 
   for (size_t i = 0; i < store->nvoice_states && count < TILES_MAX; i++) {
     if (store->voice_states[i].channel_id == c->id) {
       shown[count++] = &store->voice_states[i];
+    }
+  }
+
+  here_count = count;
+
+  // who a private channel's call rings comes after who is in it.
+  for (size_t i = 0; call && i < call->nringing && count < TILES_MAX; i++) {
+    const VoiceState *in = store_voice_state(store, call->ringing[i]);
+
+    if (!in || in->channel_id != c->id) {
+      rung[count] = (VoiceState){.user_id = call->ringing[i]};
+      shown[count] = &rung[count];
+      count++;
     }
   }
 
@@ -110,7 +133,8 @@ static void tiles(App *app, const Channel *c, civue_rect room) {
     float x = left + (float)(i % columns) * (tile_width + TILE_GAP);
     float y = top + (float)row * (tile_height + TILE_GAP);
 
-    tile(app, c, shown[i], xywh(x, y, tile_width, tile_height));
+    tile(app, c, shown[i], xywh(x, y, tile_width, tile_height),
+         i >= here_count);
   }
 }
 
@@ -518,7 +542,24 @@ static void controls(App *app, const Channel *c) {
           }
 
           icon(lucide, phone, size(px(18)));
-          text("Join Voice", font_weight(semibold));
+          text(channel_is_private(c) ? "Join Call" : "Join Voice",
+               font_weight(semibold));
+        }
+
+        // a call that rings the account is turned down from here too.
+        const PrivateCall *call = store_call(store, c->id);
+
+        if (call && call_rings(store, call)) {
+          div(key(id("stage-decline")), flex, items_center, gap(2), h(10),
+              px(4), rounded(xl), bg(k->danger), hover(bg(k->dnd)),
+              text_color(CIVUE_WHITE), cursor_pointer) {
+            if (button().activated) {
+              session_call_decline(s, c->id);
+            }
+
+            icon(lucide, phone_off, size(px(18)));
+            text("Decline", font_weight(semibold));
+          }
         }
       }
       else {
@@ -566,7 +607,8 @@ static void controls(App *app, const Channel *c) {
 void voice_stage(App *app, Channel *c) {
   const Look *k = &app->look;
   const Store *store = app->session->store;
-  bool anyone = false;
+  const PrivateCall *call = store_call(store, c->id);
+  bool anyone = call && call->nringing;
 
   for (size_t i = 0; i < store->nvoice_states && !anyone; i++) {
     anyone = store->voice_states[i].channel_id == c->id;

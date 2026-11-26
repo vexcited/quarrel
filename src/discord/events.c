@@ -317,6 +317,12 @@ void events_dispatch(Store *s, const char *type, const cima_json *d) {
   else if (IS("VOICE_STATE_UPDATE")) {
     store_put_voice_state(s, d, guild_id);
   }
+  else if (IS("CALL_CREATE") || IS("CALL_UPDATE")) {
+    store_put_call(s, d);
+  }
+  else if (IS("CALL_DELETE")) {
+    store_remove_call(s, channel_id);
+  }
   else if (IS("GUILD_CREATE")) {
     store_put_guild(s, d);
   }
