@@ -68,6 +68,21 @@ static bool link_button(const Look *k, civue_id id, const char *label) {
   return pressed;
 }
 
+// shadcn's alert: an icon beside a title and what it means.
+static void alert(const Look *k, const char *title, const char *body) {
+  div(flex, gap(3), w(full), px(4), py(3), mb(4), rounded(lg), border(1),
+      border_color(k->border), text_size(px(14)), line_height(px(20))) {
+    div(pt(px(2)), flex_shrink_0) {
+      glyph(CIVUE_ICON(mingcute, warning_fill), 16, k->critical_text);
+    }
+
+    div(flex, flex_col, gap(1), flex_1, min_w(0)) {
+      text(title, font_weight(medium), text_color(k->critical_text));
+      text(body, text_color(k->muted));
+    }
+  }
+}
+
 static void drop_last_character(char *s) {
   size_t n = strlen(s);
 
@@ -543,14 +558,23 @@ static void challenge(App *app) {
       return;
     }
 
-    if (state.status == HCAPTCHA_CANCELLED ||
-        state.status == HCAPTCHA_EXPIRED || state.status == HCAPTCHA_FAILED) {
-      const char *why = state.status == HCAPTCHA_FAILED && state.error
-                          ? state.error
-                          : "The challenge was closed before it was solved.";
-
-      text(why, text_size(px(14)), line_height(px(18)),
-           text_color(k->critical_text), mb(3));
+    if (captcha_unshowable(state)) {
+      alert(k, "Can't show the challenge",
+            "Quarrel was built without WPE WebKit, which it needs to show "
+            "Discord's captcha.");
+    }
+    else if (state.status == HCAPTCHA_CANCELLED ||
+             state.status == HCAPTCHA_EXPIRED ||
+             state.status == HCAPTCHA_FAILED) {
+      if (state.status == HCAPTCHA_CANCELLED) {
+        alert(k, "Challenge closed", "It was closed before it was solved.");
+      }
+      else if (state.status == HCAPTCHA_EXPIRED) {
+        alert(k, "Challenge expired", "It waited too long to be solved.");
+      }
+      else {
+        alert(k, "Challenge failed", state.error ? state.error : "error");
+      }
 
       if (primary_button(k, id("captcha-retry"), "Try again", true)) {
         hcaptcha_reset(app->captcha.h);
