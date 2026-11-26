@@ -2,12 +2,14 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include <civue/dsl.h>
 
 #include "discord/emoji.h"
 #include "discord/cdn.h"
+#include "explore.h"
 
 void glyph(civue_icon icon, float size, civue_color color) {
   civue_node_icon(civue_ui_current(), icon,
@@ -556,4 +558,63 @@ void window_handle(civue_id id) {
   else {
     ui->drag_window = true;
   }
+}
+
+void captcha_start(Captcha *c, const char *sitekey, const char *rqdata) {
+  if (c->h) {
+    return;
+  }
+
+  c->h = hcaptcha_new(&(hcaptcha_options){
+    .sitekey = sitekey,
+    .origin = "https://discord.com",
+    .rqdata = rqdata,
+    .theme = "dark",
+  });
+  c->was = HCAPTCHA_LOADING;
+}
+
+void captcha_drop(Captcha *c) {
+  hcaptcha_free(c->h);
+  c->h = nullptr;
+}
+
+// the page is shown by the status of the last frame: hcaptcha only tells it
+// opened once it has.
+hcaptcha_state captcha_node(App *app, Captcha *c, civue_id key) {
+  civue_ui *ui = civue_ui_current();
+  const Look *k = &app->look;
+  bool open = c->was == HCAPTCHA_OPEN;
+  bool live = open || c->was == HCAPTCHA_LOADING;
+  hcaptcha_state state = {};
+
+  if (open) {
+    overlay() {
+      div(key(id("captcha-backdrop")), left(0), top(0), w(px(ui->size.x)),
+          h(px(ui->size.y)), bg(k->scrim)) {
+        state = hcaptcha_node(ui, c->h);
+      }
+    }
+  }
+
+  // webkit holds back the timers of a page off the screen, so a loading one
+  // sits clear over the spinner.
+  div(key(key), w(full), h(px(live ? 48 : 0)), flex, items_center,
+      justify_center) {
+    if (!open) {
+      state = hcaptcha_node(ui, c->h);
+    }
+
+    if (live) {
+      explore_spinner(k->subtle, 32);
+    }
+  }
+
+  c->was = state.status;
+  return state;
+}
+
+bool captcha_unshowable(hcaptcha_state s) {
+  return s.status == HCAPTCHA_FAILED && s.error &&
+         !strcmp(s.error, "no webview on this platform");
 }

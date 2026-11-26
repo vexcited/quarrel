@@ -2,6 +2,7 @@
 #include "authorize.h"
 #include "complete.h"
 #include "explore.h"
+#include "widgets.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -154,10 +155,7 @@ void app_reset(App *app) {
 
   app->friend_ready = false;
 
-  if (app->friend_captcha) {
-    hcaptcha_free(app->friend_captcha);
-    app->friend_captcha = nullptr;
-  }
+  captcha_drop(&app->friend_captcha);
 
   drop(&app->directory_field);
   drop(&app->directory_query);

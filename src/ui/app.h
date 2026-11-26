@@ -10,6 +10,13 @@
 #include "platform/platform.h"
 #include "voice/audio.h"
 
+// discord's hcaptcha challenge, and how the last frame left it: an open one
+// is shown over the whole window.
+typedef struct {
+  hcaptcha *h;
+  hcaptcha_status was;
+} Captcha;
+
 constexpr float SIDEBAR_WIDTH = 300;
 constexpr float SIDEBAR_MIN = 240;
 constexpr float SIDEBAR_MAX = 440;
@@ -174,7 +181,7 @@ typedef struct {
   // the login form.
   char *login, *password, *code;
   SessionMfaMethod mfa_method;
-  hcaptcha *captcha;
+  Captcha captcha;
   uint64_t captcha_version;
 
   // the composer.
@@ -287,7 +294,7 @@ typedef struct {
   // discord asked for.
   char *friend_tag, *friend_note;
   bool friend_ready, friend_focused;
-  hcaptcha *friend_captcha;
+  Captcha friend_captcha;
 
   // the guilds whose muted channels are hidden.
   Ids hide_muted;

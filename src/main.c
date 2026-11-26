@@ -252,13 +252,8 @@ int main() {
 
   civue_window_run(&options, make, &app);
 
-  if (app.captcha) {
-    hcaptcha_free(app.captcha);
-  }
-
-  if (app.friend_captcha) {
-    hcaptcha_free(app.friend_captcha);
-  }
+  captcha_drop(&app.captcha);
+  captcha_drop(&app.friend_captcha);
 
   media_free(&app);
   gif_players_free(&app);

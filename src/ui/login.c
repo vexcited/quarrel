@@ -510,13 +510,6 @@ static void second_factor(App *app) {
   }
 }
 
-static void drop_captcha(App *app) {
-  if (app->captcha) {
-    hcaptcha_free(app->captcha);
-    app->captcha = nullptr;
-  }
-}
-
 static void challenge(App *app) {
   const Look *k = &app->look;
   Session *session = app->session;
@@ -533,37 +526,20 @@ static void challenge(App *app) {
   }
   else {
     // each challenge discord sends is a new one.
-    if (app->captcha && app->captcha_version != session->version) {
-      drop_captcha(app);
+    if (app->captcha_version != session->version) {
+      captcha_drop(&app->captcha);
     }
 
-    if (!app->captcha) {
-      app->captcha = hcaptcha_new(&(hcaptcha_options){
-        .sitekey = asked->sitekey,
-        .origin = "https://discord.com",
-        .rqdata = asked->rqdata,
-        .theme = "dark",
-      });
+    if (!app->captcha.h) {
+      captcha_start(&app->captcha, asked->sitekey, asked->rqdata);
       app->captcha_version = session->version;
     }
 
-    hcaptcha_state state = {.status = HCAPTCHA_FAILED,
-                            .error = "web views are missing here"};
-
-    div(w(full), h(px(460))) {
-      if (app->captcha) {
-        state = hcaptcha_node(civue_ui_current(), app->captcha);
-      }
-
-      if (state.status == HCAPTCHA_LOADING) {
-        text("Loading the challenge...", text_color(k->muted), text_center,
-             mt(8));
-      }
-    }
+    hcaptcha_state state = captcha_node(app, &app->captcha, id("captcha"));
 
     if (state.status == HCAPTCHA_SOLVED && state.token) {
       session_submit_captcha(session, state.token);
-      drop_captcha(app);
+      captcha_drop(&app->captcha);
       return;
     }
 
@@ -576,16 +552,15 @@ static void challenge(App *app) {
       text(why, text_size(px(14)), line_height(px(18)),
            text_color(k->critical_text), mb(3));
 
-      if (app->captcha &&
-          primary_button(k, id("captcha-retry"), "Try again", true)) {
-        hcaptcha_reset(app->captcha);
+      if (primary_button(k, id("captcha-retry"), "Try again", true)) {
+        hcaptcha_reset(app->captcha.h);
       }
     }
   }
 
   div(mt(3)) {
     if (link_button(k, id("captcha-back"), "Go back to login")) {
-      drop_captcha(app);
+      captcha_drop(&app->captcha);
       session_cancel_login(session);
     }
   }
@@ -598,7 +573,7 @@ void login_screen(App *app) {
               session->state != SESSION_CAPTCHA;
 
   if (session->state != SESSION_CAPTCHA) {
-    drop_captcha(app);
+    captcha_drop(&app->captcha);
   }
 
   // a second factor being checked shows the form, not a new code.

@@ -327,13 +327,6 @@ static bool send_button(const Look *k, bool enabled) {
   return pressed;
 }
 
-static void drop_friend_captcha(App *app) {
-  if (app->friend_captcha) {
-    hcaptcha_free(app->friend_captcha);
-    app->friend_captcha = nullptr;
-  }
-}
-
 // the challenge discord holds the request back for, where the client opens
 // its captcha modal.
 static void friend_challenge(App *app) {
@@ -342,7 +335,7 @@ static void friend_challenge(App *app) {
   const SessionCaptcha *asked = &session->friend_captcha;
 
   if (!asked->service) {
-    drop_friend_captcha(app);
+    captcha_drop(&app->friend_captcha);
     return;
   }
 
@@ -353,32 +346,19 @@ static void friend_challenge(App *app) {
     return;
   }
 
-  if (!app->friend_captcha) {
-    app->friend_captcha = hcaptcha_new(&(hcaptcha_options){
-      .sitekey = asked->sitekey,
-      .origin = "https://discord.com",
-      .rqdata = asked->rqdata,
-      .theme = "dark",
-    });
-  }
+  captcha_start(&app->friend_captcha, asked->sitekey, asked->rqdata);
 
-  hcaptcha_state state = {.status = HCAPTCHA_FAILED,
-                          .error = "web views are missing here"};
-
-  div(key(id("add-friend-captcha")), w(px(400)), h(px(460)), mt(4)) {
-    if (app->friend_captcha) {
-      state = hcaptcha_node(civue_ui_current(), app->friend_captcha);
-    }
-  }
+  hcaptcha_state state =
+    captcha_node(app, &app->friend_captcha, id("add-friend-captcha"));
 
   if (state.status == HCAPTCHA_SOLVED && state.token) {
     session_add_friend_captcha(session, state.token);
-    drop_friend_captcha(app);
+    captcha_drop(&app->friend_captcha);
   }
   else if (state.status == HCAPTCHA_CANCELLED ||
            state.status == HCAPTCHA_EXPIRED ||
            state.status == HCAPTCHA_FAILED) {
-    drop_friend_captcha(app);
+    captcha_drop(&app->friend_captcha);
     session_add_friend_clear(session);
   }
 }

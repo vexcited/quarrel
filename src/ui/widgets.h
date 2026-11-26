@@ -89,4 +89,13 @@ void markup(App *app, civue_id key, const char *source, const MarkupOptions *o);
 // out of the window.
 civue_rect overlay_room(void);
 
+// starts discord's challenge for `sitekey` unless `c` runs one already.
+void captcha_start(Captcha *c, const char *sitekey, const char *rqdata);
+void captcha_drop(Captcha *c);
+// a spinner while the challenge loads, as the client's modal holds. an open
+// challenge goes over the whole window, as hcaptcha's popup does on the web.
+hcaptcha_state captcha_node(App *app, Captcha *c, civue_id key);
+// the build has no web view to show a challenge in, which no retry mends.
+[[gnu::pure]] bool captcha_unshowable(hcaptcha_state s);
+
 #endif

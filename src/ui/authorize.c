@@ -128,19 +128,12 @@ typedef struct AuthorizeUi {
   Permissions denied;
   Dropdown servers;
   const char *joke;
-  hcaptcha *captcha;
+  Captcha captcha;
 } AuthorizeUi;
 
 const AuthorizePermission *authorize_permissions(size_t *count) {
   *count = countof(PERMISSIONS);
   return PERMISSIONS;
-}
-
-static void drop_captcha(AuthorizeUi *au) {
-  if (au->captcha) {
-    hcaptcha_free(au->captcha);
-    au->captcha = nullptr;
-  }
 }
 
 // forgets what the dialog held. what was asked of discord is the
@@ -155,7 +148,7 @@ static void forget(AuthorizeUi *au) {
   au->name = nullptr;
   au->open = false;
   form_dropdown_close(&au->servers);
-  drop_captcha(au);
+  captcha_drop(&au->captcha);
 }
 
 static void close_dialog(App *app) {
@@ -657,32 +650,19 @@ static void challenge(App *app, Oauth *o) {
     return;
   }
 
-  if (!au->captcha) {
-    au->captcha = hcaptcha_new(&(hcaptcha_options){
-      .sitekey = o->captcha.sitekey,
-      .origin = "https://discord.com",
-      .rqdata = o->captcha.rqdata,
-      .theme = "dark",
-    });
-  }
+  captcha_start(&au->captcha, o->captcha.sitekey, o->captcha.rqdata);
 
-  hcaptcha_state state = {.status = HCAPTCHA_FAILED,
-                          .error = "web views are missing here"};
-
-  div(key(id("authorize-captcha")), w(px(400)), h(px(460)), mx(auto), my(4)) {
-    if (au->captcha) {
-      state = hcaptcha_node(civue_ui_current(), au->captcha);
-    }
-  }
+  hcaptcha_state state =
+    captcha_node(app, &au->captcha, id("authorize-captcha"));
 
   if (state.status == HCAPTCHA_SOLVED && state.token) {
     oauth_answer_captcha(o, state.token);
-    drop_captcha(au);
+    captcha_drop(&au->captcha);
   }
   else if (state.status == HCAPTCHA_CANCELLED ||
            state.status == HCAPTCHA_EXPIRED ||
            state.status == HCAPTCHA_FAILED) {
-    drop_captcha(au);
+    captcha_drop(&au->captcha);
     oauth_drop_captcha(o);
   }
 }
