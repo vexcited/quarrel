@@ -61,19 +61,19 @@ static const char *guild_name_of(const Guild *g) {
 static civue_icon template_icon(size_t index) {
   switch (index) {
     case 1:
-      return CIVUE_ICON(lucide, book_open);
+      return CIVUE_ICON(mingcute, book_6_fill);
     case 2:
-      return CIVUE_ICON(lucide, flag);
+      return CIVUE_ICON(mingcute, flag_2_fill);
     case 3:
-      return CIVUE_ICON(lucide, graduation_cap);
+      return CIVUE_ICON(mingcute, mortarboard_fill);
     case 4:
-      return CIVUE_ICON(lucide, party_popper);
+      return CIVUE_ICON(mingcute, celebrate_fill);
     case 5:
-      return CIVUE_ICON(lucide, library);
+      return CIVUE_ICON(mingcute, library_fill);
     case 6:
-      return CIVUE_ICON(lucide, house);
+      return CIVUE_ICON(mingcute, home_4_fill);
     default:
-      return CIVUE_ICON(lucide, plus);
+      return CIVUE_ICON(mingcute, add_fill);
   }
 }
 
@@ -361,11 +361,11 @@ static void category_select(App *app, Snowflake channel_id) {
            text_color(app->entry_category ? k->text : k->muted));
 
       if (app->category_open) {
-        icon(lucide, chevron_up, size(4), flex_shrink_0,
+        icon(mingcute, up_fill, size(4), flex_shrink_0,
              text_color(k->subtle));
       }
       else {
-        icon(lucide, chevron_down, size(4), flex_shrink_0,
+        icon(mingcute, down_fill, size(4), flex_shrink_0,
              text_color(k->subtle));
       }
     }
@@ -388,7 +388,7 @@ static void category_select(App *app, Snowflake channel_id) {
                  text_color(on ? k->strong : k->text));
 
             if (on) {
-              icon(lucide, check, size(4), text_color(k->strong));
+              icon(mingcute, check_fill, size(4), text_color(k->strong));
             }
           }
         }
@@ -455,19 +455,19 @@ void hub_rows(App *app, Guild *guild) {
       // servers.
       session_directory_open(s, dir->id);
 
-      if (hub_row(app, id("hub-join"), CIVUE_ICON(lucide, compass),
+      if (hub_row(app, id("hub-join"), CIVUE_ICON(mingcute, compass_fill),
                   "Join Servers", open, open ? 0 : new_entries(app, dir))) {
         app_select_channel(app, dir->id);
       }
 
       if (can_add(app, dir) &&
-          hub_row(app, id("hub-add"), CIVUE_ICON(lucide, plus), "Add Servers",
+          hub_row(app, id("hub-add"), CIVUE_ICON(mingcute, add_fill), "Add Servers",
                   false, 0)) {
         open_add(app, dir->id);
       }
     }
 
-    if (hub_row(app, id("hub-invite"), CIVUE_ICON(lucide, user_plus),
+    if (hub_row(app, id("hub-invite"), CIVUE_ICON(mingcute, user_add_fill),
                 "Invite People", false, 0)) {
       app->popover = POPOVER_INVITE;
       app->invite_copied = false;
@@ -547,15 +547,15 @@ static void card_menu(App *app, const Channel *dir) {
       card = here();
 
       if (editable) {
-        edit = menu_row(app, id("directory-edit"), CIVUE_ICON(lucide, pencil),
+        edit = menu_row(app, id("directory-edit"), CIVUE_ICON(mingcute, pencil_fill),
                         "Edit Settings", k->text);
         remove =
-          menu_row(app, id("directory-remove"), CIVUE_ICON(lucide, trash_2),
+          menu_row(app, id("directory-remove"), CIVUE_ICON(mingcute, delete_2_fill),
                    "Remove from Hub", k->critical_text);
         div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
       }
 
-      copy = menu_row(app, id("directory-copy"), CIVUE_ICON(lucide, copy),
+      copy = menu_row(app, id("directory-copy"), CIVUE_ICON(mingcute, copy_2_fill),
                       "Copy Server ID", k->text);
     }
   }
@@ -713,7 +713,7 @@ static void entry_card(App *app, const Channel *dir, const DirectoryEntry *e) {
           border_color(k->border_strong)) {
         if (can_edit(app, dir, e->entity_id) &&
             icon_button(app, id_at(id("directory-pencil"), e->entity_id),
-                        CIVUE_ICON(lucide, pencil), 28, 18, "Edit Settings")) {
+                        CIVUE_ICON(mingcute, pencil_fill), 28, 18, "Edit Settings")) {
           open_edit(app, dir->id, e->entity_id);
         }
 
@@ -723,7 +723,7 @@ static void entry_card(App *app, const Channel *dir, const DirectoryEntry *e) {
           anchor = here();
 
           if (icon_button(app, id_at(id("directory-more"), e->entity_id),
-                          CIVUE_ICON(lucide, ellipsis), 28, 18, "More")) {
+                          CIVUE_ICON(mingcute, more_1_fill), 28, 18, "More")) {
             open_menu(app, e->entity_id, anchor);
           }
         }
@@ -744,7 +744,7 @@ static void add_card(App *app, const Channel *dir) {
     }
 
     dashed(here(), k->muted, 2);
-    icon(lucide, circle_plus, size(10));
+    icon(mingcute, add_circle_fill, size(10));
     text("Add Server", mt(2), font_weight(semibold));
   }
 }
@@ -794,7 +794,7 @@ static void search_bar(App *app, const Channel *dir) {
                   .submitted;
 
     civue_rect r = here();
-    civue_icon_centered(civue_ui_current(), CIVUE_ICON(lucide, search),
+    civue_icon_centered(civue_ui_current(), CIVUE_ICON(mingcute, search_fill),
                         xywh((float)r.x1 - 36, (float)r.y0, 28,
                              (float)civue_rect_h(r)),
                         18, k->faint);
@@ -966,7 +966,7 @@ static void search_results(App *app, const Channel *dir, const Directory *d) {
 
   div(flex, flex_col, gap(2), flex_shrink_0) {
     div(flex, items_center, min_w(0)) {
-      if (icon_button(app, id("directory-back"), CIVUE_ICON(lucide, arrow_left),
+      if (icon_button(app, id("directory-back"), CIVUE_ICON(mingcute, arrow_left_fill),
                       32, 20, "Back")) {
         back_from_search(app);
       }
@@ -1048,12 +1048,12 @@ static void directory_header(App *app, Channel *c) {
   div(flex, items_center, gap(2), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
       border_b(1), border_color(k->border)) {
     window_handle(id("directory-header"));
-    icon(lucide, compass, size(5), flex_shrink_0, text_color(k->faint));
+    icon(mingcute, compass_fill, size(5), flex_shrink_0, text_color(k->faint));
     text(title, flex_1, min_w(0), truncate, font_weight(semibold),
          text_color(k->strong));
 
     if (icon_button(
-          app, id("directory-members"), CIVUE_ICON(lucide, users), 32, 20,
+          app, id("directory-members"), CIVUE_ICON(mingcute, group_fill), 32, 20,
           app->members_hidden ? "Show Member List" : "Hide Member List")) {
       app->members_hidden = !app->members_hidden;
     }
@@ -1283,19 +1283,19 @@ static void choose_guild(App *app, const Channel *dir, const Guild *hub) {
 
         if (listed) {
           if (icon_button(app, id_at(id("add-edit"), g->id),
-                          CIVUE_ICON(lucide, pencil), 28, 16,
+                          CIVUE_ICON(mingcute, pencil_fill), 28, 16,
                           "Edit Settings")) {
             open_edit(app, dir->id, g->id);
           }
 
           if (icon_button(app, id_at(id("add-remove"), g->id),
-                          CIVUE_ICON(lucide, trash_2), 28, 16,
+                          CIVUE_ICON(mingcute, delete_2_fill), 28, 16,
                           "Remove from Hub")) {
             open_dialog(app, HUB_DIALOG_REMOVE, dir->id, g->id);
           }
         }
         else {
-          icon(lucide, chevron_right, size(4), flex_shrink_0,
+          icon(mingcute, right_fill, size(4), flex_shrink_0,
                text_color(k->faint));
 
           if (pressed) {
@@ -1354,7 +1354,7 @@ static void template_row(App *app, size_t index, const char *label) {
 
     text(label, flex_1, min_w(0), truncate, font_weight(semibold),
          text_color(k->strong));
-    icon(lucide, chevron_right, size(4), mr(4), flex_shrink_0,
+    icon(mingcute, right_fill, size(4), mr(4), flex_shrink_0,
          text_color(k->faint));
   }
 }
@@ -1485,7 +1485,7 @@ static void done(App *app, const Guild *hub, bool *close) {
              guild_name_of(hub));
   }
 
-  dialog_mark(CIVUE_ICON(lucide, check), k->positive, k->on_positive);
+  dialog_mark(CIVUE_ICON(mingcute, check_fill), k->positive, k->on_positive);
   dialog_header(k, "Success!", line);
 
   div(flex, justify_end, gap(2), flex_shrink_0) {
@@ -1780,7 +1780,7 @@ static void school_row(App *app, const SessionHubSchool *school) {
 
     text(school->name, flex_1, min_w(0), ml(4), truncate,
          font_weight(semibold), text_color(k->strong));
-    icon(lucide, chevron_right, size(4), flex_shrink_0, text_color(k->faint));
+    icon(mingcute, right_fill, size(4), flex_shrink_0, text_color(k->faint));
   }
 }
 
@@ -1933,10 +1933,10 @@ static void join_dialog(App *app) {
 
   hub_modal("join-dialog", close) {
     if (s->hub.step == HUB_JOIN_WAITING || s->hub.step == HUB_JOIN_JOINED) {
-      dialog_mark(CIVUE_ICON(lucide, check), k->positive, k->on_positive);
+      dialog_mark(CIVUE_ICON(mingcute, check_fill), k->positive, k->on_positive);
     }
     else {
-      dialog_mark(CIVUE_ICON(lucide, graduation_cap), k->primary,
+      dialog_mark(CIVUE_ICON(mingcute, mortarboard_fill), k->primary,
                   k->on_primary);
     }
 

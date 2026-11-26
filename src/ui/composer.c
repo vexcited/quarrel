@@ -301,7 +301,7 @@ static void context_bar(App *app, Channel *c) {
       border_color(k->border), text_size(px(14)), line_height(px(18)),
       text_color(k->subtle)) {
     if (app->editing) {
-      gutter_icon(CIVUE_ICON(lucide, pencil), k->faint);
+      gutter_icon(CIVUE_ICON(mingcute, pencil_fill), k->faint);
       text("Editing message", flex_1, min_w(0), truncate, font_weight(medium));
       text("escape to cancel, enter to save", flex_shrink_0, mx(2),
            text_color(k->faint));
@@ -309,7 +309,7 @@ static void context_bar(App *app, Channel *c) {
     else {
       Author author = store_author(store, to);
 
-      gutter_icon(CIVUE_ICON(lucide, reply), k->faint);
+      gutter_icon(CIVUE_ICON(mingcute, corner_up_left_fill), k->faint);
       text("Replying to", flex_shrink_0, mr(1));
       text(author.name, flex_1, min_w(0), truncate, font_weight(semibold),
            text_color(author.color ? rgb(author.color) : k->strong));
@@ -322,12 +322,12 @@ static void context_bar(App *app, Channel *c) {
           app->reply_ping = !app->reply_ping;
         }
 
-        icon(lucide, at_sign, size(4));
+        icon(mingcute, at_fill, size(4));
         text(app->reply_ping ? "ON" : "OFF");
       }
     }
 
-    if (icon_button(app, id("context-close"), CIVUE_ICON(lucide, x), 24, 16,
+    if (icon_button(app, id("context-close"), CIVUE_ICON(mingcute, close_fill), 24, 16,
                     nullptr)) {
       if (app->editing) {
         stop_editing(app);
@@ -433,7 +433,7 @@ static void closed_row(const Look *k, civue_icon icon, const char *why) {
 }
 
 static void gif_button(App *app, civue_rect box) {
-  if (composer_button(app, id("composer-gif"), CIVUE_ICON(lucide, image_play),
+  if (composer_button(app, id("composer-gif"), CIVUE_ICON(mingcute, image_play_fill),
                       app->popover == POPOVER_GIFS, "Send a GIF",
                       &app->gif_button)
         .activated) {
@@ -442,7 +442,7 @@ static void gif_button(App *app, civue_rect box) {
 }
 
 static void emoji_button(App *app, civue_rect box) {
-  if (composer_button(app, id("composer-emoji"), CIVUE_ICON(lucide, smile),
+  if (composer_button(app, id("composer-emoji"), CIVUE_ICON(mingcute, emoji_fill),
                       app->popover == POPOVER_EMOJIS, "Select emoji",
                       &app->emoji_button)
         .activated) {
@@ -506,7 +506,7 @@ static void writing(App *app, Channel *c) {
         upload_button(app, c);
       }
       else if (!app->editing) {
-        icon(lucide, plus, size(5), text_color(k->faint));
+        icon(mingcute, add_fill, size(5), text_color(k->faint));
       }
     }
 
@@ -553,12 +553,12 @@ void composer(App *app, Channel *c) {
     typing_tab(app, c);
 
     if (preview) {
-      closed_row(k, CIVUE_ICON(lucide, eye),
+      closed_row(k, CIVUE_ICON(mingcute, eye_2_fill),
                  "You are in preview mode. Join this server to talk.");
     }
     else if (!allowed) {
       closed_row(
-        k, CIVUE_ICON(lucide, lock),
+        k, CIVUE_ICON(mingcute, lock_fill),
         "You do not have permission to send messages in this channel.");
     }
     else {

@@ -892,7 +892,7 @@ static void command_row(App *app, CompleteList *list, const Slash *slash,
                                                 : COMPLETE_ICON_APPLICATION,
                        .id = command->application_id,
                        .name = of ? of->icon : nullptr,
-                       .glyph = CIVUE_ICON(lucide, square_slash),
+                       .glyph = CIVUE_ICON(mingcute, terminal_box_fill),
                        .label = label,
                        .detail = slash->description,
                      });
@@ -1099,7 +1099,7 @@ static void fill_values(App *app, Channel *c, const Typed *typed,
         strcmp(value, "@everyone") != 0) {
       complete_add(list, &(CompleteRow){
                            .icon = COMPLETE_ICON_GLYPH,
-                           .glyph = CIVUE_ICON(lucide, at_sign),
+                           .glyph = CIVUE_ICON(mingcute, at_fill),
                            .label = "@everyone",
                            .insert = "@everyone",
                          });
@@ -1398,7 +1398,7 @@ static void row_icon(App *app, const Row *r) {
       div(flex, items_center, justify_center, size(8), flex_shrink_0,
           rounded(full), bg(k->surface), overflow_hidden) {
         if (!*url || !image_cover(app, url, 16)) {
-          glyph(CIVUE_ICON(lucide, bot), 18, k->subtle);
+          glyph(CIVUE_ICON(mingcute, robot_fill), 18, k->subtle);
         }
       }
 

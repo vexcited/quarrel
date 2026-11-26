@@ -720,7 +720,7 @@ size_t mention_roles(App *app, Channel *c, const char *typed,
       list,
       &(CompleteRow){
         .icon = COMPLETE_ICON_GLYPH,
-        .glyph = CIVUE_ICON(lucide, at_sign),
+        .glyph = CIVUE_ICON(mingcute, at_fill),
         .color = role->color ? rgb(role->color) : CIVUE_CLEAR,
         .label = role->name,
         .detail = any ? nullptr
@@ -761,7 +761,7 @@ void mention_offer(App *app, Channel *c, const char *token,
       complete_add(list,
                    &(CompleteRow){
                      .icon = COMPLETE_ICON_GLYPH,
-                     .glyph = CIVUE_ICON(lucide, at_sign),
+                     .glyph = CIVUE_ICON(mingcute, at_fill),
                      .label = "@everyone",
                      .detail = "Notify everyone who has permission to view "
                                "this channel.",
@@ -773,7 +773,7 @@ void mention_offer(App *app, Channel *c, const char *token,
       complete_add(list,
                    &(CompleteRow){
                      .icon = COMPLETE_ICON_GLYPH,
-                     .glyph = CIVUE_ICON(lucide, at_sign),
+                     .glyph = CIVUE_ICON(mingcute, at_fill),
                      .label = "@here",
                      .detail = "Notify everyone online who has permission to "
                                "view this channel.",
@@ -797,23 +797,23 @@ int32_t channel_find(App *, const Channel *c, const char *text,
 static civue_icon channel_glyph(const Channel *c) {
   switch (c->type) {
     case CHANNEL_GUILD_VOICE:
-      return CIVUE_ICON(lucide, volume_2);
+      return CIVUE_ICON(mingcute, volume_fill);
     case CHANNEL_GUILD_STAGE:
-      return CIVUE_ICON(lucide, radio);
+      return CIVUE_ICON(mingcute, base_station_fill);
     case CHANNEL_GUILD_ANNOUNCEMENT:
-      return CIVUE_ICON(lucide, megaphone);
+      return CIVUE_ICON(mingcute, announcement_fill);
     case CHANNEL_GUILD_FORUM:
-      return CIVUE_ICON(lucide, messages_square);
+      return CIVUE_ICON(mingcute, messages_square_fill);
     case CHANNEL_GUILD_MEDIA:
-      return CIVUE_ICON(lucide, image);
+      return CIVUE_ICON(mingcute, pic_fill);
     case CHANNEL_GUILD_CATEGORY:
-      return CIVUE_ICON(lucide, folder);
+      return CIVUE_ICON(mingcute, folder_fill);
     case CHANNEL_ANNOUNCEMENT_THREAD:
     case CHANNEL_PUBLIC_THREAD:
     case CHANNEL_PRIVATE_THREAD:
-      return CIVUE_ICON(lucide, message_square);
+      return CIVUE_ICON(mingcute, message_2_fill);
     default:
-      return CIVUE_ICON(lucide, hash);
+      return CIVUE_ICON(mingcute, hashtag_fill);
   }
 }
 

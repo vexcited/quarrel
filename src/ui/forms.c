@@ -175,7 +175,7 @@ bool form_checkbox(App *app, civue_id id, bool on) {
     pressed = button().activated;
 
     if (on) {
-      icon(lucide, check, size(px(14)));
+      icon(mingcute, check_fill, size(px(14)));
     }
   }
 
@@ -435,11 +435,11 @@ int form_select(App *app, Dropdown *d, civue_id id, const char *const *names,
          text_color(civue_alpha(picked ? k->text : k->muted, fade)));
 
     if (open) {
-      icon(lucide, chevron_up, size(4), flex_shrink_0,
+      icon(mingcute, up_fill, size(4), flex_shrink_0,
            text_color(civue_alpha(k->subtle, fade)));
     }
     else {
-      icon(lucide, chevron_down, size(4), flex_shrink_0,
+      icon(mingcute, down_fill, size(4), flex_shrink_0,
            text_color(civue_alpha(k->subtle, fade)));
     }
   }
@@ -494,7 +494,7 @@ void form_dropdowns(App *app, Dropdown *d) {
                text_color(on ? k->strong : k->text));
 
           if (on) {
-            icon(lucide, check, size(4), flex_shrink_0, text_color(k->strong));
+            icon(mingcute, check_fill, size(4), flex_shrink_0, text_color(k->strong));
           }
         }
       }

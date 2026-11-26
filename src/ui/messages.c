@@ -66,7 +66,7 @@ void file_card(App *app, civue_id id, const Attachment *a) {
 
   div(flex, items_center, gap(2), w(full), max_w(px(432)), p(4), rounded(lg),
       bg(k->surface), border(1), border_color(k->border)) {
-    icon(lucide, file, size(8), flex_shrink_0, text_color(k->subtle));
+    icon(mingcute, file_fill, size(8), flex_shrink_0, text_color(k->subtle));
 
     div(flex, flex_col, flex_1, min_w(0)) {
       div(key(id), text_color(k->link), cursor_pointer) {
@@ -312,7 +312,7 @@ static void embed_link_video(App *app, civue_id id, const EmbedView *v) {
 
     div(flex, items_center, justify_center, size(12), rounded(full),
         bg(rgba(0x00000099)), text_color(CIVUE_WHITE)) {
-      icon(lucide, play, size(6));
+      icon(mingcute, play_fill, size(6));
     }
   }
 }
@@ -997,16 +997,16 @@ static void system_message(App *app, const Channel *c, const Message *m) {
 
   div(absolute, left(0), top(px(4)), w(px(GUTTER)), flex, justify_center) {
     if (m->type == MESSAGE_USER_JOIN || m->type == MESSAGE_RECIPIENT_ADD) {
-      icon(lucide, arrow_right, size(px(18)), text_color(k->online));
+      icon(mingcute, arrow_right_fill, size(px(18)), text_color(k->online));
     }
     else if (m->type == MESSAGE_CHANNEL_PINNED_MESSAGE) {
-      icon(lucide, pin, size(px(18)), text_color(k->subtle));
+      icon(mingcute, pin_2_fill, size(px(18)), text_color(k->subtle));
     }
     else if (boost) {
-      icon(lucide, gem, size(px(18)), text_color(k->accent_text));
+      icon(mingcute, diamond_2_fill, size(px(18)), text_color(k->accent_text));
     }
     else {
-      icon(lucide, info, size(px(18)), text_color(k->subtle));
+      icon(mingcute, information_fill, size(px(18)), text_color(k->subtle));
     }
   }
 
@@ -1122,31 +1122,31 @@ static void toolbar(App *app, Channel *c, const Message *m) {
       div(flex_shrink_0, w(px(1)), h(5), mx(1), bg(k->border)) {}
     }
 
-    if (reacts && tool(app, id_at(id, 1), CIVUE_ICON(lucide, smile_plus),
+    if (reacts && tool(app, id_at(id, 1), CIVUE_ICON(mingcute, emoji_2_fill),
                        "Add Reaction", k->subtle)) {
       opens = POPOVER_REACT;
     }
 
     if (own && plain) {
-      if (tool(app, id_at(id, 2), CIVUE_ICON(lucide, pencil), "Edit",
+      if (tool(app, id_at(id, 2), CIVUE_ICON(mingcute, pencil_fill), "Edit",
                k->subtle)) {
         app_edit_message(app, m);
       }
     }
     else if (plain && store_can(store, c, PERM_SEND_MESSAGES) &&
-             tool(app, id_at(id, 3), CIVUE_ICON(lucide, reply), "Reply",
+             tool(app, id_at(id, 3), CIVUE_ICON(mingcute, corner_up_left_fill), "Reply",
                   k->subtle)) {
       app->reply_to = m->id;
       app->reply_ping = true;
       app->focus_composer = true;
     }
 
-    if (plain && tool(app, id_at(id, 4), CIVUE_ICON(lucide, forward), "Forward",
+    if (plain && tool(app, id_at(id, 4), CIVUE_ICON(mingcute, corner_up_right_fill), "Forward",
                       k->subtle)) {
       opens = POPOVER_FORWARD;
     }
 
-    if (tool(app, id_at(id, 5), CIVUE_ICON(lucide, ellipsis), "More",
+    if (tool(app, id_at(id, 5), CIVUE_ICON(mingcute, more_1_fill), "More",
              k->subtle)) {
       opens = POPOVER_MESSAGE_MENU;
     }
@@ -1400,10 +1400,10 @@ static void beginning(App *app, const Channel *c) {
       div(flex, items_center, justify_center, size(px(68)), rounded(full),
           bg(k->surface_high), text_color(k->strong)) {
         if (channel_is_private(c)) {
-          icon(lucide, users, size(10));
+          icon(mingcute, group_fill, size(10));
         }
         else {
-          icon(lucide, hash, size(10));
+          icon(mingcute, hashtag_fill, size(10));
         }
       }
     }

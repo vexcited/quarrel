@@ -719,7 +719,7 @@ static void everyone_card(App *app, ServerUi *ui, Guild *g) {
 
     div(flex, items_center, justify_center, size(8), flex_shrink_0,
         rounded(full), bg(k->panel)) {
-      icon(lucide, users, size(5));
+      icon(mingcute, group_fill, size(5));
     }
 
     div(flex, flex_col, gap(1), flex_1, min_w(0), ml(4)) {
@@ -729,7 +729,7 @@ static void everyone_card(App *app, ServerUi *ui, Guild *g) {
            text_size(px(12)), line_height(px(16)));
     }
 
-    icon(lucide, chevron_right, size(5), flex_shrink_0);
+    icon(mingcute, right_fill, size(5), flex_shrink_0);
   }
 
   if (open) {
@@ -738,7 +738,7 @@ static void everyone_card(App *app, ServerUi *ui, Guild *g) {
 }
 
 static void role_shield(civue_color color) {
-  civue_node_icon(civue_ui_current(), CIVUE_ICON(lucide, shield_user),
+  civue_node_icon(civue_ui_current(), CIVUE_ICON(mingcute, user_security_fill),
                   &CIVUE_NODE_STYLE(.w = civue_px(24), .h = civue_px(24),
                                     .text_color = color,
                                     .has_text_color = true, .shrink = 0,
@@ -857,7 +857,7 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
             h(full),
             text_color(movable && state.response.hovered ? k->subtle
                                                          : CIVUE_CLEAR)) {
-          icon(lucide, grip_vertical, size(4));
+          icon(mingcute, dots_fill, size(4));
         }
 
         div(flex, items_center, gap(px(10)), min_w(0),
@@ -868,7 +868,7 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
                truncate, font_weight(medium), text_color(k->strong));
 
           if (locked) {
-            icon(lucide, lock, size(4), flex_shrink_0, text_color(k->muted));
+            icon(mingcute, lock_fill, size(4), flex_shrink_0, text_color(k->muted));
           }
         }
 
@@ -877,7 +877,7 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
             text_color(k->subtle), hover(text_color(k->strong))) {
           members = button().activated;
           text(count);
-          icon(lucide, user, size(5));
+          icon(mingcute, user_3_fill, size(5));
         }
 
         div(flex, items_center, justify_end, gap(2), flex_1, ml(4)) {
@@ -887,10 +887,10 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
             open |= button().activated;
 
             if (locked) {
-              icon(lucide, eye, size(4));
+              icon(mingcute, eye_2_fill, size(4));
             }
             else {
-              icon(lucide, pencil, size(4));
+              icon(mingcute, pencil_fill, size(4));
             }
           }
 
@@ -902,7 +902,7 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
               ui->role_menu_at = here();
             }
 
-            icon(lucide, ellipsis, size(4));
+            icon(mingcute, more_1_fill, size(4));
           }
         }
       }
@@ -918,7 +918,7 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
 
   if (n == 0) {
     div(flex, items_center, gap(2), mt(6), text_color(k->muted)) {
-      icon(lucide, users, size(5));
+      icon(mingcute, group_fill, size(5));
       text("No roles", font_weight(semibold));
     }
   }
@@ -954,11 +954,11 @@ static void editor_column(App *app, ServerUi *ui, Guild *g, bool *back) {
           font_weight(semibold), text_color(k->text),
           hover(text_color(k->strong)), cursor_pointer) {
         *back = button().activated;
-        icon(lucide, chevron_left, size(5));
+        icon(mingcute, left_fill, size(5));
         text("Back");
       }
 
-      if (icon_button(app, id("roles-new"), CIVUE_ICON(lucide, plus), 28, 20,
+      if (icon_button(app, id("roles-new"), CIVUE_ICON(mingcute, add_fill), 28, 20,
                       "Create Role") &&
           a->role.status != ADMIN_BUSY) {
         admin_create_role(app->session, g->id);
@@ -999,7 +999,7 @@ static void editor_column(App *app, ServerUi *ui, Guild *g, bool *back) {
                text_color(on || everyone ? k->strong : k->text));
 
           if (locked && !everyone) {
-            icon(lucide, lock, size(4), flex_shrink_0, ml(1),
+            icon(mingcute, lock_fill, size(4), flex_shrink_0, ml(1),
                  text_color(k->subtle));
           }
         }
@@ -1029,13 +1029,13 @@ static void swatch(civue_id id, civue_color color, bool on, float w, float h,
     *pressed = button().activated;
 
     if (on) {
-      civue_node_icon(civue_ui_current(), CIVUE_ICON(lucide, check),
+      civue_node_icon(civue_ui_current(), CIVUE_ICON(mingcute, check_fill),
                       &CIVUE_NODE_STYLE(.w = civue_px(h > 30 ? 24 : 14),
                                         .h = civue_px(h > 30 ? 24 : 14)));
     }
 
     if (pencil) {
-      icon(lucide, pencil, absolute, top(px(4)), right(px(4)), size(px(14)));
+      icon(mingcute, pencil_fill, absolute, top(px(4)), right(px(4)), size(px(14)));
     }
   }
 }
@@ -1341,7 +1341,7 @@ static void permission_row(App *app, const Guild *g, RoleDraft *d,
 
     if (why != nullptr) {
       div(flex, items_center, gap(1), text_color(k->critical_text)) {
-        icon(lucide, ban, size(px(14)), flex_shrink_0);
+        icon(mingcute, forbid_circle_fill, size(px(14)), flex_shrink_0);
         text(why, text_size(px(12)), line_height(px(16)), font_weight(medium));
       }
     }
@@ -1466,7 +1466,7 @@ static void member_row(App *app, ServerUi *ui, Guild *g, Snowflake user_id,
                      : "Members cannot be manually added or removed from "
                        "this role",
            CIVUE_TOOLTIP_ABOVE);
-      icon(lucide, circle_x, size(4));
+      icon(mingcute, close_circle_fill, size(4));
     }
   }
 
@@ -1520,7 +1520,7 @@ static void members_tab(App *app, ServerUi *ui, Guild *g, bool editable) {
   if (total > a->nmembers && a->members_role == ui->role_id) {
     div(flex, items_center, gap(2), flex_shrink_0, mt(4), p(3), rounded(lg),
         bg(civue_alpha(k->primary, .16f)), text_color(k->text)) {
-      icon(lucide, info, size(5), flex_shrink_0);
+      icon(mingcute, information_fill, size(5), flex_shrink_0);
       text("Not all members are shown, use Search to find specific members",
            text_size(px(14)), line_height(px(18)));
     }
@@ -1559,7 +1559,7 @@ static void members_tab(App *app, ServerUi *ui, Guild *g, bool editable) {
   }
   else if (shown == 0) {
     div(flex, items_center, gap(2), text_color(k->muted)) {
-      icon(lucide, users, size(5));
+      icon(mingcute, group_fill, size(5));
       text("No members were found. Add members to this role.",
            text_size(px(14)), line_height(px(18)), font_weight(semibold));
     }
@@ -1612,7 +1612,7 @@ static void role_editor(App *app, ServerUi *ui, Guild *g) {
               ui->role_menu_at = here();
             }
 
-            icon(lucide, ellipsis, size(5));
+            icon(mingcute, more_1_fill, size(5));
           }
         }
       }
@@ -1716,13 +1716,13 @@ static void role_menu(App *app, ServerUi *ui, Guild *g) {
         border(1), border_color(k->border), shadow(lg)) {
       card = here();
 
-      copy = menu_row(app, id("role-menu-copy"), CIVUE_ICON(lucide, copy),
+      copy = menu_row(app, id("role-menu-copy"), CIVUE_ICON(mingcute, copy_2_fill),
                       "Copy Role ID", k->text);
 
       if (editable) {
         div(flex_shrink_0, h(px(1)), m(2), bg(k->border)) {}
         remove = menu_row(app, id("role-menu-delete"),
-                          CIVUE_ICON(lucide, trash_2), "Delete Role",
+                          CIVUE_ICON(mingcute, delete_2_fill), "Delete Role",
                           k->critical_text);
       }
     }

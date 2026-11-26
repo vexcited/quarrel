@@ -196,59 +196,59 @@ static void menu(App *app, const Channel *c, const Message *m) {
       }
 
       if (reacts) {
-        ROW(REACT, CIVUE_ICON(lucide, smile_plus), "Add Reaction", k->text);
+        ROW(REACT, CIVUE_ICON(mingcute, emoji_2_fill), "Add Reaction", k->text);
         separator(k);
       }
 
       if (own && plain) {
-        ROW(EDIT, CIVUE_ICON(lucide, pencil), "Edit Message", k->text);
+        ROW(EDIT, CIVUE_ICON(mingcute, pencil_fill), "Edit Message", k->text);
       }
 
       if (writes && plain) {
-        ROW(REPLY, CIVUE_ICON(lucide, reply), "Reply", k->text);
+        ROW(REPLY, CIVUE_ICON(mingcute, corner_up_left_fill), "Reply", k->text);
       }
 
       if (plain) {
-        ROW(FORWARD, CIVUE_ICON(lucide, forward), "Forward", k->text);
+        ROW(FORWARD, CIVUE_ICON(mingcute, corner_up_right_fill), "Forward", k->text);
       }
 
       separator(k);
 
       if (has_text) {
-        ROW(COPY_TEXT, CIVUE_ICON(lucide, copy), "Copy Text", k->text);
+        ROW(COPY_TEXT, CIVUE_ICON(mingcute, copy_2_fill), "Copy Text", k->text);
       }
 
       if (sticker) {
-        ROW(STICKER, CIVUE_ICON(lucide, star),
+        ROW(STICKER, CIVUE_ICON(mingcute, star_fill),
             starred ? "Unfavorite Sticker" : "Favorite Sticker", k->text);
       }
 
       if (pins) {
         if (m->pinned) {
-          ROW(PIN, CIVUE_ICON(lucide, pin_off), "Unpin Message", k->text);
+          ROW(PIN, CIVUE_ICON(mingcute, pin_fill), "Unpin Message", k->text);
         }
         else {
-          ROW(PIN, CIVUE_ICON(lucide, pin), "Pin Message", k->text);
+          ROW(PIN, CIVUE_ICON(mingcute, pin_2_fill), "Pin Message", k->text);
         }
       }
 
       if (bookmarks && bookmarked) {
-        ROW(BOOKMARK, CIVUE_ICON(lucide, bookmark_minus), "Remove Bookmark",
+        ROW(BOOKMARK, CIVUE_ICON(mingcute, bookmark_remove_fill), "Remove Bookmark",
             k->text);
       }
       else if (bookmarks) {
-        ROW(BOOKMARK, CIVUE_ICON(lucide, bookmark), "Bookmark Message",
+        ROW(BOOKMARK, CIVUE_ICON(mingcute, bookmark_fill), "Bookmark Message",
             k->text);
       }
 
-      ROW(UNREAD, CIVUE_ICON(lucide, message_square_dot), "Mark Unread",
+      ROW(UNREAD, CIVUE_ICON(mingcute, message_square_dot_fill), "Mark Unread",
           k->text);
-      ROW(COPY_LINK, CIVUE_ICON(lucide, link), "Copy Message Link", k->text);
+      ROW(COPY_LINK, CIVUE_ICON(mingcute, link_fill), "Copy Message Link", k->text);
       separator(k);
-      ROW(COPY_ID, CIVUE_ICON(lucide, fingerprint), "Copy Message ID", k->text);
+      ROW(COPY_ID, CIVUE_ICON(mingcute, fingerprint_fill), "Copy Message ID", k->text);
 
       if (removable) {
-        ROW(DELETE, CIVUE_ICON(lucide, trash_2),
+        ROW(DELETE, CIVUE_ICON(mingcute, delete_2_fill),
             app->menu_armed ? "Press again to delete" : "Delete Message",
             k->critical_text);
       }
@@ -399,10 +399,10 @@ static bool forward_row(App *app, const Channel *to, const char *query,
     pressed = button().activated;
 
     if (guild) {
-      icon(lucide, hash, size(4), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, hashtag_fill, size(4), flex_shrink_0, text_color(k->faint));
     }
     else {
-      icon(lucide, at_sign, size(4), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, at_fill, size(4), flex_shrink_0, text_color(k->faint));
     }
 
     text(name, min_w(0), truncate, font_weight(medium), text_color(k->text));

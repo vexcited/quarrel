@@ -254,7 +254,7 @@ void upload_button(App *app, Channel *c) {
   bool has_text = app->draft && *app->draft && !app->editing;
 
   civue_button_state b =
-    composer_button(app, id("upload-plus"), CIVUE_ICON(lucide, plus),
+    composer_button(app, id("upload-plus"), CIVUE_ICON(mingcute, add_fill),
                     app->upload_menu, nullptr, &anchor);
 
   // a double click goes straight to the files.
@@ -274,13 +274,13 @@ void upload_button(App *app, Channel *c) {
           border_color(k->border_strong), shadow(lg)) {
         card = here();
 
-        if (menu_row(app, id("upload-file"), CIVUE_ICON(lucide, upload),
+        if (menu_row(app, id("upload-file"), CIVUE_ICON(mingcute, upload_2_fill),
                      "Upload a File", k->text)) {
           pick = true;
         }
 
         if (has_text &&
-            menu_row(app, id("upload-message"), CIVUE_ICON(lucide, file_text),
+            menu_row(app, id("upload-message"), CIVUE_ICON(mingcute, document_2_fill),
                      "Upload your message as a file", k->text)) {
           as_file = true;
         }
@@ -398,8 +398,8 @@ static void card(App *app, Upload *u) {
         }
       }
       else {
-        glyph(is_video(u) ? CIVUE_ICON(lucide, file_video)
-                          : CIVUE_ICON(lucide, file),
+        glyph(is_video(u) ? CIVUE_ICON(mingcute, file_play_fill)
+                          : CIVUE_ICON(mingcute, file_fill),
               96, k->subtle);
       }
 
@@ -432,18 +432,18 @@ static void card(App *app, Upload *u) {
           rounded(md), bg(k->surface_high), border(1),
           border_color(k->border_strong), shadow(sm)) {
         if (bar_button(app, id_at(key_id, 1),
-                       u->spoiler ? CIVUE_ICON(lucide, eye_off)
-                                  : CIVUE_ICON(lucide, eye),
+                       u->spoiler ? CIVUE_ICON(mingcute, eye_2_off_fill)
+                                  : CIVUE_ICON(mingcute, eye_2_fill),
                        "Spoiler Attachment", k->subtle)) {
           u->spoiler = !u->spoiler;
         }
 
-        if (bar_button(app, id_at(key_id, 2), CIVUE_ICON(lucide, pencil),
+        if (bar_button(app, id_at(key_id, 2), CIVUE_ICON(mingcute, pencil_fill),
                        "Modify Attachment", k->subtle)) {
           open_editor(app, u);
         }
 
-        remove = bar_button(app, id_at(key_id, 3), CIVUE_ICON(lucide, trash_2),
+        remove = bar_button(app, id_at(key_id, 3), CIVUE_ICON(mingcute, delete_2_fill),
                             "Remove Attachment", k->critical_text);
       }
     }
@@ -527,7 +527,7 @@ void upload_drop_zone(App *app, Channel *c) {
             rounded(px(6)), border(2),
             border_color(civue_alpha(app->look.on_primary, .4f)),
             text_color(app->look.on_primary)) {
-          glyph(CIVUE_ICON(lucide, files), 48, app->look.on_primary);
+          glyph(CIVUE_ICON(mingcute, documents_fill), 48, app->look.on_primary);
 
           text(title, mt(3), max_w(full), truncate, text_size(px(22)),
                line_height(px(28)), font_weight(bold));
@@ -587,7 +587,7 @@ void upload_progress(App *app, Channel *c, const Message *m) {
   div(flex, items_center, mt(1), w(px(PROGRESS_WIDTH)), max_w(full), p(4),
       rounded(lg), bg(k->surface_high), border(1), border_color(k->border)) {
     div(mr(2), flex_shrink_0) {
-      glyph(CIVUE_ICON(lucide, file), 36, k->subtle);
+      glyph(CIVUE_ICON(mingcute, file_fill), 36, k->subtle);
     }
 
     div(flex, flex_col, flex_1, min_w(0), gap(1)) {
@@ -620,7 +620,7 @@ void upload_progress(App *app, Channel *c, const Message *m) {
     }
 
     if (!processing && icon_button(app, id_at(id("upload-cancel"), m->nonce),
-                                   CIVUE_ICON(lucide, x), 24, 20, "Cancel")) {
+                                   CIVUE_ICON(mingcute, close_fill), 24, 20, "Cancel")) {
       // the text comes back when nothing was typed since.
       if (!app->draft || !*app->draft) {
         free(app->draft);

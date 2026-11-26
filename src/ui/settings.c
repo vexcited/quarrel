@@ -159,13 +159,13 @@ static int sidebar(App *app, bool *leave) {
         section_label(k, "Experience");
 
         if (nav_item(app, id("settings-appearance"),
-                     CIVUE_ICON(lucide, palette),
+                     CIVUE_ICON(mingcute, palette_fill),
                      PAGE_NAMES[SETTINGS_APPEARANCE],
                      now == SETTINGS_APPEARANCE, false)) {
           open_page(app, SETTINGS_APPEARANCE);
         }
 
-        if (nav_item(app, id("settings-voice"), CIVUE_ICON(lucide, mic),
+        if (nav_item(app, id("settings-voice"), CIVUE_ICON(mingcute, mic_fill),
                      PAGE_NAMES[SETTINGS_VOICE], voice, false) &&
             !voice) {
           open_page(app, SETTINGS_VOICE);
@@ -179,7 +179,7 @@ static int sidebar(App *app, bool *leave) {
         }
 
         if (nav_item(app, id("settings-notifications"),
-                     CIVUE_ICON(lucide, bell),
+                     CIVUE_ICON(mingcute, notification_fill),
                      PAGE_NAMES[SETTINGS_NOTIFICATIONS],
                      now == SETTINGS_NOTIFICATIONS, false)) {
           open_page(app, SETTINGS_NOTIFICATIONS);
@@ -190,7 +190,7 @@ static int sidebar(App *app, bool *leave) {
 
       div(flex, flex_col, gap(1), flex_shrink_0) {
         *leave = nav_item(app, id("settings-logout"),
-                          CIVUE_ICON(lucide, log_out), "Log Out", false, true);
+                          CIVUE_ICON(mingcute, exit_fill), "Log Out", false, true);
       }
     }
   }
@@ -251,16 +251,16 @@ static void select_box(App *app, AudioKind kind) {
     }
 
     if (kind == AUDIO_CAMERAS) {
-      icon(lucide, camera, size(4), flex_shrink_0, text_color(k->subtle));
+      icon(mingcute, computer_camera_fill, size(4), flex_shrink_0, text_color(k->subtle));
     }
 
     text(name, flex_1, min_w(0), truncate, text_color(k->strong));
 
     if (open) {
-      icon(lucide, chevron_up, size(4), flex_shrink_0, text_color(k->subtle));
+      icon(mingcute, up_fill, size(4), flex_shrink_0, text_color(k->subtle));
     }
     else {
-      icon(lucide, chevron_down, size(4), flex_shrink_0,
+      icon(mingcute, down_fill, size(4), flex_shrink_0,
            text_color(k->subtle));
     }
   }
@@ -277,13 +277,13 @@ static bool option(App *app, civue_id id, const char *name, bool camera,
     pressed = button().activated;
 
     if (camera) {
-      icon(lucide, camera, size(4), flex_shrink_0, text_color(k->subtle));
+      icon(mingcute, computer_camera_fill, size(4), flex_shrink_0, text_color(k->subtle));
     }
 
     text(name, flex_1, min_w(0), truncate, text_color(k->strong));
 
     if (on) {
-      icon(lucide, check, size(4), flex_shrink_0, text_color(k->strong));
+      icon(mingcute, check_fill, size(4), flex_shrink_0, text_color(k->strong));
     }
   }
 
@@ -1033,7 +1033,7 @@ void settings_dialog(App *app) {
             text(PAGE_NAMES[app->settings_page], flex_1, min_w(0), truncate,
                  font_weight(medium), text_color(k->strong));
 
-            if (icon_button(app, id("settings-close"), CIVUE_ICON(lucide, x),
+            if (icon_button(app, id("settings-close"), CIVUE_ICON(mingcute, close_fill),
                             32, 20, nullptr)) {
               close = true;
             }

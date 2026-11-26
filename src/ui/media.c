@@ -348,9 +348,9 @@ static void volume(civue_id id, civue_video *video, const civue_video_info *v) {
       }
     }
 
-    civue_icon glyph_icon = silent            ? CIVUE_ICON(lucide, volume_x)
-                            : v->volume < .5f ? CIVUE_ICON(lucide, volume_1)
-                                              : CIVUE_ICON(lucide, volume_2);
+    civue_icon glyph_icon = silent            ? CIVUE_ICON(mingcute, volume_mute_fill)
+                            : v->volume < .5f ? CIVUE_ICON(mingcute, volume_low_fill)
+                                              : CIVUE_ICON(mingcute, volume_fill);
 
     if (control_button(id_in(id, "button"), glyph_icon)) {
       civue_video_set_muted(video, !silent);
@@ -399,9 +399,9 @@ static bool controls(App *app, civue_id id, civue_video *video,
     // a press on the bar is not one on the video under it.
     button();
 
-    civue_icon state = v->ended     ? CIVUE_ICON(lucide, rotate_ccw)
-                       : v->playing ? CIVUE_ICON(lucide, pause)
-                                    : CIVUE_ICON(lucide, play);
+    civue_icon state = v->ended     ? CIVUE_ICON(mingcute, refresh_anticlockwise_1_fill)
+                       : v->playing ? CIVUE_ICON(mingcute, pause_fill)
+                                    : CIVUE_ICON(mingcute, play_fill);
 
     if (control_button(id_in(id, "play"), state)) {
       toggle_play(video, v);
@@ -416,7 +416,7 @@ static bool controls(App *app, civue_id id, civue_video *video,
     volume(id_in(id, "volume"), video, v);
 
     if (expand &&
-        control_button(id_in(id, "expand"), CIVUE_ICON(lucide, maximize))) {
+        control_button(id_in(id, "expand"), CIVUE_ICON(mingcute, fullscreen_fill))) {
       expanded = true;
     }
   }
@@ -574,7 +574,7 @@ static void play_badge(void) {
     div(flex, items_center, justify_center, size(12), rounded(full),
         bg(rgba(0x00000099)), hover(bg(rgba(0x000000cc))),
         text_color(CIVUE_WHITE)) {
-      icon(lucide, play, size(6));
+      icon(mingcute, play_fill, size(6));
     }
   }
 }
@@ -901,20 +901,20 @@ static BarResult viewer_bar(App *app, const MediaItem *item) {
         bg(app->look.frame), border(1), border_color(app->look.border_strong)) {
       if (item->kind == MEDIA_IMAGE) {
         result.zoom = viewer_action(app, id("viewer-zoom"),
-                                    m->zoomed ? CIVUE_ICON(lucide, zoom_out)
-                                              : CIVUE_ICON(lucide, zoom_in),
+                                    m->zoomed ? CIVUE_ICON(mingcute, zoom_out_fill)
+                                              : CIVUE_ICON(mingcute, zoom_in_fill),
                                     m->zoomed ? "Zoom Out" : "Zoom In");
       }
 
-      copy = viewer_action(app, id("viewer-copy"), CIVUE_ICON(lucide, link),
+      copy = viewer_action(app, id("viewer-copy"), CIVUE_ICON(mingcute, link_fill),
                            "Copy Link");
       open =
-        viewer_action(app, id("viewer-open"), CIVUE_ICON(lucide, external_link),
+        viewer_action(app, id("viewer-open"), CIVUE_ICON(mingcute, external_link_fill),
                       "Open in Browser");
     }
 
     result.close =
-      viewer_button(app, id("viewer-close"), CIVUE_ICON(lucide, x), "Close");
+      viewer_button(app, id("viewer-close"), CIVUE_ICON(mingcute, close_fill), "Close");
   }
 
   if (open && item->url) {
@@ -1168,13 +1168,13 @@ void media_viewer(App *app) {
 
           div(absolute, left(px(VIEWER_MARGIN_X)), top(px(mid))) {
             back = viewer_button(app, id("viewer-back"),
-                                 CIVUE_ICON(lucide, chevron_left), "Previous");
+                                 CIVUE_ICON(mingcute, left_fill), "Previous");
           }
 
           div(absolute, left(px(ui->size.x - VIEWER_MARGIN_X - VIEWER_BAR)),
               top(px(mid))) {
             next = viewer_button(app, id("viewer-next"),
-                                 CIVUE_ICON(lucide, chevron_right), "Next");
+                                 CIVUE_ICON(mingcute, right_fill), "Next");
           }
 
           viewer_thumbs(app, &to);

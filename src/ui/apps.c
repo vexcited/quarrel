@@ -423,7 +423,7 @@ static uint32_t pager(App *app, civue_id id, uint32_t page, uint32_t pages) {
         asked = page - 1;
       }
 
-      icon(lucide, chevron_left, size(4), flex_shrink_0);
+      icon(mingcute, left_fill, size(4), flex_shrink_0);
       text("Back");
     }
 
@@ -461,7 +461,7 @@ static uint32_t pager(App *app, civue_id id, uint32_t page, uint32_t pages) {
       }
 
       text("Next");
-      icon(lucide, chevron_right, size(4), flex_shrink_0);
+      icon(mingcute, right_fill, size(4), flex_shrink_0);
     }
   }
 
@@ -501,7 +501,7 @@ static void header(App *app, Apps *a) {
     if (open) {
       const AppPage *page = apps_open(a, open);
 
-      if (icon_button(app, id("apps-back"), CIVUE_ICON(lucide, arrow_left), 32,
+      if (icon_button(app, id("apps-back"), CIVUE_ICON(mingcute, arrow_left_fill), 32,
                       20, "Back")) {
         close_app(st);
       }
@@ -516,7 +516,7 @@ static void header(App *app, Apps *a) {
 
       snprintf(title, sizeof title, "Search results for \"%s\"", st->query);
 
-      if (icon_button(app, id("apps-back"), CIVUE_ICON(lucide, arrow_left), 32,
+      if (icon_button(app, id("apps-back"), CIVUE_ICON(mingcute, arrow_left_fill), 32,
                       20, "Back")) {
         end_search(st);
       }
@@ -857,7 +857,7 @@ static void carousel(App *app, const DirectoryApp *d) {
       else if (m->youtube) {
         div(flex, items_center, justify_center, size(px(56)), rounded(full),
             bg(rgba(0x000000b3))) {
-          glyph(CIVUE_ICON(lucide, play), 28, CIVUE_WHITE);
+          glyph(CIVUE_ICON(mingcute, play_fill), 28, CIVUE_WHITE);
         }
       }
     }
@@ -865,7 +865,7 @@ static void carousel(App *app, const DirectoryApp *d) {
     if (count > 1) {
       div(flex, items_center, justify_center, gap(2)) {
         if (icon_button(app, id_in(list, "before"),
-                        CIVUE_ICON(lucide, chevron_left), 28, 18, "Previous")) {
+                        CIVUE_ICON(mingcute, left_fill), 28, 18, "Previous")) {
           st->slide = (uint32_t)((st->slide + count - 1) % count);
         }
 
@@ -883,7 +883,7 @@ static void carousel(App *app, const DirectoryApp *d) {
         }
 
         if (icon_button(app, id_in(list, "after"),
-                        CIVUE_ICON(lucide, chevron_right), 28, 18, "Next")) {
+                        CIVUE_ICON(mingcute, right_fill), 28, 18, "Next")) {
           st->slide = (uint32_t)((st->slide + 1) % count);
         }
       }
@@ -928,10 +928,10 @@ static void overview(App *app, const DirectoryApp *d) {
           text(st->whole ? "Show less" : "Show more");
 
           if (st->whole) {
-            icon(lucide, chevron_up, size(px(18)), flex_shrink_0);
+            icon(mingcute, up_fill, size(px(18)), flex_shrink_0);
           }
           else {
-            icon(lucide, chevron_down, size(px(18)), flex_shrink_0);
+            icon(mingcute, down_fill, size(px(18)), flex_shrink_0);
           }
         }
 
@@ -997,7 +997,7 @@ static void permissions(App *app, const DirectoryApp *d) {
       for (size_t i = 0; i < count; i++) {
         if (asked & all[i].bit) {
           div(flex, items_center, gap(2)) {
-            glyph(CIVUE_ICON(lucide, check), 16, k->positive);
+            glyph(CIVUE_ICON(mingcute, check_fill), 16, k->positive);
             text(all[i].name, flex_1, min_w(0), truncate, text_color(k->text));
           }
         }
@@ -1009,9 +1009,9 @@ static void permissions(App *app, const DirectoryApp *d) {
 static void data_access(App *app, const DirectoryApp *d) {
   const Look *k = &app->look;
   const civue_icon icons[] = {
-    CIVUE_ICON(lucide, message_square),
-    CIVUE_ICON(lucide, circle_user),
-    CIVUE_ICON(lucide, users),
+    CIVUE_ICON(mingcute, message_2_fill),
+    CIVUE_ICON(mingcute, circle_user_fill),
+    CIVUE_ICON(mingcute, group_fill),
   };
   bool any = false;
 
@@ -1152,10 +1152,10 @@ static void support_server(App *app, const AppGuild *g) {
     div(flex, flex_col, flex_1, min_h(0), pt(px(33)), px(4), pb(4)) {
       div(flex, items_center, gap(1), flex_shrink_0, mb(1), min_w(0)) {
         if (g->verified) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, k->positive);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->positive);
         }
         else if (g->partnered) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, k->accent_text);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->accent_text);
         }
 
         text(g->name, min_w(0), truncate, text_size(px(14)),
@@ -1170,7 +1170,7 @@ static void support_server(App *app, const AppGuild *g) {
       div(flex_1, min_h(4)) {}
 
       div(flex, items_center, gap(1), flex_shrink_0) {
-        glyph(CIVUE_ICON(lucide, user_round), 14, k->text);
+        glyph(CIVUE_ICON(mingcute, user_2_fill), 14, k->text);
         text(members, text_size(px(12)), line_height(px(16)),
              text_color(k->text));
       }
@@ -1201,7 +1201,7 @@ static void information(App *app, const DirectoryApp *d) {
       side_title(k, "Server Count");
 
       div(flex, items_center, gap(1)) {
-        glyph(CIVUE_ICON(lucide, server), 16, k->subtle);
+        glyph(CIVUE_ICON(mingcute, server_fill), 16, k->subtle);
         text(line, text_size(px(14)), line_height(px(18)), text_color(k->text));
       }
     }
@@ -1265,17 +1265,17 @@ static void information(App *app, const DirectoryApp *d) {
       side_title(k, "Links");
 
       for (size_t i = 0; i < d->nlinks; i++) {
-        link_row(app, id_at(id("apps-link"), i), CIVUE_ICON(lucide, link),
+        link_row(app, id_at(id("apps-link"), i), CIVUE_ICON(mingcute, link_fill),
                  d->links[i].name, d->links[i].url);
       }
 
       if (d->terms_url) {
-        link_row(app, id("apps-terms"), CIVUE_ICON(lucide, file_text),
+        link_row(app, id("apps-terms"), CIVUE_ICON(mingcute, document_2_fill),
                  "Terms of Service", d->terms_url);
       }
 
       if (d->privacy_url) {
-        link_row(app, id("apps-policy"), CIVUE_ICON(lucide, lock),
+        link_row(app, id("apps-policy"), CIVUE_ICON(mingcute, lock_fill),
                  "Privacy Policy", d->privacy_url);
       }
     }
@@ -1329,7 +1329,7 @@ static void similar_card(App *app, const DirectoryApp *d, civue_id key) {
       snprintf(line, sizeof line, "in %s servers", count);
 
       div(flex, items_center, gap(1)) {
-        glyph(CIVUE_ICON(lucide, server), 16, k->subtle);
+        glyph(CIVUE_ICON(mingcute, server_fill), 16, k->subtle);
         text(line, text_size(px(12)), line_height(px(16)), font_weight(medium),
              text_color(k->text));
       }
@@ -1475,8 +1475,8 @@ static void app_page(App *app, Apps *a, Snowflake id) {
           }
 
           if (icon_button(app, id("apps-copy"),
-                          copied ? CIVUE_ICON(lucide, check)
-                                 : CIVUE_ICON(lucide, link),
+                          copied ? CIVUE_ICON(mingcute, check_fill)
+                                 : CIVUE_ICON(mingcute, link_fill),
                           40, 20, copied ? "Link Copied!" : "Copy Link")) {
             char url[96];
 

@@ -67,7 +67,7 @@ static bool account_row(App *app, const SessionAccount *a, bool current) {
     }
 
     if (current) {
-      icon(lucide, check, size(4), flex_shrink_0, text_color(k->positive));
+      icon(mingcute, check_fill, size(4), flex_shrink_0, text_color(k->positive));
     }
     else {
       mention_badge(k, account_mentions(a));
@@ -105,11 +105,11 @@ static bool status_row(App *app, UserStatus status, const char *label,
     text(label, flex_1);
 
     if (current) {
-      icon(lucide, check, size(4), flex_shrink_0, text_color(k->positive));
+      icon(mingcute, check_fill, size(4), flex_shrink_0, text_color(k->positive));
     }
 
     if (lasts) {
-      icon(lucide, chevron_right, size(4), flex_shrink_0,
+      icon(mingcute, right_fill, size(4), flex_shrink_0,
            text_color(k->subtle));
     }
   }
@@ -251,7 +251,7 @@ static void profile(App *app) {
 
     status_bubble(app, self);
 
-    copy = icon_button(app, id("copy-id"), CIVUE_ICON(lucide, copy), 28, 16,
+    copy = icon_button(app, id("copy-id"), CIVUE_ICON(mingcute, copy_2_fill), 28, 16,
                        "Copy User ID");
   }
 
@@ -336,7 +336,7 @@ void account_switcher(App *app, civue_rect anchor) {
         }
 
         if (can_add) {
-          add = menu_row(app, id("account-add"), CIVUE_ICON(lucide, plus),
+          add = menu_row(app, id("account-add"), CIVUE_ICON(mingcute, add_fill),
                          "Add an account", k->text);
         }
 
@@ -366,7 +366,7 @@ void account_switcher(App *app, civue_rect anchor) {
 
         separator(k);
 
-        leave = menu_row(app, id("logout"), CIVUE_ICON(lucide, log_out),
+        leave = menu_row(app, id("logout"), CIVUE_ICON(mingcute, exit_fill),
                          "Log Out", k->critical_text);
       }
     }

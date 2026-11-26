@@ -212,7 +212,7 @@ static void button_component(Walk *w, const Component *c) {
     }
 
     if (link) {
-      icon(lucide, external_link, size(4), flex_shrink_0);
+      icon(mingcute, external_link_fill, size(4), flex_shrink_0);
     }
   }
 }
@@ -291,7 +291,7 @@ static void select_component(Walk *w, const Component *c) {
 
     text(shown, flex_1, min_w(0), truncate,
          text_color(civue_alpha(shown == label ? k->text : k->muted, fade)));
-    icon(lucide, chevron_down, size(5), flex_shrink_0,
+    icon(mingcute, down_fill, size(5), flex_shrink_0,
          text_color(civue_alpha(k->subtle, fade)));
   }
 }
@@ -481,7 +481,7 @@ static bool select_option(App *app, civue_id id, const ComponentOption *o,
           rounded(full), border(on ? 0 : 1), border_color(k->border_strong),
           style(.bg = on ? k->primary : CIVUE_CLEAR)) {
         if (on) {
-          icon(lucide, check, size(px(14)), text_color(k->on_primary));
+          icon(mingcute, check_fill, size(px(14)), text_color(k->on_primary));
         }
       }
     }

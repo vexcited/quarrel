@@ -610,17 +610,17 @@ static void relationship_button(App *app, const User *u) {
   }
 
   if (type == RELATIONSHIP_FRIEND) {
-    banner_button(app, id, CIVUE_ICON(lucide, user_check), "Friend");
+    banner_button(app, id, CIVUE_ICON(mingcute, user_follow_fill), "Friend");
   }
   else if (type == RELATIONSHIP_INCOMING) {
-    banner_button(app, id, CIVUE_ICON(lucide, user_round_search),
+    banner_button(app, id, CIVUE_ICON(mingcute, user_search_fill),
                   "Incoming Friend Request");
   }
   else if (type == RELATIONSHIP_OUTGOING) {
-    banner_button(app, id, CIVUE_ICON(lucide, user_round_search),
+    banner_button(app, id, CIVUE_ICON(mingcute, user_search_fill),
                   "Outgoing Friend Request");
   }
-  else if (banner_button(app, id, CIVUE_ICON(lucide, user_plus),
+  else if (banner_button(app, id, CIVUE_ICON(mingcute, user_add_fill),
                          "Add Friend") &&
            u->username) {
     session_add_friend(s, u->username, nullptr);
@@ -646,20 +646,20 @@ static void card_menu(App *app, const User *u, const Profile *p,
         shadow(lg)) {
       *card = here();
 
-      if (menu_row(app, id("profile-menu-full"), CIVUE_ICON(lucide, id_card),
+      if (menu_row(app, id("profile-menu-full"), CIVUE_ICON(mingcute, idcard_fill),
                    "View Full Profile", k->text)) {
         open_modal(app, u->id, p->guild_id, PROFILE_TAB_ACTIVITY);
         chosen = true;
       }
 
       if (u->username && menu_row(app, id("profile-menu-name"),
-                                  CIVUE_ICON(lucide, at_sign),
+                                  CIVUE_ICON(mingcute, at_fill),
                                   "Copy Username", k->text)) {
         copy_text(u->username);
         chosen = true;
       }
 
-      if (menu_row(app, id("profile-menu-id"), CIVUE_ICON(lucide, copy),
+      if (menu_row(app, id("profile-menu-id"), CIVUE_ICON(mingcute, copy_2_fill),
                    "Copy User ID", k->text)) {
         snowflake_format(u->id, digits);
         copy_text(digits);
@@ -899,7 +899,7 @@ static void card_body(App *app, const User *u, const Profile *p,
     if (p->failed) {
       div(flex, items_center, gap(2), text_size(px(12)), line_height(px(16)),
           text_color(app->look.critical_text)) {
-        icon(lucide, triangle_alert, size(px(14)));
+        icon(mingcute, alert_fill, size(px(14)));
         text("Unable to load parts of profile");
       }
     }
@@ -1022,7 +1022,7 @@ void profile_popout(App *app) {
           div(absolute, top(px(8)), right(px(12)), flex, gap(2)) {
             relationship_button(app, u);
             open_menu = banner_button(app, id("profile-more"),
-                                      CIVUE_ICON(lucide, ellipsis), "More");
+                                      CIVUE_ICON(mingcute, more_1_fill), "More");
             more = here();
           }
 
@@ -1112,7 +1112,7 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
           rounded(lg), bg(primary), hover(bg(lit)), text_color(ink),
           font_weight(medium), cursor_pointer) {
         add = button().activated;
-        icon(lucide, user_plus, size(px(16)));
+        icon(mingcute, user_add_fill, size(px(16)));
         text(type == RELATIONSHIP_INCOMING ? "Accept" : "Add Friend");
       }
 
@@ -1122,7 +1122,7 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
         civue_button_state state = button();
 
         message = state.activated;
-        icon(lucide, message_circle, size(px(16)));
+        icon(mingcute, chat_3_fill, size(px(16)));
         hint(app, id("modal-message"), &state.response, "Message",
              CIVUE_TOOLTIP_ABOVE);
       }
@@ -1137,7 +1137,7 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
                 .cursor = CIVUE_CURSOR_POINTER),
           hover(bg(self ? civue_alpha(primary, .5f) : lit))) {
         message = button().activated && !self;
-        icon(lucide, message_circle, size(px(16)));
+        icon(mingcute, chat_3_fill, size(px(16)));
         text("Message");
       }
 
@@ -1146,7 +1146,7 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
             size(8), rounded(lg), bg(c->chip), text_color(c->strong)) {
           civue_button_state state = button();
 
-          icon(lucide, user_check, size(px(16)));
+          icon(mingcute, user_follow_fill, size(px(16)));
           hint(app, id("modal-friend"), &state.response, "Friend",
                CIVUE_TOOLTIP_ABOVE);
         }
@@ -1243,7 +1243,7 @@ static civue_icon connection_icon(const char *type) {
     }
   }
 
-  return CIVUE_ICON(lucide, globe);
+  return CIVUE_ICON(mingcute, earth_fill);
 }
 
 static void connections(App *app, const Profile *p, const Paint *c) {
@@ -1264,7 +1264,7 @@ static void connections(App *app, const Profile *p, const Paint *c) {
              text_color(c->strong));
 
         if (pc->verified) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, c->subtle);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, c->subtle);
         }
       }
     }
@@ -1445,7 +1445,7 @@ static bool tab(App *app, civue_id id, const char *label, bool on,
 
 static void empty_tab(const Paint *c, const char *line) {
   div(flex, flex_col, items_center, justify_center, flex_1, gap(2), py(16)) {
-    icon(lucide, users, size(px(40)), text_color(c->faint));
+    icon(mingcute, group_fill, size(px(40)), text_color(c->faint));
     text(line, text_size(px(14)), line_height(px(18)), text_color(c->subtle));
   }
 }
@@ -1576,7 +1576,7 @@ static void activity_tab(App *app, const User *u, const Paint *c) {
   if (shown == 0) {
     div(flex, flex_col, items_center, justify_center, flex_1, gap(2),
         py(16)) {
-      icon(lucide, gamepad_2, size(px(40)), text_color(c->faint));
+      icon(mingcute, game_2_fill, size(px(40)), text_color(c->faint));
       text("Nothing to show here yet", text_size(px(14)), line_height(px(18)),
            text_color(c->subtle));
     }
@@ -1662,7 +1662,7 @@ static bool close_button(App *app, const Paint *c) {
     civue_button_state state = button();
 
     pressed = state.activated;
-    icon(lucide, x, size(px(18)));
+    icon(mingcute, close_fill, size(px(18)));
     hint(app, id("modal-close"), &state.response, "Close",
          CIVUE_TOOLTIP_BELOW);
   }

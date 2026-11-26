@@ -50,14 +50,14 @@ static void voice_member(App *app, const Channel *c, const VoiceState *v) {
          text_color(speaking ? k->strong : k->subtle));
 
     if (v->streaming) {
-      glyph(CIVUE_ICON(lucide, monitor), 14, k->faint);
+      glyph(CIVUE_ICON(mingcute, monitor_fill), 14, k->faint);
     }
 
     if (v->deafened) {
-      glyph(CIVUE_ICON(lucide, headphone_off), 14, k->faint);
+      glyph(CIVUE_ICON(mingcute, headphone_off_fill), 14, k->faint);
     }
     else if (v->muted) {
-      glyph(CIVUE_ICON(lucide, mic_off), 14, k->faint);
+      glyph(CIVUE_ICON(mingcute, mic_off_fill), 14, k->faint);
     }
   }
 }
@@ -166,7 +166,7 @@ void voice_panel(App *app) {
 
       // the call's sound is encrypted from one end to the other.
       if (live && voice_encrypted(s->voice)) {
-        glyph(CIVUE_ICON(lucide, lock), 14, k->positive);
+        glyph(CIVUE_ICON(mingcute, lock_fill), 14, k->positive);
       }
     }
 
@@ -183,9 +183,9 @@ void voice_panel(App *app) {
     div(flex, items_center, gap(1)) {
       bool muted = s->voice_mute || s->voice_deaf;
       civue_icon microphone =
-        muted ? CIVUE_ICON(lucide, mic_off) : CIVUE_ICON(lucide, mic);
-      civue_icon sound = s->voice_deaf ? CIVUE_ICON(lucide, headphone_off)
-                                       : CIVUE_ICON(lucide, headphones);
+        muted ? CIVUE_ICON(mingcute, mic_off_fill) : CIVUE_ICON(mingcute, mic_fill);
+      civue_icon sound = s->voice_deaf ? CIVUE_ICON(mingcute, headphone_off_fill)
+                                       : CIVUE_ICON(mingcute, headphone_fill);
 
       if (panel_button(app, id("voice-mute"), microphone,
                        muted ? "Unmute" : "Mute", muted, k->critical_text)) {
@@ -198,7 +198,7 @@ void voice_panel(App *app) {
         session_voice_deafen(s, !s->voice_deaf);
       }
 
-      if (panel_button(app, id("voice-leave"), CIVUE_ICON(lucide, phone_off),
+      if (panel_button(app, id("voice-leave"), CIVUE_ICON(mingcute, phone_off_fill),
                        "Disconnect", true, k->critical_text)) {
         session_voice_leave(s);
       }
@@ -358,7 +358,7 @@ static void call_card(App *app, const Rung *rung) {
     else {
       div(flex, items_center, justify_center, size(px(CARD_AVATAR)),
           flex_shrink_0, rounded(full), bg(k->primary)) {
-        glyph(CIVUE_ICON(lucide, users), 36, k->on_primary);
+        glyph(CIVUE_ICON(mingcute, group_fill), 36, k->on_primary);
       }
     }
 
@@ -374,10 +374,10 @@ static void call_card(App *app, const Rung *rung) {
 
     div(flex, items_center, gap(4), mt(5)) {
       decline = card_button(id_at(id("call-decline"), at),
-                            CIVUE_ICON(lucide, phone_off), k->danger,
+                            CIVUE_ICON(mingcute, phone_off_fill), k->danger,
                             k->danger_hover, k->on_danger);
       answer = card_button(id_at(id("call-answer"), at),
-                           CIVUE_ICON(lucide, phone), k->positive,
+                           CIVUE_ICON(mingcute, phone_fill), k->positive,
                            k->positive_hover, k->on_positive);
     }
   }

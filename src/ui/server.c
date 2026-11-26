@@ -1109,7 +1109,7 @@ static void community_landing(App *app, ServerUi *ui, Guild *g) {
     div(flex, items_center, justify_center, w(full), h(px(204)), mb(5)) {
       div(flex, items_center, justify_center, size(px(120)), rounded(full),
           bg(k->chat), text_color(k->primary)) {
-        icon(lucide, house, size(px(64)));
+        icon(mingcute, home_4_fill, size(px(64)));
       }
     }
 
@@ -1156,10 +1156,10 @@ static void community_landing(App *app, ServerUi *ui, Guild *g) {
           div(flex, items_center, justify_center, size(10), rounded(full),
               bg(k->frame), text_color(tints[i])) {
             if (i == 2) {
-              icon(lucide, info, size(6));
+              icon(mingcute, information_fill, size(6));
             }
             else {
-              icon(lucide, chart_column, size(6));
+              icon(mingcute, chart_bar_fill, size(6));
             }
           }
 
@@ -1319,7 +1319,7 @@ static void community_enable(App *app, ServerUi *ui, Guild *g) {
 // a line of a checklist, with discord's green check before it.
 static void check_item(const Look *k, const char *title, const char *about) {
   div(flex, items_start, gap(2), flex_shrink_0) {
-    icon(lucide, circle_check, size(4), flex_shrink_0, mt(px(2)),
+    icon(mingcute, check_circle_fill, size(4), flex_shrink_0, mt(px(2)),
          text_color(k->online));
 
     div(flex, flex_col, gap(1), flex_1, min_w(0)) {
@@ -1455,7 +1455,7 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
           div(flex, items_center, justify_center, h(px(140)), mb(2),
               rounded_t(px(DIALOG_RADIUS)), bg(k->positive),
               text_color(k->on_positive)) {
-            icon(lucide, house, size(px(64)));
+            icon(mingcute, home_4_fill, size(px(64)));
           }
         }
         else {
@@ -1728,7 +1728,7 @@ static void emoji_row(App *app, ServerUi *ui, Guild *g, const Emoji *e) {
     }
 
     if (icon_button(app, id_at(id("emoji-delete"), e->id),
-                    CIVUE_ICON(lucide, x), 32, 18, "Delete")) {
+                    CIVUE_ICON(mingcute, close_fill), 32, 18, "Delete")) {
       remove = true;
     }
   }
@@ -1963,7 +1963,7 @@ static void invites_page(App *app, Guild *g) {
       text(expires, w(px(80)), flex_shrink_0, tabular_nums,
            text_color(k->text));
       revoke = icon_button(app, id_at(id("invite-revoke"), i),
-                           CIVUE_ICON(lucide, x), 32, 18, "Revoke invite");
+                           CIVUE_ICON(mingcute, close_fill), 32, 18, "Revoke invite");
     }
 
     if (revoke) {
@@ -2156,7 +2156,7 @@ static bool close_button(App *app) {
               border_color(k->strong)),
         active(bg(k->pressed)), cursor_pointer) {
       pressed = button().activated;
-      icon(lucide, x, size(5));
+      icon(mingcute, close_fill, size(5));
     }
 
     text("ESC", text_size(px(12)), line_height(px(16)),

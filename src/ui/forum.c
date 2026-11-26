@@ -446,7 +446,7 @@ static bool post_unread(App *app, const Channel *post) {
 static void pin_badge(const Look *k) {
   div(flex, items_center, justify_center, size(px(22)), flex_shrink_0,
       rounded(full), bg(k->primary), text_color(k->on_primary)) {
-    icon(lucide, pin, size(px(14)));
+    icon(mingcute, pin_2_fill, size(px(14)));
   }
 }
 
@@ -510,7 +510,7 @@ static void footer(App *app, const Channel *forum, const Channel *post) {
     reaction_button(app, forum, post);
 
     div(flex, items_center, gap(1), flex_shrink_0) {
-      icon(lucide, message_square, size(px(14)));
+      icon(mingcute, message_2_fill, size(px(14)));
       text(messages);
 
       if (post_unread(app, post) && store_has_read_state(store, post->id)) {
@@ -569,7 +569,7 @@ static void list_card(App *app, const Channel *forum, const Channel *post,
         }
 
         if (post->thread_locked) {
-          icon(lucide, lock, size(px(16)), flex_shrink_0,
+          icon(mingcute, lock_fill, size(px(16)), flex_shrink_0,
                text_color(k->faint));
         }
       }
@@ -612,7 +612,7 @@ static void gallery_card(App *app, const Channel *forum, const Channel *post,
         h(px(media > 0 ? media : 180)), flex_shrink_0, bg(k->surface),
         text_color(k->faint)) {
       if (!*thumb || !image_cover(app, thumb, 0)) {
-        icon(lucide, message_square_text, size(10));
+        icon(mingcute, message_square_text_fill, size(10));
       }
 
       if (pinned(post)) {
@@ -697,7 +697,7 @@ static bool choice(App *app, civue_id key_id, const char *label, bool on) {
     text(label, flex_1, min_w(0), truncate);
 
     if (on) {
-      icon(lucide, check, size(4), text_color(k->primary));
+      icon(mingcute, check_fill, size(4), text_color(k->primary));
     }
   }
 
@@ -855,9 +855,9 @@ static void filter_bar(App *app, const Channel *forum) {
         app_toggle(app, POPOVER_FORUM_VIEW);
       }
 
-      icon(lucide, arrow_up_down, size(4));
+      icon(mingcute, transfer_vertical_fill, size(4));
       text(media_channel(forum) ? "Sort" : "Sort & View", whitespace_nowrap);
-      icon(lucide, chevron_down, size(4));
+      icon(mingcute, down_fill, size(4));
     }
 
     if (forum->ntags) {
@@ -888,7 +888,7 @@ static void filter_bar(App *app, const Channel *forum) {
         }
 
         text(label);
-        icon(lucide, chevron_down, size(4));
+        icon(mingcute, down_fill, size(4));
       }
     }
   }
@@ -917,11 +917,11 @@ static void guidelines(App *app, const Channel *forum) {
   div(flex, flex_col, flex_shrink_0, mt(4), p(3), rounded(xl), bg(k->panel),
       border(1), border_color(k->border)) {
     div(flex, items_center, gap(2)) {
-      icon(lucide, book_open, size(5), text_color(k->subtle));
+      icon(mingcute, book_6_fill, size(5), text_color(k->subtle));
       text("Post Guidelines", flex_1, text_size(px(20)), line_height(px(24)),
            font_weight(semibold), text_color(k->strong));
 
-      if (icon_button(app, id("guidelines-close"), CIVUE_ICON(lucide, x), 28,
+      if (icon_button(app, id("guidelines-close"), CIVUE_ICON(mingcute, close_fill), 28,
                       18, "Close")) {
         *open = false;
       }
@@ -992,7 +992,7 @@ static void compose_tags(App *app, const Channel *forum) {
   bool moderator = may_moderate(app, forum);
 
   div(flex, flex_wrap, items_center, gap(2), px(4), py(3)) {
-    icon(lucide, tag, size(4), text_color(k->faint));
+    icon(mingcute, tag_fill, size(4), text_color(k->faint));
 
     for (size_t i = 0; i < forum->ntags; i++) {
       const ForumTag *tag = &forum->tags[i];
@@ -1088,7 +1088,7 @@ static void header_card(App *app, const Channel *forum) {
       border_color(k->border_strong)) {
     div(flex, items_center, gap(2), h(px(56)), pl(4), pr(3)) {
       if (!writing) {
-        icon(lucide, search, size(5), flex_shrink_0, text_color(k->faint));
+        icon(mingcute, search_fill, size(5), flex_shrink_0, text_color(k->faint));
       }
 
       div(key(field_id), flex_1, min_w(0), h(10),
@@ -1125,7 +1125,7 @@ static void header_card(App *app, const Channel *forum) {
       }
 
       if (!writing && !blank(app->forum_search) &&
-          icon_button(app, id("forum-search-clear"), CIVUE_ICON(lucide, x), 28,
+          icon_button(app, id("forum-search-clear"), CIVUE_ICON(mingcute, close_fill), 28,
                       16, "Clear")) {
         drop(&app->forum_search);
       }
@@ -1134,18 +1134,18 @@ static void header_card(App *app, const Channel *forum) {
         bool *open = guidelines_open(forum);
 
         if (icon_button(app, id("guidelines-toggle"),
-                        CIVUE_ICON(lucide, book_open), 32, 20,
+                        CIVUE_ICON(mingcute, book_6_fill), 32, 20,
                         "Post Guidelines")) {
           *open = !*open;
         }
       }
 
       if (allowed && !writing) {
-        field_button(app, id("new-post"), CIVUE_ICON(lucide, message_square),
+        field_button(app, id("new-post"), CIVUE_ICON(mingcute, message_2_fill),
                      "New Post", &start);
       }
       else if (writing) {
-        field_button(app, id("post-send"), CIVUE_ICON(lucide, message_square),
+        field_button(app, id("post-send"), CIVUE_ICON(mingcute, message_2_fill),
                      session->post_creating ? "Posting..." : "Post", &send);
       }
     }
@@ -1256,10 +1256,10 @@ static void forum_header(App *app, const Channel *forum) {
     window_handle(id("forum-header"));
 
     if (media_channel(forum)) {
-      icon(lucide, image, size(5), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, pic_fill, size(5), flex_shrink_0, text_color(k->faint));
     }
     else {
-      icon(lucide, messages_square, size(5), flex_shrink_0,
+      icon(mingcute, messages_square_fill, size(5), flex_shrink_0,
            text_color(k->faint));
     }
 
@@ -1290,7 +1290,7 @@ static void empty_state(App *app, const Channel *forum) {
       bg(k->panel), text_center) {
     div(flex, items_center, justify_center, size(16), rounded(full),
         bg(k->surface_high), text_color(k->subtle)) {
-      icon(lucide, messages_square, size(8));
+      icon(mingcute, messages_square_fill, size(8));
     }
 
     text(title, mt(2), text_size(px(20)), line_height(px(24)),
@@ -1503,7 +1503,7 @@ void post_menu(App *app, Channel *post, civue_rect anchor) {
       }
 
       if (moderator) {
-        if (menu_row(app, id("post-pin"), CIVUE_ICON(lucide, pin),
+        if (menu_row(app, id("post-pin"), CIVUE_ICON(mingcute, pin_2_fill),
                      pinned(post) ? "Unpin Post" : "Pin Post", k->text)) {
           Channel *other = pinned(post) ? nullptr
                                         : pinned_post(app, forum, post);
@@ -1518,7 +1518,7 @@ void post_menu(App *app, Channel *post, civue_rect anchor) {
           app->popover = POPOVER_NONE;
         }
 
-        if (menu_row(app, id("post-lock"), CIVUE_ICON(lucide, lock),
+        if (menu_row(app, id("post-lock"), CIVUE_ICON(mingcute, lock_fill),
                      post->thread_locked ? "Unlock Post" : "Lock Post",
                      k->text)) {
           session_update_post(app->session, post->id, pinned(post),
@@ -1531,8 +1531,8 @@ void post_menu(App *app, Channel *post, civue_rect anchor) {
         bool closed = post->thread_archived;
 
         if (menu_row(app, id("post-close"),
-                     closed ? CIVUE_ICON(lucide, archive_restore)
-                            : CIVUE_ICON(lucide, archive),
+                     closed ? CIVUE_ICON(mingcute, unarchive_fill)
+                            : CIVUE_ICON(mingcute, archive_fill),
                      closed ? "Reopen Post" : "Close Post", k->text)) {
           session_update_post(app->session, post->id, pinned(post) && closed,
                               !closed, post->thread_locked);
@@ -1541,8 +1541,8 @@ void post_menu(App *app, Channel *post, civue_rect anchor) {
       }
 
       if (menu_row(app, id("post-follow"),
-                   post->thread_joined ? CIVUE_ICON(lucide, bell_off)
-                                       : CIVUE_ICON(lucide, bell),
+                   post->thread_joined ? CIVUE_ICON(mingcute, notification_off_fill)
+                                       : CIVUE_ICON(mingcute, notification_fill),
                    post->thread_joined ? "Unfollow Post" : "Follow Post",
                    k->text)) {
         session_follow(app->session, post->id, !post->thread_joined);

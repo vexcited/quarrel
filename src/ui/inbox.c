@@ -56,7 +56,7 @@ static void empty_with(App *app, civue_icon glyph, const char *title,
 }
 
 static void empty(App *app, const char *title, const char *detail) {
-  empty_with(app, CIVUE_ICON(lucide, inbox), title, detail);
+  empty_with(app, CIVUE_ICON(mingcute, inbox_fill), title, detail);
 }
 
 // whether the channel is one the user is told about, as the guild's own
@@ -90,7 +90,7 @@ static void place_label(App *app, const Guild *guild) {
       }
     }
     else {
-      icon(lucide, message_circle, size(4), flex_shrink_0,
+      icon(mingcute, chat_3_fill, size(4), flex_shrink_0,
            text_color(k->subtle));
     }
 
@@ -118,17 +118,17 @@ static void unread_row(App *app, Channel *c, Snowflake *chosen) {
     }
 
     if (c->guild_id) {
-      icon(lucide, hash, size(4), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, hashtag_fill, size(4), flex_shrink_0, text_color(k->faint));
     }
     else {
-      icon(lucide, at_sign, size(4), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, at_fill, size(4), flex_shrink_0, text_color(k->faint));
     }
 
     text(name, flex_1, min_w(0), truncate, text_size(px(14)),
          line_height(px(18)), font_weight(medium), text_color(k->strong));
     mention_badge(k, unread.mentions);
 
-    if (icon_button(app, read_id, CIVUE_ICON(lucide, check), 28, 16,
+    if (icon_button(app, read_id, CIVUE_ICON(mingcute, check_fill), 28, 16,
                     "Mark as read")) {
       session_ack(app->session, c->id);
     }
@@ -333,7 +333,7 @@ static void place_icon(App *app, const Channel *c) {
     div(flex, items_center, justify_center, size(8), flex_shrink_0,
         rounded(full), bg(k->primary), text_color(k->on_primary)) {
       if (!*url || !image_fill(app, url, 16)) {
-        icon(lucide, users, size(4));
+        icon(mingcute, group_fill, size(4));
       }
     }
   }
@@ -357,7 +357,7 @@ static void lost_bookmark(App *app, const Bookmark *b) {
     div(flex, items_center, gap(px(6)), min_w(0)) {
       div(flex, items_center, justify_center, size(6), flex_shrink_0,
           rounded(md), bg(k->frame), text_color(k->strong)) {
-        icon(lucide, circle_alert, size(px(14)));
+        icon(mingcute, warning_fill, size(px(14)));
       }
 
       text("A message you bookmarked could not be found.", min_w(0),
@@ -365,7 +365,7 @@ static void lost_bookmark(App *app, const Bookmark *b) {
            text_color(k->text));
     }
 
-    if (icon_button(app, id_at(base, 1), CIVUE_ICON(lucide, x), 28, 16,
+    if (icon_button(app, id_at(base, 1), CIVUE_ICON(mingcute, close_fill), 28, 16,
                     "Remove Bookmark")) {
       session_bookmark(app->session, b->channel_id, b->message_id, false);
     }
@@ -396,7 +396,7 @@ static void bookmark_card(App *app, const Bookmark *b, const Channel *c,
         div(flex, flex_col, flex_1, min_w(0)) {
           div(flex, items_center, gap(1), min_w(0)) {
             if (!channel_is_private(c)) {
-              icon(lucide, hash, size(px(14)), flex_shrink_0,
+              icon(mingcute, hashtag_fill, size(px(14)), flex_shrink_0,
                    text_color(k->faint));
             }
 
@@ -413,12 +413,12 @@ static void bookmark_card(App *app, const Bookmark *b, const Channel *c,
       }
 
       if (icon_button(app, id_at(base, 2),
-                      CIVUE_ICON(lucide, message_square_share), 28, 16,
+                      CIVUE_ICON(mingcute, message_square_share_fill), 28, 16,
                       "Jump to Message")) {
         *chosen = c->id;
       }
 
-      if (icon_button(app, id_at(base, 3), CIVUE_ICON(lucide, x), 28, 16,
+      if (icon_button(app, id_at(base, 3), CIVUE_ICON(mingcute, close_fill), 28, 16,
                       "Remove Bookmark")) {
         session_bookmark(app->session, b->channel_id, b->message_id, false);
       }
@@ -461,7 +461,7 @@ static void bookmarks_empty(App *app) {
   div(flex, flex_col, items_center, flex_1, justify_center, px(4), py(4)) {
     div(flex, items_center, justify_center, size(px(56)), mb(4), rounded(full),
         bg(k->hover), text_color(k->subtle)) {
-      icon(lucide, bookmark, size(6));
+      icon(mingcute, bookmark_fill, size(6));
     }
 
     text("Collect your favorite memories", text_center, mb(2),
@@ -516,7 +516,7 @@ static void bookmarks_empty(App *app) {
                 shadow(lg)) {
               div(flex, items_center, gap(2), px(2), py(px(6)), rounded(sm),
                   bg(k->hover), text_color(k->strong)) {
-                icon(lucide, bookmark, size(4));
+                icon(mingcute, bookmark_fill, size(4));
                 text("Bookmark Message", text_size(px(14)),
                      line_height(px(18)), font_weight(medium));
               }
@@ -594,7 +594,7 @@ static void bookmarks(App *app, Snowflake *chosen) {
       }
 
       if (session->bookmarks_failed) {
-        empty_with(app, CIVUE_ICON(lucide, bookmark),
+        empty_with(app, CIVUE_ICON(mingcute, bookmark_fill),
                    "Bookmarks could not be loaded.",
                    "Something went wrong while asking for them.");
 
@@ -611,7 +611,7 @@ static void bookmarks(App *app, Snowflake *chosen) {
       }
       else if (waiting || session->bookmarks_loading ||
                session->bookmarks_more) {
-        empty_with(app, CIVUE_ICON(lucide, bookmark), "Loading...",
+        empty_with(app, CIVUE_ICON(mingcute, bookmark_fill), "Loading...",
                    "Fetching your bookmarks.");
       }
       else {

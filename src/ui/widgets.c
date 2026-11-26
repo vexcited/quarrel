@@ -467,15 +467,15 @@ void format_short_day(int64_t ms, char *out, size_t cap) {
 civue_icon activity_icon(ActivityType type) {
   switch (type) {
     case ACTIVITY_LISTENING:
-      return CIVUE_ICON(lucide, music);
+      return CIVUE_ICON(mingcute, music_fill);
     case ACTIVITY_WATCHING:
-      return CIVUE_ICON(lucide, tv);
+      return CIVUE_ICON(mingcute, tv_2_fill);
     case ACTIVITY_STREAMING:
-      return CIVUE_ICON(lucide, radio);
+      return CIVUE_ICON(mingcute, base_station_fill);
     case ACTIVITY_COMPETING:
-      return CIVUE_ICON(lucide, trophy);
+      return CIVUE_ICON(mingcute, trophy_fill);
     default:
-      return CIVUE_ICON(lucide, gamepad_2);
+      return CIVUE_ICON(mingcute, game_2_fill);
   }
 }
 

@@ -16,23 +16,23 @@
 static civue_icon channel_icon(const Channel *c) {
   switch (c->type) {
     case CHANNEL_GUILD_VOICE:
-      return CIVUE_ICON(lucide, volume_2);
+      return CIVUE_ICON(mingcute, volume_fill);
     case CHANNEL_GUILD_STAGE:
-      return CIVUE_ICON(lucide, radio);
+      return CIVUE_ICON(mingcute, base_station_fill);
     case CHANNEL_GUILD_ANNOUNCEMENT:
-      return CIVUE_ICON(lucide, megaphone);
+      return CIVUE_ICON(mingcute, announcement_fill);
     case CHANNEL_GUILD_FORUM:
-      return CIVUE_ICON(lucide, messages_square);
+      return CIVUE_ICON(mingcute, messages_square_fill);
     case CHANNEL_GUILD_MEDIA:
-      return CIVUE_ICON(lucide, image);
+      return CIVUE_ICON(mingcute, pic_fill);
     case CHANNEL_GUILD_DIRECTORY:
-      return CIVUE_ICON(lucide, compass);
+      return CIVUE_ICON(mingcute, compass_fill);
     case CHANNEL_ANNOUNCEMENT_THREAD:
     case CHANNEL_PUBLIC_THREAD:
     case CHANNEL_PRIVATE_THREAD:
-      return CIVUE_ICON(lucide, message_square);
+      return CIVUE_ICON(mingcute, message_2_fill);
     default:
-      return CIVUE_ICON(lucide, hash);
+      return CIVUE_ICON(mingcute, hashtag_fill);
   }
 }
 
@@ -62,10 +62,10 @@ static void category_row(App *app, Guild *guild, Channel *category) {
     text(category->name ? category->name : "", truncate, min_w(0));
 
     if (category->collapsed) {
-      icon(lucide, chevron_right, size(3), flex_shrink_0);
+      icon(mingcute, right_fill, size(3), flex_shrink_0);
     }
     else {
-      icon(lucide, chevron_down, size(3), flex_shrink_0);
+      icon(mingcute, down_fill, size(3), flex_shrink_0);
     }
 
     div(flex_1) {}
@@ -80,7 +80,7 @@ static void category_row(App *app, Guild *guild, Channel *category) {
 
         create = add.activated;
         hint(app, plus, &add.response, "Create Channel", CIVUE_TOOLTIP_ABOVE);
-        icon(lucide, plus, size(4));
+        icon(mingcute, add_fill, size(4));
       }
     }
   }
@@ -327,7 +327,7 @@ static void private_row(App *app, Channel *c) {
       div(flex, items_center, justify_center, size(8), flex_shrink_0,
           rounded(full), bg(k->primary), text_color(k->on_primary)) {
         if (!*url || !image_fill(app, url, 16)) {
-          icon(lucide, users, size(4));
+          icon(mingcute, group_fill, size(4));
         }
       }
     }
@@ -422,7 +422,7 @@ void private_list(App *app) {
         app->pick_search = nullptr;
       }
 
-      icon(lucide, plus, size(px(18)));
+      icon(mingcute, add_fill, size(px(18)));
 
       if (!open) {
         hint(app, id, &state.response, "New Message", CIVUE_TOOLTIP_BELOW);

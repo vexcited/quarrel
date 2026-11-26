@@ -73,16 +73,16 @@ static const ChannelKind KINDS[] = {
 static civue_icon kind_icon(ChannelType type, bool private) {
   switch (type) {
     case CHANNEL_GUILD_VOICE:
-      return private ? CIVUE_ICON(lucide, volume_off)
-                     : CIVUE_ICON(lucide, volume_2);
+      return private ? CIVUE_ICON(mingcute, volume_off_fill)
+                     : CIVUE_ICON(mingcute, volume_fill);
     case CHANNEL_GUILD_FORUM:
-      return CIVUE_ICON(lucide, messages_square);
+      return CIVUE_ICON(mingcute, messages_square_fill);
     case CHANNEL_GUILD_ANNOUNCEMENT:
-      return CIVUE_ICON(lucide, megaphone);
+      return CIVUE_ICON(mingcute, announcement_fill);
     case CHANNEL_GUILD_STAGE:
-      return CIVUE_ICON(lucide, radio);
+      return CIVUE_ICON(mingcute, base_station_fill);
     default:
-      return private ? CIVUE_ICON(lucide, lock) : CIVUE_ICON(lucide, hash);
+      return private ? CIVUE_ICON(mingcute, lock_fill) : CIVUE_ICON(mingcute, hashtag_fill);
   }
 }
 
@@ -309,7 +309,7 @@ static void create_dialog(App *app, ServerUi *ui) {
             }
           }
 
-          if (icon_button(app, id("create-close"), CIVUE_ICON(lucide, x), 24,
+          if (icon_button(app, id("create-close"), CIVUE_ICON(mingcute, close_fill), 24,
                           16, nullptr) &&
               !busy) {
             close = true;
@@ -369,7 +369,7 @@ static void create_dialog(App *app, ServerUi *ui) {
 
             if (private_offered) {
               div(flex, items_start, gap(2)) {
-                icon(lucide, lock, size(4), flex_shrink_0, mt(px(2)),
+                icon(mingcute, lock_fill, size(4), flex_shrink_0, mt(px(2)),
                      text_color(k->strong));
 
                 div(flex, flex_col, flex_1, min_w(0)) {
@@ -395,7 +395,7 @@ static void create_dialog(App *app, ServerUi *ui) {
             div(flex, items_center, gap(2), p(3), rounded(lg),
                 bg(civue_alpha(k->danger, .16f)),
                 text_color(k->critical_text)) {
-              icon(lucide, circle_alert, size(4), flex_shrink_0);
+              icon(mingcute, warning_fill, size(4), flex_shrink_0);
               text(a->channel.error ? a->channel.error
                                     : "An error occurred, please try again.");
             }

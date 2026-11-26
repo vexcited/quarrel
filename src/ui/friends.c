@@ -186,7 +186,7 @@ static void friend_row(App *app, const Friend *f) {
       }
     }
 
-    icon(lucide, message_circle, size(5), flex_shrink_0, mr(2),
+    icon(mingcute, chat_3_fill, size(5), flex_shrink_0, mr(2),
          text_color(k->subtle));
   }
 }
@@ -625,7 +625,7 @@ static void voice_card(App *app, const VoiceGroup *g) {
     card_header(app, g->first, g->title, "In a Voice Channel", "");
 
     div(flex, items_center, gap(3), min_w(0)) {
-      section_icon(app, url, CIVUE_ICON(lucide, volume_2));
+      section_icon(app, url, CIVUE_ICON(mingcute, volume_fill));
 
       div(flex, flex_col, flex_1, min_w(0)) {
         text(guild && guild->name ? guild->name : "Voice", truncate,
@@ -633,7 +633,7 @@ static void voice_card(App *app, const VoiceGroup *g) {
              text_color(k->strong));
 
         div(flex, items_center, gap(1), min_w(0)) {
-          icon(lucide, volume_2, size(3), flex_shrink_0, text_color(k->subtle));
+          icon(mingcute, volume_fill, size(3), flex_shrink_0, text_color(k->subtle));
           text(channel && channel->name ? channel->name : "Voice Channel",
                min_w(0), truncate, text_size(px(12)), line_height(px(16)),
                text_color(k->subtle));
@@ -863,7 +863,7 @@ void friends_page(App *app) {
         border_b(1), border_color(k->border)) {
       window_handle(id("friends-header"));
 
-      icon(lucide, users, size(5), text_color(k->faint));
+      icon(mingcute, group_fill, size(5), text_color(k->faint));
       text("Friends", mr(2), font_weight(semibold), text_color(k->strong));
 
       div(size(1), mr(2), rounded(full), bg(k->border_strong)) {}

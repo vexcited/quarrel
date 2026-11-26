@@ -70,7 +70,7 @@ static void account_switch(App *app) {
     }
 
     text(name, min_w(0), truncate, text_color(k->strong));
-    icon(lucide, chevron_down, size(px(14)), flex_shrink_0,
+    icon(mingcute, down_fill, size(px(14)), flex_shrink_0,
          text_color(k->faint));
 
     if (app->popover != POPOVER_ACCOUNTS) {
@@ -91,7 +91,7 @@ static void hub_badge(App *app) {
     civue_response hovered = civue_interact(civue_ui_current(), id, here(),
                                             CIVUE_SENSE_HOVER);
 
-    glyph(CIVUE_ICON(lucide, graduation_cap), 11, k->strong);
+    glyph(CIVUE_ICON(mingcute, mortarboard_fill), 11, k->strong);
     hint(app, id, &hovered, "Student Hub", CIVUE_TOOLTIP_BELOW);
   }
 }
@@ -122,7 +122,7 @@ static void guild_switch(App *app) {
         }
       }
       else {
-        icon(lucide, message_circle, size(px(18)), text_color(k->subtle));
+        icon(mingcute, chat_3_fill, size(px(18)), text_color(k->subtle));
       }
 
       if (mentioned) {
@@ -137,7 +137,7 @@ static void guild_switch(App *app) {
       hub_badge(app);
     }
 
-    icon(lucide, chevrons_up_down, size(px(14)), flex_shrink_0,
+    icon(mingcute, chevrons_up_down_fill, size(px(14)), flex_shrink_0,
          text_color(k->faint));
   }
 
@@ -165,7 +165,7 @@ static void inbox_button(App *app) {
     }
 
     div(relative, flex, items_center, justify_center, size(px(18))) {
-      icon(lucide, inbox, size(px(18)));
+      icon(mingcute, inbox_fill, size(px(18)));
 
       if (mentions_of(app->session->store)) {
         mention_dot(k);
@@ -215,10 +215,10 @@ static void link_state(App *app) {
     civue_button_state state = button();
 
     if (down) {
-      icon(lucide, unlink, size(px(18)));
+      icon(mingcute, unlink_fill, size(px(18)));
     }
     else {
-      icon(lucide, link, size(px(18)));
+      icon(mingcute, link_fill, size(px(18)));
     }
 
     hint(app, id, &state.response, why, CIVUE_TOOLTIP_BELOW);
@@ -243,7 +243,7 @@ static void settings_button(App *app) {
       devices_list(app);
     }
 
-    icon(lucide, settings, size(px(18)));
+    icon(mingcute, settings_3_fill, size(px(18)));
     hint(app, id, &state.response, "Settings", CIVUE_TOOLTIP_BELOW);
   }
 }
@@ -282,7 +282,7 @@ static void friends_button(App *app) {
       app_select_channel(app, 0);
     }
 
-    icon(lucide, users, size(px(18)));
+    icon(mingcute, group_fill, size(px(18)));
     hint(app, id, &state.response, label, CIVUE_TOOLTIP_BELOW);
   }
 }
@@ -322,7 +322,7 @@ static bool bar_button(App *app, civue_id id, civue_icon glyph_icon,
 static void guild_buttons(App *app) {
   civue_rect anchor = {};
 
-  bar_button(app, id("guild-menu"), CIVUE_ICON(lucide, ellipsis), "Server Menu",
+  bar_button(app, id("guild-menu"), CIVUE_ICON(mingcute, more_1_fill), "Server Menu",
              POPOVER_GUILD_MENU, &anchor);
   guild_menu(app, anchor);
   invite_card(app, anchor);
@@ -408,11 +408,11 @@ void notice_toast(App *app) {
           text_size(px(14)), line_height(px(18)), font_weight(medium),
           text_color(k->strong)) {
         if (session->notice_failed) {
-          icon(lucide, circle_alert, size(4), flex_shrink_0,
+          icon(mingcute, warning_fill, size(4), flex_shrink_0,
                text_color(k->critical_text));
         }
         else {
-          icon(lucide, bookmark, size(4), flex_shrink_0,
+          icon(mingcute, bookmark_fill, size(4), flex_shrink_0,
                text_color(k->subtle));
         }
 

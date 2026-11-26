@@ -48,13 +48,13 @@ static void tile(App *app, const Channel *c, const VoiceState *v, civue_rect at,
     div(absolute, left(2), bottom(2), flex, items_center, gap(1p5), h(7), px(2),
         rounded(lg), bg(rgba(0x000000b3)), max_w(2_3)) {
       if (rung) {
-        glyph(CIVUE_ICON(lucide, phone_outgoing), 14, k->faint);
+        glyph(CIVUE_ICON(mingcute, phone_outgoing_fill), 14, k->faint);
       }
       else if (v->deafened) {
-        glyph(CIVUE_ICON(lucide, headphone_off), 14, k->critical_text);
+        glyph(CIVUE_ICON(mingcute, headphone_off_fill), 14, k->critical_text);
       }
       else if (v->muted) {
-        glyph(CIVUE_ICON(lucide, mic_off), 14, k->critical_text);
+        glyph(CIVUE_ICON(mingcute, mic_off_fill), 14, k->critical_text);
       }
 
       text(store_display_name(store, c->guild_id, v->user_id), min_w(0),
@@ -214,7 +214,7 @@ static void device_row(App *app, AudioKind kind, const char *label) {
            text_color(k->subtle));
     }
 
-    icon(lucide, chevron_right, size(4), flex_shrink_0, text_color(k->subtle));
+    icon(mingcute, right_fill, size(4), flex_shrink_0, text_color(k->subtle));
   }
 }
 
@@ -421,7 +421,7 @@ static void sound_menu(App *app, civue_rect anchor) {
             style(.bg = s->voice_deaf ? k->primary : CIVUE_CLEAR),
             text_color(k->on_primary)) {
           if (s->voice_deaf) {
-            icon(lucide, check, size(px(14)));
+            icon(mingcute, check_fill, size(px(14)));
           }
         }
       }
@@ -506,8 +506,8 @@ static bool bar_pair(App *app, civue_id id, civue_icon icon, civue_color color,
     *anchor = here();
     pressed = bar_button(app, id_at(id, 1), icon, 40, 20, color, label, open);
 
-    civue_icon arrow = open ? CIVUE_ICON(lucide, chevron_up)
-                            : CIVUE_ICON(lucide, chevron_down);
+    civue_icon arrow = open ? CIVUE_ICON(mingcute, up_fill)
+                            : CIVUE_ICON(mingcute, down_fill);
 
     if (bar_button(app, id_at(id, 2), arrow, 24, 16, k->subtle, nullptr,
                    true)) {
@@ -541,7 +541,7 @@ static void controls(App *app, const Channel *c) {
             voice_join(app, c->id);
           }
 
-          icon(lucide, phone, size(px(18)));
+          icon(mingcute, phone_fill, size(px(18)));
           text(channel_is_private(c) ? "Join Call" : "Join Voice",
                font_weight(semibold));
         }
@@ -558,7 +558,7 @@ static void controls(App *app, const Channel *c) {
               session_call_decline(s, c->id);
             }
 
-            icon(lucide, phone_off, size(px(18)));
+            icon(mingcute, phone_off_fill, size(px(18)));
             text("Decline", font_weight(semibold));
           }
         }
@@ -570,7 +570,7 @@ static void controls(App *app, const Channel *c) {
     else {
       bool muted = s->voice_mute || s->voice_deaf;
       civue_icon microphone =
-        muted ? CIVUE_ICON(lucide, mic_off) : CIVUE_ICON(lucide, mic);
+        muted ? CIVUE_ICON(mingcute, mic_off_fill) : CIVUE_ICON(mingcute, mic_fill);
 
       if (bar_pair(app, id("stage-sound"), microphone,
                    muted ? k->critical_text : k->strong, muted ? "Unmute" : "Mute",
@@ -579,7 +579,7 @@ static void controls(App *app, const Channel *c) {
       }
 
       // the camera is picked here, its picture is not sent yet.
-      bar_pair(app, id("stage-camera"), CIVUE_ICON(lucide, video_off),
+      bar_pair(app, id("stage-camera"), CIVUE_ICON(mingcute, camcorder_off_fill),
                k->faint, "Video is not sent yet", POPOVER_VOICE_CAMERA,
                &camera);
 
@@ -593,7 +593,7 @@ static void controls(App *app, const Channel *c) {
           session_voice_leave(s);
         }
 
-        glyph(CIVUE_ICON(lucide, phone_off), 20, k->on_danger);
+        glyph(CIVUE_ICON(mingcute, phone_off_fill), 20, k->on_danger);
         hint(app, id("stage-leave"), &state.response, "Disconnect",
              CIVUE_TOOLTIP_ABOVE);
       }

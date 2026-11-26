@@ -274,10 +274,10 @@ static void app_icon(App *app, Snowflake id, const char *hash, const char *name,
 static void allowed(const Look *k, const char *what, bool really) {
   div(flex, items_start, gap(3)) {
     if (really) {
-      glyph(CIVUE_ICON(lucide, circle_check), 20, k->positive);
+      glyph(CIVUE_ICON(mingcute, check_circle_fill), 20, k->positive);
     }
     else {
-      glyph(CIVUE_ICON(lucide, circle_x), 20, k->muted);
+      glyph(CIVUE_ICON(mingcute, close_circle_fill), 20, k->muted);
     }
 
     text(what, flex_1, min_w(0), pt(px(1)),
@@ -352,7 +352,7 @@ static bool way(App *app, civue_id id, civue_icon glyph_icon, const char *title,
            text_color(k->muted));
     }
 
-    glyph(CIVUE_ICON(lucide, chevron_right), 24, k->subtle);
+    glyph(CIVUE_ICON(mingcute, right_fill), 24, k->subtle);
   }
 
   return pressed;
@@ -369,12 +369,12 @@ static void step_install(App *app) {
   }
 
   div(flex, flex_col, gap(2), px(6), pb(4)) {
-    if (way(app, id("authorize-user"), CIVUE_ICON(lucide, user_plus),
+    if (way(app, id("authorize-user"), CIVUE_ICON(mingcute, user_add_fill),
             "Add to My Apps", "Use this app everywhere!")) {
       choose(app, OAUTH_USER);
     }
 
-    if (way(app, id("authorize-guild"), CIVUE_ICON(lucide, server),
+    if (way(app, id("authorize-guild"), CIVUE_ICON(mingcute, server_fill),
             "Add to Server", "Customize your server by adding this app")) {
       choose(app, OAUTH_GUILD);
     }
@@ -410,7 +410,7 @@ static void faces(App *app, const Oauth *o) {
            font_weight(semibold), text_color(k->strong));
 
       if (o->bot_id && o->bot_verified) {
-        glyph(CIVUE_ICON(lucide, badge_check), 16, k->accent_text);
+        glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->accent_text);
       }
     }
 
@@ -528,19 +528,19 @@ static void details(App *app, const Oauth *o) {
              "to this application. Discord's Privacy Policy applies to data "
              "it receives.",
              o->name);
-    detail(k, CIVUE_ICON(lucide, lock), line);
+    detail(k, CIVUE_ICON(mingcute, lock_fill), line);
 
     format_short_day(snowflake_time_ms(o->client_id), day, sizeof day);
     snprintf(line, sizeof line, "Active since %s", day);
-    detail(k, CIVUE_ICON(lucide, clock), line);
+    detail(k, CIVUE_ICON(mingcute, time_fill), line);
 
     if (oauth_has_scope(o->scopes, "bot") && o->guild_count) {
       count_with_commas(o->guild_count, count, sizeof count);
       snprintf(line, sizeof line, "Used in %s servers", count);
-      detail(k, CIVUE_ICON(lucide, bot), line);
+      detail(k, CIVUE_ICON(mingcute, robot_fill), line);
     }
 
-    detail(k, CIVUE_ICON(lucide, shield),
+    detail(k, CIVUE_ICON(mingcute, shield_shape_fill),
            writes  ? "This application can read and send messages as you."
            : reads ? "This application can read your messages but can not "
                      "send messages as you."
@@ -548,13 +548,13 @@ static void details(App *app, const Oauth *o) {
                      "messages as you.");
 
     if (o->sees_ip) {
-      detail(k, CIVUE_ICON(lucide, globe),
+      detail(k, CIVUE_ICON(mingcute, earth_fill),
              "Developer may see your IP address while you use this "
              "application.");
     }
 
     if (o->shows_ads) {
-      detail(k, CIVUE_ICON(lucide, megaphone),
+      detail(k, CIVUE_ICON(mingcute, announcement_fill),
              "Developer may show ads while you use this application.");
     }
 
@@ -637,7 +637,7 @@ static void step_permissions(App *app, const Oauth *o) {
       for (size_t i = 0; i < countof(PERMISSIONS); i++) {
         if (o->permissions & ~may & PERMISSIONS[i].bit) {
           div(flex, items_center, gap(3)) {
-            glyph(CIVUE_ICON(lucide, x), 16, k->muted);
+            glyph(CIVUE_ICON(mingcute, close_fill), 16, k->muted);
             text(PERMISSIONS[i].name, flex_1, min_w(0), text_color(k->muted));
           }
         }
@@ -764,7 +764,7 @@ void authorize_dialog(App *app) {
           }
 
           div(flex, flex_col, items_center, gap(2), px(6), pt(6), pb(4)) {
-            glyph(CIVUE_ICON(lucide, circle_check), 48, k->positive);
+            glyph(CIVUE_ICON(mingcute, check_circle_fill), 48, k->positive);
             text("Success!", mt(2), text_size(px(18)), line_height(px(22)),
                  font_weight(semibold), text_color(k->strong));
             text(line, text_center, text_color(k->subtle));

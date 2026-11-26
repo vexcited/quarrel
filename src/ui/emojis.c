@@ -569,14 +569,14 @@ static const struct {
   const char *title;
   civue_icon glyph;
 } CATEGORIES[EMOJI_CATEGORIES] = {
-  {"People", CIVUE_ICON(lucide, smile)},
-  {"Nature", CIVUE_ICON(lucide, leaf)},
-  {"Food", CIVUE_ICON(lucide, utensils)},
-  {"Activities", CIVUE_ICON(lucide, gamepad_2)},
-  {"Travel", CIVUE_ICON(lucide, bike)},
-  {"Objects", CIVUE_ICON(lucide, lightbulb)},
-  {"Symbols", CIVUE_ICON(lucide, heart)},
-  {"Flags", CIVUE_ICON(lucide, flag)},
+  {"People", CIVUE_ICON(mingcute, emoji_fill)},
+  {"Nature", CIVUE_ICON(mingcute, leaf_fill)},
+  {"Food", CIVUE_ICON(mingcute, utensils_fill)},
+  {"Activities", CIVUE_ICON(mingcute, game_2_fill)},
+  {"Travel", CIVUE_ICON(mingcute, bike_fill)},
+  {"Objects", CIVUE_ICON(mingcute, bulb_fill)},
+  {"Symbols", CIVUE_ICON(mingcute, heart_fill)},
+  {"Flags", CIVUE_ICON(mingcute, flag_2_fill)},
 };
 
 constexpr uint64_t KEY_RESULTS = 1;
@@ -822,10 +822,10 @@ static void section_glyph(App *app, const Section *s, float size) {
 
       break;
     case SECTION_FAVORITES:
-      glyph(CIVUE_ICON(lucide, star), size, k->subtle);
+      glyph(CIVUE_ICON(mingcute, star_fill), size, k->subtle);
       break;
     case SECTION_FREQUENT:
-      glyph(CIVUE_ICON(lucide, clock), size, k->subtle);
+      glyph(CIVUE_ICON(mingcute, time_fill), size, k->subtle);
       break;
     case SECTION_UNICODE:
       glyph(CATEGORIES[s->category].glyph, size, k->subtle);
@@ -869,7 +869,7 @@ static void emoji_cell(App *app, struct EmojiPicker *p, civue_id id,
           size(px(IMAGE)), flex, items_center, justify_center, rounded(px(2)),
           bg(veiled ? civue_alpha(k->popover, .5f) : rgba(0x00000099))) {
         if (!veiled) {
-          icon(lucide, lock, size(4), text_color(CIVUE_WHITE));
+          icon(mingcute, lock_fill, size(4), text_color(CIVUE_WHITE));
         }
       }
     }
@@ -918,14 +918,14 @@ static void section_title(App *app, struct EmojiPicker *p, const Section *s,
          font_weight(semibold));
 
     if (s->locked) {
-      icon(lucide, lock, size(px(12)), flex_shrink_0);
+      icon(mingcute, lock_fill, size(px(12)), flex_shrink_0);
     }
 
     if (s->folded) {
-      icon(lucide, chevron_right, size(4), flex_shrink_0);
+      icon(mingcute, right_fill, size(4), flex_shrink_0);
     }
     else {
-      icon(lucide, chevron_down, size(4), flex_shrink_0);
+      icon(mingcute, down_fill, size(4), flex_shrink_0);
     }
   }
 }
@@ -1132,7 +1132,7 @@ static const Section *rail(App *app, struct EmojiPicker *p,
           pressed = people;
         }
 
-        icon(lucide, smile, size(6));
+        icon(mingcute, emoji_fill, size(6));
 
         if (state.response.hovered) {
           *tip = (RailTip){shortcut, state.response, "Scroll to Unicode emoji"};
@@ -1185,7 +1185,7 @@ static void inspector(App *app, struct EmojiPicker *p) {
               app->session, cell->custom
                               ? snowflake_format(cell->custom->emoji->id, key)
                               : cell->unicode->name)) {
-          icon(lucide, star, size(px(15)), flex_shrink_0,
+          icon(mingcute, star_fill, size(px(15)), flex_shrink_0,
                text_color(k->star));
         }
 
@@ -1206,7 +1206,7 @@ static void inspector(App *app, struct EmojiPicker *p) {
                min_w(0), truncate, font_weight(semibold));
 
           if (why) {
-            icon(lucide, lock, size(px(11)), flex_shrink_0, ml(1));
+            icon(mingcute, lock_fill, size(px(11)), flex_shrink_0, ml(1));
             text(why, flex_shrink_0, whitespace_nowrap);
           }
         }

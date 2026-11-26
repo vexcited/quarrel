@@ -82,7 +82,7 @@ static void unread_dot(const Look *k, Unread unread) {
 
 static void selected_mark(const Look *k, bool selected) {
   if (selected) {
-    icon(lucide, check, size(px(14)), flex_shrink_0, text_color(k->subtle));
+    icon(mingcute, check_fill, size(px(14)), flex_shrink_0, text_color(k->subtle));
   }
 }
 
@@ -136,7 +136,7 @@ static bool home_row(App *app) {
 
     div(flex, items_center, justify_center, size(px(ICON_SIZE)),
         flex_shrink_0) {
-      icon(lucide, message_circle, size(px(18)), text_color(k->subtle));
+      icon(mingcute, chat_3_fill, size(px(18)), text_color(k->subtle));
     }
 
     if (selected) {
@@ -232,10 +232,10 @@ static void folder_row(App *app, const GuildFolder *folder, bool *open) {
     div(flex, items_center, justify_center, size(px(ICON_SIZE)), flex_shrink_0,
         rounded(md), bg(civue_alpha(tint, .25f))) {
       if (*open) {
-        icon(lucide, folder_open, size(px(12)), text_color(tint));
+        icon(mingcute, folder_open_fill, size(px(12)), text_color(tint));
       }
       else {
-        icon(lucide, folder, size(px(12)), text_color(tint));
+        icon(mingcute, folder_fill, size(px(12)), text_color(tint));
       }
     }
 
@@ -248,11 +248,11 @@ static void folder_row(App *app, const GuildFolder *folder, bool *open) {
     }
 
     if (*open) {
-      icon(lucide, chevron_down, size(px(14)), flex_shrink_0,
+      icon(mingcute, down_fill, size(px(14)), flex_shrink_0,
            text_color(k->faint));
     }
     else {
-      icon(lucide, chevron_right, size(px(14)), flex_shrink_0,
+      icon(mingcute, right_fill, size(px(14)), flex_shrink_0,
            text_color(k->faint));
     }
   }
@@ -293,8 +293,8 @@ static void scroll_arrow(App *app, civue_id list, float at, float most,
     // in the menus of macos.
     over = civue_interact(ui, arrow, here(), CIVUE_SENSE_HOVER).hovered &&
            app->guilds_armed;
-    glyph(up ? CIVUE_ICON(lucide, chevron_up)
-             : CIVUE_ICON(lucide, chevron_down),
+    glyph(up ? CIVUE_ICON(mingcute, up_fill)
+             : CIVUE_ICON(mingcute, down_fill),
           14, over ? k->strong : k->faint);
   }
 
@@ -495,9 +495,9 @@ void guild_switcher(App *app, civue_rect anchor) {
       div(flex, gap(1), flex_shrink_0, p(px(CARD_PAD)), border_t(1),
           border_color(k->border)) {
         explore = footer_button(app, id("guild-explore"),
-                                CIVUE_ICON(lucide, compass), "Explore");
+                                CIVUE_ICON(mingcute, compass_fill), "Explore");
         create = footer_button(app, id("guild-create"),
-                               CIVUE_ICON(lucide, plus), "Create");
+                               CIVUE_ICON(mingcute, add_fill), "Create");
       }
 
       float most = fmaxf(wanted - height, 0);
@@ -593,28 +593,28 @@ void guild_menu(App *app, civue_rect anchor) {
         shadow(lg)) {
       card = here();
 
-      invite = menu_row(app, id("menu-invite"), CIVUE_ICON(lucide, user_plus),
+      invite = menu_row(app, id("menu-invite"), CIVUE_ICON(mingcute, user_add_fill),
                         guild->hub ? "Invite People" : "Invite to Server",
                         k->link);
 
       if (guild->hub) {
         profile =
-          menu_row(app, id("menu-hub-profile"), CIVUE_ICON(lucide, id_card),
+          menu_row(app, id("menu-hub-profile"), CIVUE_ICON(mingcute, idcard_fill),
                    "Edit Hub Profile", k->text);
       }
 
       if (server_can_manage(app, guild)) {
         settings = menu_row(app, id("menu-settings"),
-                            CIVUE_ICON(lucide, settings), "Server Settings",
+                            CIVUE_ICON(mingcute, settings_3_fill), "Server Settings",
                             k->text);
       }
 
       if (manages) {
         channel = menu_row(app, id("menu-create-channel"),
-                           CIVUE_ICON(lucide, circle_plus), "Create Channel",
+                           CIVUE_ICON(mingcute, add_circle_fill), "Create Channel",
                            k->text);
         category = menu_row(app, id("menu-create-category"),
-                            CIVUE_ICON(lucide, folder_plus), "Create Category",
+                            CIVUE_ICON(mingcute, new_folder_fill), "Create Category",
                             k->text);
       }
 
@@ -622,24 +622,24 @@ void guild_menu(App *app, civue_rect anchor) {
 
       hide = menu_row(
         app, id("menu-hide-muted"),
-        hides ? CIVUE_ICON(lucide, eye) : CIVUE_ICON(lucide, eye_off),
+        hides ? CIVUE_ICON(mingcute, eye_2_fill) : CIVUE_ICON(mingcute, eye_2_off_fill),
         hides ? "Show Muted Channels" : "Hide Muted Channels", k->text);
 
       if (!owner && !guild->hub) {
         div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
 
-        leave = menu_row(app, id("menu-leave"), CIVUE_ICON(lucide, door_open),
+        leave = menu_row(app, id("menu-leave"), CIVUE_ICON(mingcute, exit_door_fill),
                          "Leave Server", k->critical_text);
       }
 
       div(flex_shrink_0, h(px(1)), my(1), bg(k->border)) {}
 
-      copy = menu_row(app, id("menu-copy-id"), CIVUE_ICON(lucide, copy),
+      copy = menu_row(app, id("menu-copy-id"), CIVUE_ICON(mingcute, copy_2_fill),
                       "Copy Server ID", k->text);
 
       if (guild->hub && !owner) {
         leave_hub = menu_row(app, id("menu-leave-hub"),
-                             CIVUE_ICON(lucide, log_out), "Leave Hub",
+                             CIVUE_ICON(mingcute, exit_fill), "Leave Hub",
                              k->critical_text);
       }
     }
@@ -841,7 +841,7 @@ void new_guild(App *app, civue_rect anchor) {
 
       // discord offers this in its discovery's student hubs.
       join_hub = menu_row(app, id("new-guild-hub"),
-                          CIVUE_ICON(lucide, graduation_cap),
+                          CIVUE_ICON(mingcute, mortarboard_fill),
                           in_hub(session->store)
                             ? "Join Another Hub"
                             : "Join the Student Hub for your school",

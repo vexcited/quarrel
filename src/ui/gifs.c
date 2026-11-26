@@ -302,7 +302,7 @@ static bool star(App *app, civue_id id, bool starred, bool shown) {
 
     pressed = state.activated;
 
-    icon(lucide, star, size(5), text_color(color));
+    icon(mingcute, star_fill, size(5), text_color(color));
 
     hint(app, id, &state.response,
          starred ? "Remove from Favorites" : "Add to Favorites",
@@ -376,10 +376,10 @@ static bool front_tile(App *app, civue_id id, Spot s, const char *still,
         text_color(kind == TILE_FAVORITES ? k->on_primary : CIVUE_WHITE),
         border(over ? 1 : 0), border_color(k->border_strong)) {
       if (kind == TILE_FAVORITES) {
-        icon(lucide, star, size(5), flex_shrink_0);
+        icon(mingcute, star_fill, size(5), flex_shrink_0);
       }
       else if (kind == TILE_TRENDING) {
-        icon(lucide, trending_up, size(5), flex_shrink_0);
+        icon(mingcute, trending_up_fill, size(5), flex_shrink_0);
       }
 
       text(name, min_w(0), truncate, text_size(px(16)), line_height(px(20)),
@@ -704,7 +704,7 @@ static void header(App *app) {
   div(flex, items_center, gap(2), flex_shrink_0, h(px(30 + 12)), px(4),
       pb(3), border_b(1), border_color(k->border)) {
     if (app->gif_page != PAGE_FRONT && app->gif_page != PAGE_SEARCH) {
-      if (icon_button(app, id("gif-back"), CIVUE_ICON(lucide, arrow_left), 28,
+      if (icon_button(app, id("gif-back"), CIVUE_ICON(mingcute, arrow_left_fill), 28,
                       20, nullptr)) {
         open_page(app, PAGE_FRONT, nullptr);
       }

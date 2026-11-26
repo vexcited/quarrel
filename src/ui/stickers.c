@@ -557,10 +557,10 @@ static void section_icon(App *app, const Section *s, float size) {
     }
   }
   else if (s->key == KEY_FAVORITES) {
-    icon(lucide, star, size(px(size)), flex_shrink_0, text_color(k->subtle));
+    icon(mingcute, star_fill, size(px(size)), flex_shrink_0, text_color(k->subtle));
   }
   else if (s->key == KEY_FREQUENT) {
-    icon(lucide, clock, size(px(size)), flex_shrink_0, text_color(k->subtle));
+    icon(mingcute, time_fill, size(px(size)), flex_shrink_0, text_color(k->subtle));
   }
 }
 
@@ -583,10 +583,10 @@ static void heading(App *app, const Section *s, float y, bool pinned) {
          font_weight(semibold));
 
     if (s->folded) {
-      icon(lucide, chevron_right, size(4), flex_shrink_0);
+      icon(mingcute, right_fill, size(4), flex_shrink_0);
     }
     else {
-      icon(lucide, chevron_down, size(4), flex_shrink_0);
+      icon(mingcute, down_fill, size(4), flex_shrink_0);
     }
   }
 }
@@ -916,7 +916,7 @@ static void sticker_menu(App *app, civue_rect *card) {
         border_color(k->border_strong), shadow(lg)) {
       *card = here();
       button();
-      pressed = menu_row(app, id("sticker-menu-star"), CIVUE_ICON(lucide, star),
+      pressed = menu_row(app, id("sticker-menu-star"), CIVUE_ICON(mingcute, star_fill),
                          starred ? "Unfavorite Sticker" : "Favorite Sticker",
                          starred ? k->star : k->text);
     }
@@ -1221,7 +1221,7 @@ void sticker_picker(App *app, Channel *c) {
 /* ========================================================================== */
 
 void sticker_button(App *app, civue_rect box) {
-  if (composer_button(app, id("composer-sticker"), CIVUE_ICON(lucide, sticker),
+  if (composer_button(app, id("composer-sticker"), CIVUE_ICON(mingcute, sticker_fill),
                       app->popover == POPOVER_STICKERS, "Open Sticker Picker",
                       &app->sticker_button)
         .activated) {
@@ -1254,7 +1254,7 @@ void sticker_tray(App *app, const Channel *c) {
           app->focus_composer = true;
         }
 
-        icon(lucide, x, size(3), text_color(k->input));
+        icon(mingcute, close_fill, size(3), text_color(k->input));
         hint(app, id("sticker-tray-close"), &state.response, "Remove Sticker",
              CIVUE_TOOLTIP_ABOVE);
       }
@@ -1292,7 +1292,7 @@ static void name_tip(App *app, civue_id id, const civue_response *resp,
         whitespace_nowrap, text_size(px(12)), line_height(px(16)),
         text_color(k->on_tooltip)) {
       box = here();
-      icon(lucide, sticker, size(px(14)), flex_shrink_0);
+      icon(mingcute, sticker_fill, size(px(14)), flex_shrink_0);
       text(name);
     }
 
@@ -1329,7 +1329,7 @@ void sticker_in_message(App *app, civue_id id, const Message *m, size_t index,
     if (sticker->format == STICKER_LOTTIE || sticker->format == 0) {
       div(flex, flex_col, items_center, justify_center, gap(2), size(full),
           px(2), rounded(lg), bg(k->surface), text_color(k->muted)) {
-        icon(lucide, sticker, size(8));
+        icon(mingcute, sticker_fill, size(8));
         text(name, max_w(full), truncate, text_size(px(14)),
              line_height(px(18)));
       }
@@ -1514,7 +1514,7 @@ void sticker_info(App *app, Channel *c) {
             if (!sticker_fill(app, item->id, item->format, ui->window_focused,
                               1) &&
                 (item->format == STICKER_LOTTIE || item->format == 0)) {
-              icon(lucide, sticker, size(8), text_color(k->muted));
+              icon(mingcute, sticker_fill, size(8), text_color(k->muted));
             }
           }
 

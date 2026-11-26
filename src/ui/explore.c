@@ -247,7 +247,7 @@ void preview_bar(App *app) {
   }
 
   bool joining = s->preview_joining == g->id;
-  civue_icon back = CIVUE_ICON(lucide, arrow_left);
+  civue_icon back = CIVUE_ICON(mingcute, arrow_left_fill);
   char label[160];
 
   if (joining) {
@@ -340,10 +340,10 @@ static void server_card(App *app, const Card *c) {
     div(flex, flex_col, flex_1, min_h(0), pt(px(28)), px(4), pb(4)) {
       div(flex, items_center, gap(1), flex_shrink_0, min_w(0)) {
         if (c->verified) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, k->positive);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->positive);
         }
         else if (c->partnered) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, k->accent_text);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->accent_text);
         }
 
         text(c->name ? c->name : "", min_w(0), truncate, text_size(px(16)),
@@ -462,7 +462,7 @@ bool explore_search(App *app, civue_id id, char **field) {
 
     civue_rect r = here();
     civue_icon_centered(
-      civue_ui_current(), CIVUE_ICON(lucide, search),
+      civue_ui_current(), CIVUE_ICON(mingcute, search_fill),
       xywh((float)r.x1 - 30, (float)r.y0, 24, (float)civue_rect_h(r)), 16,
       k->faint);
   }
@@ -496,7 +496,7 @@ static bool mode_tab(App *app, civue_id id, const char *label, bool on) {
 void explore_modes(App *app) {
   const Look *k = &app->look;
 
-  icon(lucide, compass, size(5), flex_shrink_0, mr(1), text_color(k->faint));
+  icon(mingcute, compass_fill, size(5), flex_shrink_0, mr(1), text_color(k->faint));
 
   if (mode_tab(app, id("explore-mode-servers"), "Servers",
                app->explore_mode == EXPLORE_SERVERS)) {
@@ -523,7 +523,7 @@ static void header(App *app, Discovery *d) {
 
       snprintf(title, sizeof title, "Search results for \"%s\"", d->query);
 
-      if (icon_button(app, id("explore-back"), CIVUE_ICON(lucide, arrow_left),
+      if (icon_button(app, id("explore-back"), CIVUE_ICON(mingcute, arrow_left_fill),
                       32, 20, "Back")) {
         end_search(app, d);
       }
@@ -649,7 +649,7 @@ static void hub_card(App *app, bool member) {
       p(4), rounded(lg), border(1), border_color(k->border), bg(k->surface)) {
     div(flex, items_center, justify_center, size(12), flex_shrink_0,
         rounded(full), bg(k->primary)) {
-      glyph(CIVUE_ICON(lucide, graduation_cap), 24, k->on_primary);
+      glyph(CIVUE_ICON(mingcute, mortarboard_fill), 24, k->on_primary);
     }
 
     text(member ? "Attend multiple schools?"
@@ -792,7 +792,7 @@ static void language_menu(App *app, Discovery *d) {
                text_color(on ? k->strong : k->text));
 
           if (on) {
-            icon(lucide, check, size(4), flex_shrink_0, text_color(k->strong));
+            icon(mingcute, check_fill, size(4), flex_shrink_0, text_color(k->strong));
           }
         }
       }
@@ -846,10 +846,10 @@ static void filters(App *app, Discovery *d) {
       text(language_name(d), flex_1, min_w(0), truncate, text_color(k->text));
 
       if (open) {
-        icon(lucide, chevron_up, size(4), flex_shrink_0, text_color(k->faint));
+        icon(mingcute, up_fill, size(4), flex_shrink_0, text_color(k->faint));
       }
       else {
-        icon(lucide, chevron_down, size(4), flex_shrink_0,
+        icon(mingcute, down_fill, size(4), flex_shrink_0,
              text_color(k->faint));
       }
     }

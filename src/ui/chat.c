@@ -24,10 +24,10 @@ static void forum_crumb(App *app, const Channel *forum) {
     }
 
     if (forum->type == CHANNEL_GUILD_MEDIA) {
-      icon(lucide, image, size(5), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, pic_fill, size(5), flex_shrink_0, text_color(k->faint));
     }
     else {
-      icon(lucide, messages_square, size(5), flex_shrink_0,
+      icon(mingcute, messages_square_fill, size(5), flex_shrink_0,
            text_color(k->faint));
     }
 
@@ -35,7 +35,7 @@ static void forum_crumb(App *app, const Channel *forum) {
          font_weight(semibold));
   }
 
-  icon(lucide, chevron_right, size(4), flex_shrink_0, text_color(k->faint));
+  icon(mingcute, right_fill, size(4), flex_shrink_0, text_color(k->faint));
 }
 
 static void follow_button(App *app, const Channel *c) {
@@ -54,10 +54,10 @@ static void follow_button(App *app, const Channel *c) {
     }
 
     if (joined) {
-      icon(lucide, bell, size(4));
+      icon(mingcute, notification_fill, size(4));
     }
     else {
-      icon(lucide, bell_plus, size(4));
+      icon(mingcute, bell_plus_fill, size(4));
     }
 
     text(joined ? "Following" : "Follow");
@@ -91,17 +91,17 @@ static void chat_header(App *app, Channel *c) {
       avatar(app, user, 0, 24, true, k->chat);
     }
     else if (c->type == CHANNEL_GROUP_DM) {
-      icon(lucide, users, size(5), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, group_fill, size(5), flex_shrink_0, text_color(k->faint));
     }
     else if (channel_is_voice(c)) {
-      icon(lucide, volume_2, size(5), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, volume_fill, size(5), flex_shrink_0, text_color(k->faint));
     }
     else if (channel_is_thread(c)) {
-      icon(lucide, message_square, size(5), flex_shrink_0,
+      icon(mingcute, message_2_fill, size(5), flex_shrink_0,
            text_color(k->faint));
     }
     else {
-      icon(lucide, hash, size(5), flex_shrink_0, text_color(k->faint));
+      icon(mingcute, hashtag_fill, size(5), flex_shrink_0, text_color(k->faint));
     }
 
     text(name, flex_shrink_0, max_w(1_2), truncate, font_weight(semibold),
@@ -116,7 +116,7 @@ static void chat_header(App *app, Channel *c) {
       div(flex_shrink_0) {
         anchor = here();
 
-        if (icon_button(app, id("post-more"), CIVUE_ICON(lucide, ellipsis), 32,
+        if (icon_button(app, id("post-more"), CIVUE_ICON(mingcute, more_1_fill), 32,
                         20, "More")) {
           app_toggle(app, POPOVER_POST_MENU);
         }
@@ -146,8 +146,8 @@ static void chat_header(App *app, Channel *c) {
       bool going = store_call(store, c->id) != nullptr;
 
       if (icon_button(app, id("call-start"),
-                      going ? CIVUE_ICON(lucide, phone_incoming)
-                            : CIVUE_ICON(lucide, phone),
+                      going ? CIVUE_ICON(mingcute, phone_incoming_fill)
+                            : CIVUE_ICON(mingcute, phone_fill),
                       32, 20, going ? "Join Call" : "Start Voice Call")) {
         voice_join(app, c->id);
       }
@@ -155,15 +155,15 @@ static void chat_header(App *app, Channel *c) {
 
     if (channel_is_voice(c) &&
         icon_button(app, id("call-toggle"),
-                    app->voice_chat ? CIVUE_ICON(lucide, volume_2)
-                                    : CIVUE_ICON(lucide, message_circle),
+                    app->voice_chat ? CIVUE_ICON(mingcute, volume_fill)
+                                    : CIVUE_ICON(mingcute, chat_3_fill),
                     32, 20, app->voice_chat ? "Show Call" : "Show Chat")) {
       app->voice_chat = !app->voice_chat;
     }
 
     if (has_member_list(c) && (!channel_is_voice(c) || app->voice_chat) &&
         icon_button(
-          app, id("members-toggle"), CIVUE_ICON(lucide, users), 32, 20,
+          app, id("members-toggle"), CIVUE_ICON(mingcute, group_fill), 32, 20,
           app->members_hidden ? "Show Member List" : "Hide Member List")) {
       app->members_hidden = !app->members_hidden;
     }

@@ -45,7 +45,7 @@ static bool friend_row(App *app, const User *user, bool picked, bool full) {
     if (picked) {
       div(flex, items_center, justify_center, size(5), flex_shrink_0,
           rounded(md), bg(k->primary), text_color(k->on_primary)) {
-        icon(lucide, check, size(px(14)));
+        icon(mingcute, check_fill, size(px(14)));
       }
     }
     else {
