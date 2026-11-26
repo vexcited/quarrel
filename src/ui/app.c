@@ -1,4 +1,5 @@
 #include "app.h"
+#include "authorize.h"
 #include "complete.h"
 #include "explore.h"
 
@@ -167,6 +168,8 @@ void app_reset(App *app) {
   app->exploring = false;
   app->explore_tab = 0;
   app->explore_mode = 0;
+  apps_ui_free(app);
+  authorize_free(app);
   app->hub_dialog = HUB_DIALOG_NONE;
   app->nick_guild = 0;
 

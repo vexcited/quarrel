@@ -5,6 +5,7 @@
 
 #include "http.h"
 #include "ui/alerts.h"
+#include "ui/authorize.h"
 #include "ui/complete.h"
 #include "ui/components.h"
 #include "ui/cues.h"
@@ -170,6 +171,7 @@ static void frame(void *ctx, civue_ui *ui) {
       voice_switch_dialog(app);
       call_cards(app);
       hub_dialogs(app);
+      authorize_dialog(app);
       media_viewer(app);
       notice_toast(app);
       break;
@@ -293,6 +295,8 @@ int main() {
   free(app.directory_field);
   free(app.directory_query);
   free(app.explore_field);
+  apps_ui_free(&app);
+  authorize_free(&app);
   free(app.new_server_name);
   free(app.entry_description);
   free(app.hub_email);

@@ -1,7 +1,9 @@
 #ifndef QUARREL_DISCORD_SESSION_H
 #define QUARREL_DISCORD_SESSION_H
 
+#include "discord/apps.h"
 #include "discord/discovery.h"
+#include "discord/oauth.h"
 #include "discord/gifs.h"
 #include "discord/settings_proto.h"
 #include "discord/store.h"
@@ -449,6 +451,10 @@ struct Session {
   Snowflake leaving_guild;
   // the servers anyone may find, see session_discovery. null until used.
   Discovery *discovery;
+  // discord's directory of applications, see session_apps. null until used.
+  Apps *apps;
+  // the application being let in, see session_oauth. null until used.
+  Oauth *oauth;
   // the guilds looked at without being joined, see session_preview_guild.
   Snowflake *previews;
   size_t npreviews;
@@ -821,6 +827,10 @@ void session_leave_guild(Session *s, Snowflake guild_id);
 
 // the servers anyone may find, made as they are first asked for.
 Discovery *session_discovery(Session *s);
+// the directory of applications, made the first time it is asked for.
+Apps *session_apps(Session *s);
+// what lets an application in, made the first time it is asked for.
+Oauth *session_oauth(Session *s);
 
 // the page of the client a guild is previewed from.
 typedef enum : uint8_t {

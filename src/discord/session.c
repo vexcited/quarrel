@@ -1861,6 +1861,8 @@ static void session_free(Session *s) {
   // after the api, whose answers it would wait for.
   gifs_free(s->gifs);
   discovery_free(s->discovery);
+  apps_free(s->apps);
+  oauth_free(s->oauth);
   free(s->previews);
   admin_free(s->admin);
   commands_free(s->commands);
@@ -6525,6 +6527,30 @@ Discovery *session_discovery(Session *s) {
   }
 
   return s->discovery;
+}
+
+Apps *session_apps(Session *s) {
+  if (s->api == nullptr) {
+    s->api = api_new();
+  }
+
+  if (s->apps == nullptr) {
+    s->apps = apps_new(s->api, s->options.on_change, !online(s));
+  }
+
+  return s->apps;
+}
+
+Oauth *session_oauth(Session *s) {
+  if (s->api == nullptr) {
+    s->api = api_new();
+  }
+
+  if (s->oauth == nullptr) {
+    s->oauth = oauth_new(s->api, s->options.on_change);
+  }
+
+  return s->oauth;
 }
 
 bool session_previewing(const Session *s, Snowflake guild_id) {

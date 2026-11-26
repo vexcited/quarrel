@@ -343,6 +343,9 @@ typedef struct {
   // what the page lists, an ExploreMode, and what its applications keep,
   // see apps.c.
   uint8_t explore_mode;
+  struct ExploreApps *explore_apps;
+  // the dialog that lets an application in, see authorize.h.
+  struct AuthorizeUi *authorize;
 
   // the hub's dialog, the directory it is about, and the guild it adds,
   // edits or removes, or the hub it leaves.

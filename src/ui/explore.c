@@ -501,6 +501,11 @@ void explore_modes(App *app) {
     app->explore_mode = EXPLORE_SERVERS;
   }
 
+  if (mode_tab(app, id("explore-mode-apps"), "Apps",
+               app->explore_mode == EXPLORE_APPS)) {
+    app->explore_mode = EXPLORE_APPS;
+  }
+
   div(flex_1, min_w(0)) {}
 }
 
@@ -966,6 +971,10 @@ static void results(App *app, Discovery *d) {
 }
 
 void explore_page(App *app) {
+  if (app->explore_mode == EXPLORE_APPS) {
+    apps_page(app);
+    return;
+  }
 
   Discovery *d = session_discovery(app->session);
   uint8_t which = app->explore_tab <= EXPLORE_HUBS ? app->explore_tab : 0;

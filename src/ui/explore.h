@@ -56,5 +56,8 @@ bool explore_nothing(App *app, civue_id id, const char *category);
 // from the page `from` names.
 void explore_open_guild(App *app, Snowflake id, PreviewFrom from);
 
+// the applications, header and all, and what they keep.
+void apps_page(App *app);
+void apps_ui_free(App *app);
 
 #endif
