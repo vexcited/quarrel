@@ -8,7 +8,8 @@
 #include <cima/json_dsl.h>
 
 // the field numbers, from the protobuf-ts classes of the client's bundle:
-//   PreloadedUserSettings  status 11, guild_folders 14
+//   PreloadedUserSettings  text_and_images 6, status 11, guild_folders 14
+//   TextAndImagesSettings  animate_stickers 15 a UInt32Value
 //   StatusSettings         status 1 a StringValue, custom_status 2,
 //                          status_expires_at_ms 4 fixed64,
 //                          status_created_at_ms 5 a UInt64Value
@@ -385,6 +386,20 @@ char *settings_proto_with_status(const char *section, const char *status,
   return text;
 }
 
+// a TextAndImagesSettings left without the field has its default, 0.
+static void write_text_and_images(cima_json_writer *w, Reader r) {
+  uint64_t animate_stickers = 0;
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number == 15 && f.wire == WIRE_BYTES) {
+      animate_stickers = wrapped_number(f.bytes);
+    }
+  }
+
+  json_field(w, "animate_stickers", animate_stickers);
+}
+
 char *settings_proto_to_json(const char *base64) {
   size_t len = 0;
   uint8_t *bytes = base64_decode(base64, &len);
@@ -404,7 +419,10 @@ char *settings_proto_to_json(const char *base64) {
       continue;
     }
 
-    if (f.number == 11) {
+    if (f.number == 6) {
+      write_text_and_images(&w, f.bytes);
+    }
+    else if (f.number == 11) {
       write_status(&w, f.bytes);
     }
     else if (f.number == 14) {
@@ -678,6 +696,276 @@ static void put_number(Bytes *b, uint32_t number, uint64_t value) {
     put_tag(b, number, WIRE_VARINT);
     put_varint(b, value);
   }
+}
+
+// from the same classes:
+//   FrecencyUserSettings  favorite_stickers 3, a FavoriteStickers,
+//                         sticker_frecency 4, a StickerFrecency
+//   FavoriteStickers      sticker_ids 1 repeated fixed64, packed
+//   StickerFrecency       stickers 1, a map from a fixed64 to a FrecencyItem
+//   FrecencyItem          frecency 3 and score 4, both int32
+static void read_favorite_stickers(Reader r, StickerSettings *out) {
+  size_t cap = 0;
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number != 1 || (f.wire != WIRE_BYTES && f.wire != WIRE_FIXED64)) {
+      continue;
+    }
+
+    // one id when not packed.
+    uint8_t lone[8];
+    Reader ids = f.bytes;
+
+    if (f.wire == WIRE_FIXED64) {
+      for (int i = 0; i < 8; i++) {
+        lone[i] = (uint8_t)(f.value >> (8 * i));
+      }
+
+      ids = (Reader){.at = lone, .end = lone + sizeof lone};
+    }
+
+    while (ids.at < ids.end && !ids.bad) {
+      Snowflake id = read_fixed(&ids, 8);
+
+      if (ids.bad || id == 0) {
+        continue;
+      }
+
+      if (out->nfavorites == cap) {
+        cap = cap ? cap * 2 : 16;
+        out->favorites = realloc(out->favorites, cap * sizeof *out->favorites);
+
+        if (out->favorites == nullptr) {
+          cilo_oom(cap * sizeof *out->favorites);
+        }
+      }
+
+      out->favorites[out->nfavorites++] = id;
+    }
+  }
+}
+
+static void read_sticker_uses(Reader r, StickerSettings *out) {
+  size_t cap = 0;
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number != 1 || f.wire != WIRE_BYTES) {
+      continue;
+    }
+
+    FrecencyUse item = {};
+    Snowflake id = 0;
+    Reader entry = f.bytes;
+    Field e;
+
+    while (next_field(&entry, &e)) {
+      if (e.number == 1 && e.wire == WIRE_FIXED64) {
+        id = e.value;
+      }
+      else if (e.number == 2 && e.wire == WIRE_BYTES) {
+        read_use(e.bytes, &item);
+      }
+    }
+
+    if (id == 0 || item.nrecent_uses == 0) {
+      continue;
+    }
+
+    if (out->nuses == cap) {
+      cap = cap ? cap * 2 : 32;
+      out->uses = realloc(out->uses, cap * sizeof *out->uses);
+
+      if (out->uses == nullptr) {
+        cilo_oom(cap * sizeof *out->uses);
+      }
+    }
+
+    StickerUse *use = &out->uses[out->nuses++];
+
+    *use = (StickerUse){
+      .id = id,
+      .total_uses = item.total_uses,
+      .nrecent_uses = item.nrecent_uses,
+    };
+    memcpy(use->recent_uses, item.recent_uses, sizeof use->recent_uses);
+  }
+}
+
+StickerSettings settings_proto_stickers(const char *base64) {
+  StickerSettings out = {};
+  size_t len = 0;
+  uint8_t *bytes = base64_decode(base64, &len);
+
+  if (bytes == nullptr) {
+    return out;
+  }
+
+  Reader r = {.at = bytes, .end = bytes + len};
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number == 3 && f.wire == WIRE_BYTES) {
+      free(out.favorites);
+      out.favorites = nullptr;
+      out.nfavorites = 0;
+      read_favorite_stickers(f.bytes, &out);
+      out.has_favorites = true;
+    }
+    else if (f.number == 4 && f.wire == WIRE_BYTES) {
+      free(out.uses);
+      out.uses = nullptr;
+      out.nuses = 0;
+      read_sticker_uses(f.bytes, &out);
+      out.has_uses = true;
+    }
+  }
+
+  free(bytes);
+  return out;
+}
+
+void settings_proto_free_stickers(StickerSettings *stickers) {
+  free(stickers->uses);
+  free(stickers->favorites);
+  *stickers = (StickerSettings){};
+}
+
+uint32_t frecency_weight(int64_t days) {
+  return days <= 3    ? 100
+         : days <= 15 ? 70
+         : days <= 30 ? 50
+         : days <= 45 ? 30
+         : days <= 80 ? 10
+                      : 1;
+}
+
+uint64_t settings_proto_sticker_score(const StickerUse *use, int64_t now_ms) {
+  uint64_t score = 0;
+
+  for (size_t i = 0; i < use->nrecent_uses; i++) {
+    if (use->recent_uses[i] > 0) {
+      score += frecency_weight((now_ms - use->recent_uses[i]) / 86400000);
+    }
+  }
+
+  return score;
+}
+
+uint64_t settings_proto_sticker_frecency(const StickerUse *use,
+                                         int64_t now_ms) {
+  uint64_t score = settings_proto_sticker_score(use, now_ms);
+
+  if (score == 0 || use->nrecent_uses == 0) {
+    return 0;
+  }
+
+  uint64_t total = (uint64_t)use->total_uses * score;
+
+  return (total + use->nrecent_uses - 1) / use->nrecent_uses;
+}
+
+static void put_fixed64(Bytes *b, uint64_t value) {
+  uint8_t fixed[8];
+
+  for (int i = 0; i < 8; i++) {
+    fixed[i] = (uint8_t)(value >> (8 * i));
+  }
+
+  put_bytes(b, fixed, sizeof fixed);
+}
+
+char *settings_proto_with_favorite_stickers(const Snowflake *ids,
+                                            size_t count) {
+  Bytes packed = {}, list = {}, whole = {};
+
+  for (size_t i = 0; i < count; i++) {
+    put_fixed64(&packed, ids[i]);
+  }
+
+  if (count != 0) {
+    put_message(&list, 1, &packed);
+  }
+
+  put_message(&whole, 3, &list);
+
+  char *text = base64_encode(whole.data, whole.len);
+
+  free(packed.data);
+  free(list.data);
+  free(whole.data);
+  return text;
+}
+
+static int64_t last_use(const StickerUse *use) {
+  return use->nrecent_uses ? use->recent_uses[use->nrecent_uses - 1] : 0;
+}
+
+static int by_last_use(const void *a, const void *b) {
+  int64_t x = last_use(*(const StickerUse *const *)a);
+  int64_t y = last_use(*(const StickerUse *const *)b);
+
+  return x < y ? 1 : x > y ? -1 : 0;
+}
+
+// the client saves this many, the ones used last.
+constexpr size_t STICKER_USES_MAX = 100;
+
+char *settings_proto_with_sticker_uses(const StickerUse *uses, size_t count,
+                                       int64_t now_ms) {
+  const StickerUse **sorted = calloc(count ? count : 1, sizeof *sorted);
+  Bytes map = {}, entry = {}, item = {}, recent = {}, whole = {};
+
+  if (sorted == nullptr) {
+    cilo_oom(count * sizeof *sorted);
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    sorted[i] = &uses[i];
+  }
+
+  qsort(sorted, count, sizeof *sorted, by_last_use);
+
+  for (size_t i = 0; i < count && i < STICKER_USES_MAX; i++) {
+    const StickerUse *use = sorted[i];
+    uint64_t frecency = settings_proto_sticker_frecency(use, now_ms);
+
+    // what the client forgets as it computes.
+    if (frecency == 0) {
+      continue;
+    }
+
+    entry.len = item.len = recent.len = 0;
+
+    for (size_t j = 0; j < use->nrecent_uses; j++) {
+      if (use->recent_uses[j] > 0) {
+        put_varint(&recent, (uint64_t)use->recent_uses[j]);
+      }
+    }
+
+    put_number(&item, 1, use->total_uses);
+    put_message(&item, 2, &recent);
+    put_number(&item, 3, frecency > INT32_MAX ? INT32_MAX : frecency);
+    put_number(&item, 4, settings_proto_sticker_score(use, now_ms));
+
+    put_tag(&entry, 1, WIRE_FIXED64);
+    put_fixed64(&entry, use->id);
+    put_message(&entry, 2, &item);
+    put_message(&map, 1, &entry);
+  }
+
+  put_message(&whole, 4, &map);
+
+  char *text = base64_encode(whole.data, whole.len);
+
+  free(sorted);
+  free(map.data);
+  free(entry.data);
+  free(item.data);
+  free(recent.data);
+  free(whole.data);
+  return text;
 }
 
 char *settings_proto_with_favorite_gifs(const FavoriteGifs *favorites) {

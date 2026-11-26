@@ -1205,6 +1205,17 @@ void api_send_message(Api *api, Snowflake channel_id,
     json_end_array(&w);
   }
 
+  if (message->nsticker_ids != 0) {
+    json_key(&w, "sticker_ids");
+    json_begin_array(&w);
+
+    for (size_t i = 0; i < message->nsticker_ids; i++) {
+      snowflake_write(&w, message->sticker_ids[i]);
+    }
+
+    json_end_array(&w);
+  }
+
   if (message->forward_id != 0) {
     // type 1 is a forward, which carries a snapshot and no text of its own.
     json_key(&w, "message_reference");

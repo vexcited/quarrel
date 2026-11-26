@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdcountof.h>
+#include <stddefer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include <civue/dsl.h>
 
 #include "discord/uploads.h"
+#include "forms.h"
 #include "media.h"
 #include "server.h"
 #include "widgets.h"
@@ -68,9 +70,25 @@ static bool blank(const char *s) {
   return true;
 }
 
-static void submit(App *app, Channel *c) {
+// `sure` once FakeNitro's notice was answered.
+static void submit(App *app, Channel *c, bool sure) {
   Session *session = app->session;
   const char *written = app->draft ? app->draft : "";
+
+  // a sticker discord would refuse goes as a link, as Vencord's FakeNitro
+  // sends it.
+  Snowflake sticker = app->editing ? 0 : sticker_pending(app, c);
+  char *linked =
+    sticker_linked(app, c, sticker, blank(written) ? "" : written);
+
+  defer free(linked);
+
+  // a link shows no picture where the user may not embed any.
+  if (linked && !sure && c->guild_id &&
+      !store_can(session->store, c, PERM_EMBED_LINKS)) {
+    app->fake_ask = true;
+    return;
+  }
 
   if (app->editing) {
     if (!blank(written)) {
@@ -83,9 +101,9 @@ static void submit(App *app, Channel *c) {
 
   Upload *files[1];
   bool attached = uploads_of(session, c->id, 0, files, 1) != 0;
-  const char *said = blank(written) ? "" : written;
+  const char *said = linked ? linked : blank(written) ? "" : written;
 
-  if (!*said && !attached) {
+  if (!*said && !attached && !sticker) {
     return;
   }
 
@@ -94,7 +112,15 @@ static void submit(App *app, Channel *c) {
     return;
   }
 
-  session_send(session, c->id, said, app->reply_to, app->reply_ping);
+  session_send_stickers(session, c->id, said, &sticker,
+                        sticker && !linked ? 1 : 0, app->reply_to,
+                        app->reply_ping);
+
+  if (linked) {
+    session_use_sticker(session, sticker);
+  }
+
+  app->sticker_pending = 0;
   app->reply_to = 0;
   app->stick = true;
   set_draft(app, "");
@@ -141,7 +167,7 @@ static void take_keys(App *app, Channel *c) {
 
     if (press.key == CIVUE_KEY_ENTER && !(press.mods & CIVUE_MOD_SHIFT)) {
       drop_key(ui, i--);
-      submit(app, c);
+      submit(app, c, false);
     }
     else if (press.key == CIVUE_KEY_ESCAPE && app->editing) {
       drop_key(ui, i--);
@@ -150,6 +176,10 @@ static void take_keys(App *app, Channel *c) {
     else if (press.key == CIVUE_KEY_ESCAPE && app->reply_to) {
       drop_key(ui, i--);
       app->reply_to = 0;
+    }
+    else if (press.key == CIVUE_KEY_ESCAPE && sticker_pending(app, c)) {
+      drop_key(ui, i--);
+      app->sticker_pending = 0;
     }
     else if (press.key == CIVUE_KEY_UP && blank(app->draft) &&
              !app->editing && !uploads_of(app->session, c->id, 0, nullptr, 0)) {
@@ -417,6 +447,7 @@ static void writing(App *app, Channel *c) {
   context_bar(app, c);
 
   if (!app->editing) {
+    sticker_tray(app, c);
     upload_tray(app, c);
   }
 
@@ -449,10 +480,11 @@ static void writing(App *app, Channel *c) {
       }
     }
 
-    // an edit takes no gif.
+    // an edit takes no gif and no sticker.
     if (!app->editing) {
-      div(flex, items_center, flex_shrink_0, self_start, ml(2)) {
+      div(flex, items_center, gap(1), flex_shrink_0, self_start, ml(2)) {
         gif_button(app, box);
+        sticker_button(app, box);
       }
     }
   }
@@ -488,6 +520,23 @@ void composer(App *app, Channel *c) {
   }
 
   upload_dialogs(app, c);
+
+  if (app->fake_ask) {
+    // FakeNitro's own words.
+    int answer = form_confirm(
+      app, id("fake-nitro"), "Hold on!",
+      "You are trying to send/edit a message that contains a FakeNitro emoji "
+      "or sticker, however you do not have permissions to embed links in the "
+      "current channel. Are you sure you want to send this message? Your "
+      "FakeNitro items will appear as a link only.",
+      "Send Anyway", false, false, nullptr);
+
+    app->fake_ask = answer == 0;
+
+    if (answer == 1) {
+      submit(app, c, true);
+    }
+  }
 
   // a field just focused selects its text, the caret goes after it instead.
   if (app->focus_composer && civue_field_caret_to_end(ui, composer_id())) {

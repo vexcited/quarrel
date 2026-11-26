@@ -10,6 +10,7 @@
 #include <civue/dsl.h>
 
 #include "discord/emoji.h"
+#include "discord/fakestickers.h"
 #include "widgets.h"
 
 constexpr float MENU_WIDTH = 248;
@@ -174,11 +175,19 @@ static void menu(App *app, const Channel *c, const Message *m) {
   // discord's client offers no bookmark of what the user cannot read again.
   bool bookmarks = bookmarked || channel_is_private(c) ||
                    store_can(store, c, PERM_READ_MESSAGE_HISTORY);
+  // a sticker of one of the user's guilds may be starred from its message.
+  // one read from a link or a gif counts, as Vencord's FakeNitro shows it.
+  FakeSticker linked;
+  Snowflake first = m->nstickers                          ? m->stickers[0].id
+                    : fake_stickers(store, m, &linked, 1) ? linked.id
+                                                          : 0;
+  Snowflake sticker = store_sticker(store, first, nullptr) ? first : 0;
+  bool starred = session_favorite_sticker(app->session, sticker);
   ReactionPick picks[4];
   size_t npicks = reacts ? quick_reactions(app, c, picks, countof(picks)) : 0;
 
   size_t rows = reacts + (own && plain) + (writes && plain) + plain + has_text +
-                pins + bookmarks + 3 + removable;
+                (sticker != 0) + pins + bookmarks + 3 + removable;
   float height = 2 + 8 + (float)rows * 40 + 3 * 9 + (npicks ? 52 : 0);
   civue_rect card = card_at(app->menu_anchor, MENU_WIDTH, height);
   civue_id base = id("message-menu");
@@ -191,6 +200,7 @@ static void menu(App *app, const Channel *c, const Message *m) {
     REPLY,
     FORWARD,
     COPY_TEXT,
+    STICKER,
     PIN,
     BOOKMARK,
     UNREAD,
@@ -247,6 +257,11 @@ static void menu(App *app, const Channel *c, const Message *m) {
 
       if (has_text) {
         ROW(COPY_TEXT, CIVUE_ICON(lucide, copy), "Copy Text", k->text);
+      }
+
+      if (sticker) {
+        ROW(STICKER, CIVUE_ICON(lucide, star),
+            starred ? "Unfavorite Sticker" : "Favorite Sticker", k->text);
       }
 
       if (pins) {
@@ -318,6 +333,10 @@ static void menu(App *app, const Channel *c, const Message *m) {
 
     case COPY_TEXT:
       civue_clipboard_set_text(m->content, strlen(m->content));
+      break;
+
+    case STICKER:
+      session_set_favorite_sticker(app->session, sticker, !starred);
       break;
 
     case PIN:

@@ -1,5 +1,6 @@
 #include "widgets.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -33,6 +34,46 @@ bool image_fill(App *app, const char *url, float radius) {
   }
 
   civue_image(ui, image.texture, r, (float[4]){0, 0, 1, 1}, 1, radius, false);
+  return true;
+}
+
+bool sticker_fill(App *app, Snowflake sticker_id, uint8_t format, bool animated,
+                  float opacity) {
+  civue_ui *ui = civue_ui_current();
+  civue_rect r = here();
+  double side = fmax(civue_rect_w(r), civue_rect_h(r));
+  // the client asks for twice the points at most.
+  uint32_t asked = (uint32_t)ceil(side * fmin(ui->scale, 2));
+  uint32_t pixels = (uint32_t)ceil(side * ui->scale);
+  bool moves = format == STICKER_APNG || format == STICKER_GIF;
+  civue_image_info image = {};
+  char url[CDN_URL_MAX];
+
+  if (side <= 0) {
+    return false;
+  }
+
+  if (animated && moves) {
+    cdn_sticker(url, sticker_id, (StickerFormat)format, asked, true);
+    image = civue_images_get_animated(app->images, ui, url, pixels);
+  }
+
+  if (image.state != CIVUE_IMAGE_READY) {
+    cdn_sticker(url, sticker_id, (StickerFormat)format, asked, false);
+    image = civue_images_get(app->images, ui, url, pixels);
+  }
+
+  if (image.state != CIVUE_IMAGE_READY || !image.width || !image.height) {
+    return false;
+  }
+
+  // inside the node, as css's contain.
+  double w = civue_rect_w(r), h = civue_rect_h(r);
+  double fit = fmin(w / image.width, h / image.height);
+  double iw = image.width * fit, ih = image.height * fit;
+  civue_rect at = xywh(r.x0 + (w - iw) / 2, r.y0 + (h - ih) / 2, iw, ih);
+
+  civue_image(ui, image.texture, at, (float[4]){0, 0, 1, 1}, opacity, 0, false);
   return true;
 }
 

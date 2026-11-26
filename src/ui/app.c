@@ -121,9 +121,14 @@ void app_reset(App *app) {
   app->upload_editing = 0;
   app->upload_menu = false;
   app->long_message = false;
+  app->fake_ask = false;
   app->upload_title[0] = 0;
   drop(&app->gif_search);
   drop(&app->gif_title);
+  drop(&app->sticker_search);
+  app->sticker_folded.len = 0;
+  app->sticker_pending = 0;
+  app->sticker_menu = 0;
   drop(&app->forum_search);
   drop(&app->post_title);
   drop(&app->post_body);

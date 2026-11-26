@@ -368,6 +368,11 @@ void events_dispatch(Store *s, const char *type, const cima_json *d) {
       store_put_emojis(s, g, json_get(d, "emojis"));
     }
   }
+  else if (IS("GUILD_STICKERS_UPDATE")) {
+    if (g != nullptr) {
+      store_put_stickers(s, g, json_get(d, "stickers"));
+    }
+  }
   else if (IS("PRESENCE_UPDATE")) {
     store_put_presence(s, d);
   }

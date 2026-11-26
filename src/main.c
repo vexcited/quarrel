@@ -262,6 +262,8 @@ int main() {
   free(app.draft);
   free(app.gif_search);
   free(app.gif_title);
+  free(app.sticker_search);
+  free(app.sticker_folded.v);
   free(app.kept_draft);
   free(app.profile_message);
   free(app.profile_note);

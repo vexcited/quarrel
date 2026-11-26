@@ -498,6 +498,7 @@ static void on_sent(void *ctx, const ApiResponse *res) {
     store_create_message(s->store, res->json);
     store_remove_pending(s->store, channel_id, nonce);
     forget_files(s, nonce, false);
+    session_track_stickers(s, res->json);
   }
   else {
     // discord lost the files, they go up again with the next try.
@@ -560,11 +561,15 @@ static void echo(Session *s, const Message *pending, Upload **files, size_t n) {
   }
 
   json_end_array(&w);
+  message_write_stickers(&w, pending);
   json_end_object(&w);
 
   cilo_arena arena = {};
-  store_create_message(
-    s->store, json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr));
+  const cima_json *echoed =
+    json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr);
+
+  store_create_message(s->store, echoed);
+  session_track_stickers(s, echoed);
   cilo_arena_drop(&arena);
   cima_json_writer_dispose(&w);
 }
@@ -617,10 +622,15 @@ static void try_send(Session *s, Snowflake channel_id, Snowflake nonce) {
     };
   }
 
+  Snowflake stickers[MESSAGE_STICKERS_MAX];
+  size_t nstickers = message_sticker_ids(pending, stickers);
+
   ApiSendMessage message = {
     .content = pending->content,
     .attachments = attachments,
     .nattachments = n,
+    .sticker_ids = stickers,
+    .nsticker_ids = nstickers,
     .nonce = nonce,
     .reply_to = pending->reference_id,
     .reply_ping = files[0]->reply_ping,

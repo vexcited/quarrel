@@ -115,6 +115,30 @@ void gif_picker_toggle(App *app, civue_rect anchor);
 // lets go of the players of the gifs no frame drew lately. once a frame.
 void gif_players_sweep(App *app);
 void gif_players_free(App *app);
+// the stickers of the user's guilds to send to the channel over the
+// composer, while the app shows POPOVER_STICKERS.
+void sticker_picker(App *app, Channel *channel);
+// opens the picker over `anchor`, the composer, or closes it.
+void sticker_picker_toggle(App *app, civue_rect anchor);
+// the composer's button that opens it.
+void sticker_button(App *app, civue_rect box);
+// the sticker that goes with the channel's next message, 0 for none.
+Snowflake sticker_pending(App *app, const Channel *c);
+// `content` with a link to the sticker after it, from malloc, where discord
+// would refuse the sticker itself: Vencord's FakeNitro. null for one that
+// goes as it is.
+char *sticker_linked(App *app, const Channel *c, Snowflake sticker_id,
+                     const char *content);
+// it over the composer's field, with the way to take it back. nothing
+// without one.
+void sticker_tray(App *app, const Channel *c);
+// a sticker of a message in a node known by `id`, moving or still, which
+// opens its card when pressed if it `opens` one.
+void sticker_in_message(App *app, civue_id id, const Message *m, size_t index,
+                        const Sticker *sticker, bool moving, bool opens);
+// the card of the sticker pressed in a message of the channel, while the
+// app shows POPOVER_STICKER_INFO.
+void sticker_info(App *app, Channel *c);
 // adds `text` at the end of what the composer holds, a space between.
 void composer_append(App *app, const char *text);
 

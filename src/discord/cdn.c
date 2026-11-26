@@ -261,16 +261,37 @@ char *cdn_activity_image(char out[static CDN_URL_MAX], Snowflake application_id,
 }
 
 char *cdn_sticker(char out[static CDN_URL_MAX], Snowflake sticker_id,
-                  StickerFormat format, uint32_t size) {
-  if (sticker_id == 0 || format == STICKER_LOTTIE) {
+                  StickerFormat format, uint32_t size, bool animated) {
+  // as the client asks the media proxy for each: a gif only moves as a gif
+  // and is a png when still, and an animated png comes whole unless told
+  // not to pass through.
+  const char *extension = "webp", *more = "&quality=lossless";
+
+  switch (format) {
+    case STICKER_PNG:
+      break;
+
+    case STICKER_APNG:
+      extension = "png";
+      more = animated ? "" : "&passthrough=false";
+      break;
+
+    case STICKER_GIF:
+      extension = animated ? "gif" : "png";
+      more = "";
+      break;
+
+    default:
+      return empty(out);
+  }
+
+  if (sticker_id == 0) {
     return empty(out);
   }
 
-  // gif stickers only exist on the media proxy, the others are pngs there.
-  const char *extension = format == STICKER_GIF ? "gif" : "png";
-  int len = snprintf(out, CDN_URL_MAX, MEDIA_BASE "/stickers/%" PRIu64 ".%s",
-                     sticker_id, extension);
-  return sized(out, (size_t)len, size);
+  snprintf(out, CDN_URL_MAX, MEDIA_BASE "/stickers/%" PRIu64 ".%s?size=%u%s",
+           sticker_id, extension, cdn_size(size ? size : 160), more);
+  return out;
 }
 
 char *cdn_media(char out[static CDN_URL_MAX], const char *proxy_url,

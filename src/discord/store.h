@@ -211,6 +211,25 @@ typedef struct {
   bool animated, available;
 } Emoji;
 
+// a sticker the members of a guild made.
+typedef struct {
+  Snowflake id;
+  // `tags` is what suggests it, the name of an emoji as the client writes
+  // it. null for what discord left out.
+  char *name, *description, *tags;
+  // a StickerFormat of cdn.h.
+  uint8_t format;
+  // false once the guild lost the boosts its slot came with.
+  bool available;
+} GuildSticker;
+
+typedef enum : uint8_t {
+  STICKERS_ANIMATE_ALWAYS = 0,
+  // while the pointer is over the message.
+  STICKERS_ANIMATE_ON_INTERACTION = 1,
+  STICKERS_ANIMATE_NEVER = 2,
+} StickerAnimation;
+
 typedef enum : uint8_t {
   NOTIFY_ALL_MESSAGES = 0,
   NOTIFY_ONLY_MENTIONS = 1,
@@ -371,6 +390,8 @@ struct Guild {
   size_t nroles;
   Emoji *emojis;
   size_t nemojis;
+  GuildSticker *stickers;
+  size_t nstickers;
   // every channel of the guild and the threads known in it, in no order. see
   // store_guild_channels for the list to show.
   Channel **channels;
@@ -806,6 +827,16 @@ struct Message {
   char *error;
 };
 
+// discord takes this many stickers with a message.
+constexpr size_t MESSAGE_STICKERS_MAX = 3;
+
+// the ids of a message's stickers into `out`, and how many.
+size_t message_sticker_ids(const Message *m,
+                           Snowflake out[static MESSAGE_STICKERS_MAX]);
+// the `sticker_items` of a message as discord sends them, into the object
+// being written. nothing for a message without stickers.
+void message_write_stickers(cima_json_writer *w, const Message *m);
+
 static inline bool message_is_system(const Message *m) {
   return m->type != MESSAGE_DEFAULT && m->type != MESSAGE_REPLY &&
          m->type != MESSAGE_CHAT_INPUT_COMMAND &&
@@ -851,6 +882,8 @@ struct Store {
   UserStatus self_status;
   // unix milliseconds `self_status` lasts until, 0 for no end.
   int64_t self_status_until;
+  // when the stickers of messages move, as the user set it in discord.
+  StickerAnimation animate_stickers;
   // the StatusSettings of the account in base64 as discord last sent it,
   // null before. see settings_proto_with_status.
   char *status_proto;
@@ -936,6 +969,13 @@ double store_now(const Store *s);
 [[gnu::pure]] Role *store_role(const Guild *g, Snowflake id);
 [[gnu::pure]] Member *store_member(const Guild *g, Snowflake user_id);
 [[gnu::pure]] Emoji *store_emoji(const Guild *g, Snowflake id);
+// a sticker of any guild the user is in, with its guild in `owner` when
+// given. null when none has it.
+const GuildSticker *store_sticker(const Store *s, Snowflake id,
+                                  const Guild **owner);
+// the current user pays for the nitro that sends stickers outside their
+// guilds.
+[[gnu::pure]] bool store_stickers_anywhere(const Store *s);
 [[gnu::pure]] Message *store_message(const Channel *c, Snowflake id);
 [[gnu::pure]] const Relationship *store_relationship(const Store *s,
                                                      Snowflake user_id);
@@ -1129,6 +1169,7 @@ void store_remove_guild(Store *s, Snowflake id);
 Role *store_put_role(Store *s, Guild *g, const cima_json *role);
 void store_remove_role(Store *s, Guild *g, Snowflake id);
 void store_put_emojis(Store *s, Guild *g, const cima_json *emojis);
+void store_put_stickers(Store *s, Guild *g, const cima_json *stickers);
 // `user_id` is used when the member carries neither a user nor a user_id.
 Member *store_put_member(Store *s, Guild *g, const cima_json *member,
                          Snowflake user_id);
@@ -1177,9 +1218,11 @@ void store_put_history(Store *s, Channel *c, const cima_json *messages,
 // keeps the `keep` latest messages of a channel no longer shown.
 void store_trim_messages(Store *s, Channel *c, size_t keep);
 
-// a message of the current user shown before discord confirms it.
+// a message of the current user shown before discord confirms it, with
+// the stickers of the user's guilds it carries.
 Message *store_add_pending(Store *s, Channel *c, const char *content,
-                           Snowflake nonce, Snowflake reply_to);
+                           Snowflake nonce, Snowflake reply_to,
+                           const Snowflake *sticker_ids, size_t nstickers);
 void store_fail_pending(Store *s, Snowflake channel_id, Snowflake nonce,
                         const char *error);
 void store_remove_pending(Store *s, Snowflake channel_id, Snowflake nonce);

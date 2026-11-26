@@ -251,6 +251,35 @@ Emoji *store_emoji(const Guild *g, Snowflake id) {
   return nullptr;
 }
 
+const GuildSticker *store_sticker(const Store *s, Snowflake id,
+                                  const Guild **owner) {
+  if (id == 0) {
+    return nullptr;
+  }
+
+  for (size_t at = 0; at < s->nguild_order; at++) {
+    const Guild *g = store_guild(s, s->guild_order[at]);
+
+    for (size_t i = 0; g != nullptr && i < g->nstickers; i++) {
+      if (g->stickers[i].id == id) {
+        if (owner != nullptr) {
+          *owner = g;
+        }
+
+        return &g->stickers[i];
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+// nitro and nitro basic do, nitro classic does not.
+bool store_stickers_anywhere(const Store *s) {
+  return s->self != nullptr &&
+         (s->self->premium_type == 2 || s->self->premium_type == 3);
+}
+
 // where the message `id` is or would be inserted in the channel.
 static size_t message_slot(const Channel *c, Snowflake id) {
   size_t low = 0, high = c->nmessages;
@@ -1315,6 +1344,36 @@ static void fill_reactions(Message *m, const cima_json *reactions) {
   }
 }
 
+size_t message_sticker_ids(const Message *m,
+                           Snowflake out[static MESSAGE_STICKERS_MAX]) {
+  size_t n = 0;
+
+  for (size_t i = 0; i < m->nstickers && n < MESSAGE_STICKERS_MAX; i++) {
+    out[n++] = m->stickers[i].id;
+  }
+
+  return n;
+}
+
+void message_write_stickers(cima_json_writer *w, const Message *m) {
+  if (m->nstickers == 0) {
+    return;
+  }
+
+  json_key(w, "sticker_items");
+  json_begin_array(w);
+
+  for (size_t i = 0; i < m->nstickers; i++) {
+    json_begin_object(w);
+    json_key(w, "id"), snowflake_write(w, m->stickers[i].id);
+    json_field(w, "name", m->stickers[i].name ? m->stickers[i].name : "");
+    json_field(w, "format_type", m->stickers[i].format);
+    json_end_object(w);
+  }
+
+  json_end_array(w);
+}
+
 static void fill_stickers(Message *m, const cima_json *stickers) {
   free_stickers(m);
 
@@ -2029,7 +2088,8 @@ void store_trim_messages(Store *s, Channel *c, size_t keep) {
 }
 
 Message *store_add_pending(Store *s, Channel *c, const char *content,
-                           Snowflake nonce, Snowflake reply_to) {
+                           Snowflake nonce, Snowflake reply_to,
+                           const Snowflake *sticker_ids, size_t nstickers) {
   Message *m = xcalloc(1, sizeof *m);
 
   // the nonce is a snowflake of now, so the message sorts last like the one
@@ -2060,6 +2120,20 @@ Message *store_add_pending(Store *s, Channel *c, const char *content,
     copy->timestamp = target->timestamp;
     copy->content = str_dup(target->content);
     m->referenced = copy;
+  }
+
+  if (nstickers != 0) {
+    m->stickers = xcalloc(nstickers, sizeof *m->stickers);
+  }
+
+  for (size_t i = 0; i < nstickers; i++) {
+    const GuildSticker *sticker = store_sticker(s, sticker_ids[i], nullptr);
+
+    m->stickers[m->nstickers++] = (Sticker){
+      .id = sticker_ids[i],
+      .name = str_dup(sticker != nullptr ? sticker->name : nullptr),
+      .format = sticker != nullptr ? sticker->format : 0,
+    };
   }
 
   insert_at(c, message_slot(c, m->id), m);
@@ -2290,6 +2364,18 @@ static void free_emojis(Guild *g) {
   g->nemojis = 0;
 }
 
+static void free_guild_stickers(Guild *g) {
+  for (size_t i = 0; i < g->nstickers; i++) {
+    free(g->stickers[i].name);
+    free(g->stickers[i].description);
+    free(g->stickers[i].tags);
+  }
+
+  free(g->stickers);
+  g->stickers = nullptr;
+  g->nstickers = 0;
+}
+
 static void free_list(MemberList *list) {
   free(list->id);
   free(list->rows);
@@ -2416,6 +2502,35 @@ void store_put_emojis(Store *s, Guild *g, const cima_json *emojis) {
       .id = id,
       .name = str_dup(json_get_or(item, "name", nullptr)),
       .animated = json_get_coerce(item, "animated", false),
+      .available = json_get_coerce(item, "available", true),
+    };
+  }
+
+  store_touch_guild(s, g);
+}
+
+void store_put_stickers(Store *s, Guild *g, const cima_json *stickers) {
+  free_guild_stickers(g);
+
+  size_t n = (json_type(stickers) == CIMA_JSON_ARRAY) ? json_len(stickers) : 0;
+
+  if (n != 0) {
+    g->stickers = xcalloc(n, sizeof *g->stickers);
+  }
+
+  CIMA_EACH(item, json_items(stickers)) {
+    Snowflake id = snowflake_of(json_get(item, "id"));
+
+    if (id == 0) {
+      continue;
+    }
+
+    g->stickers[g->nstickers++] = (GuildSticker){
+      .id = id,
+      .name = str_dup(json_get_or(item, "name", nullptr)),
+      .description = str_dup(json_get_or(item, "description", nullptr)),
+      .tags = str_dup(json_get_or(item, "tags", nullptr)),
+      .format = (uint8_t)json_get_coerce(item, "format_type", (uint64_t)0),
       .available = json_get_coerce(item, "available", true),
     };
   }
@@ -2556,6 +2671,7 @@ static void free_guild(Store *s, Guild *g) {
 
   MAP_DROP(&g->members);
   free_emojis(g);
+  free_guild_stickers(g);
   free(g->channels);
   free(g->roles);
   free(g->lists);
@@ -2763,6 +2879,10 @@ Guild *store_put_guild(Store *s, const cima_json *guild) {
     store_put_emojis(s, g, json_get(guild, "emojis"));
   }
 
+  if (json_get(guild, "stickers") != nullptr) {
+    store_put_stickers(s, g, json_get(guild, "stickers"));
+  }
+
   if (json_type(channels) == CIMA_JSON_ARRAY) {
     // channels deleted while the guild was away are not in the new list.
     for (size_t i = g->nchannels; i > 0; i--) {
@@ -2827,6 +2947,10 @@ void store_update_guild(Store *s, const cima_json *guild) {
 
   if (json_type(json_get(guild, "emojis")) == CIMA_JSON_ARRAY) {
     store_put_emojis(s, g, json_get(guild, "emojis"));
+  }
+
+  if (json_type(json_get(guild, "stickers")) == CIMA_JSON_ARRAY) {
+    store_put_stickers(s, g, json_get(guild, "stickers"));
   }
 
   s->guilds_version++;
@@ -3606,6 +3730,14 @@ void store_put_user_settings(Store *s, const cima_json *settings) {
   }
 
   put_str(&s->status_proto, settings, "status_proto");
+
+  if (json_get(settings, "animate_stickers") != nullptr) {
+    uint64_t when = json_get_coerce(settings, "animate_stickers", (uint64_t)0);
+
+    s->animate_stickers = when <= STICKERS_ANIMATE_NEVER
+                            ? (StickerAnimation)when
+                            : STICKERS_ANIMATE_ALWAYS;
+  }
 
   // the status the account wrote, which its presence leaves out while it
   // is invisible.

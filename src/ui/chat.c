@@ -202,6 +202,8 @@ void chat(App *app, Channel *c) {
           composer(app, c);
           message_popovers(app, c);
           gif_picker(app, c);
+          sticker_picker(app, c);
+          sticker_info(app, c);
         }
 
         if (members) {

@@ -9,6 +9,7 @@
 #include <civue/dsl.h>
 
 #include "discord/cdn.h"
+#include "discord/fakestickers.h"
 #include "discord/markdown.h"
 #include "media.h"
 #include "widgets.h"
@@ -127,7 +128,13 @@ static bool attachment_media(const Attachment *a, MediaItem *out) {
   return true;
 }
 
+// FakeNitro's filterAttachments: the gif of a sticker is shown as the
+// sticker.
+static bool sticker_file(App *app, const Attachment *a) {
+  FakeSticker shown;
 
+  return fake_sticker_attachment(app->session->store, a, &shown);
+}
 
 static void attachments(App *app, const Message *m) {
   MediaItem items[10];
@@ -136,6 +143,7 @@ static void attachments(App *app, const Message *m) {
 
   for (size_t i = 0; i < m->nattachments && n < countof(items); i++) {
     if (!m->attachments[i].thumbnail &&
+        !sticker_file(app, &m->attachments[i]) &&
         attachment_media(&m->attachments[i], &items[n])) {
       ids[n++] = id_at(message_key(m), 0x100 + i);
     }
@@ -151,7 +159,7 @@ static void attachments(App *app, const Message *m) {
     const Attachment *a = &m->attachments[i];
     MediaItem item;
 
-    if (a->thumbnail) {
+    if (a->thumbnail || sticker_file(app, a)) {
       continue;
     }
 
@@ -703,6 +711,10 @@ embeds:
   for (size_t i = 0; i < m->nembeds; i++) {
     const Embed *e = &m->embeds[i];
     EmbedView v = embed_view(e);
+    // the same for the sticker a message links to.
+    if (fake_sticker_embed(app->session->store, m, e)) {
+      continue;
+    }
 
     v.message_id = m->id ? m->id : m->nonce;
 
@@ -732,24 +744,48 @@ embeds:
   }
 }
 
+// whether the stickers of a message move, from what the user set in
+// discord, and only while the window has their attention, as the client's.
+static bool stickers_move(App *app, const Message *m) {
+  const Store *store = app->session->store;
+  bool hot = app->hover_message == (m->id ? m->id : m->nonce);
+
+  if (!civue_ui_current()->window_focused) {
+    return false;
+  }
+
+  switch (store->animate_stickers) {
+    case STICKERS_ANIMATE_NEVER:
+      return false;
+    case STICKERS_ANIMATE_ON_INTERACTION:
+      return hot;
+    default:
+      return true;
+  }
+}
+
 static void stickers(App *app, const Message *m) {
-  const Look *k = &app->look;
+  // FakeNitro's patchFakeNitroStickers: the ones a message links to or
+  // carries as a gif come after its own.
+  FakeSticker fakes[FAKE_STICKERS_MAX];
+  size_t nfakes =
+    fake_stickers(app->session->store, m, fakes, countof(fakes));
+  bool moving = (m->nstickers || nfakes) && stickers_move(app, m);
 
+  // one in a preview, which is no message of the open channel, opens no
+  // card.
   for (size_t i = 0; i < m->nstickers; i++) {
-    const Sticker *sticker = &m->stickers[i];
-    char url[CDN_URL_MAX];
+    sticker_in_message(app, id_at(message_key(m), 0x600 + i), m, i,
+                       &m->stickers[i], moving, key_scope == 0);
+  }
 
-    cdn_sticker(url, sticker->id, sticker->format, 320);
+  for (size_t i = 0; i < nfakes; i++) {
+    size_t at = m->nstickers + i;
 
-    if (!*url) {
-      text(sticker->name ? sticker->name : "Sticker", text_color(k->muted),
-           italic);
-      continue;
-    }
-
-    div(size(px(160)), mt(1)) {
-      image_fill(app, url, 0);
-    }
+    sticker_in_message(
+      app, id_at(message_key(m), 0x600 + at), m, at,
+      &(Sticker){fakes[i].id, fakes[i].name, fakes[i].format}, moving,
+      key_scope == 0);
   }
 }
 
@@ -1111,7 +1147,11 @@ static void message_body(App *app, const Channel *c, const Message *m,
     header(app, c, m);
   }
 
-  if (*m->content) {
+  FakeSticker linked;
+
+  // FakeNitro's transformAst: a link to a sticker is shown as the sticker.
+  if (*m->content &&
+      !fake_sticker_message(app->session->store, m->content, &linked)) {
     markup(app, id_at(id, 1), m->content,
            &(MarkupOptions){
              .guild_id = c->guild_id,

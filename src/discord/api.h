@@ -210,6 +210,9 @@ typedef struct {
   const char *content;
   const ApiAttachment *attachments;
   size_t nattachments;
+  // the stickers sent with it, 3 at most.
+  const Snowflake *sticker_ids;
+  size_t nsticker_ids;
   // echoed in MESSAGE_CREATE so the pending message is found again.
   Snowflake nonce;
   // 0 for a message that answers none.

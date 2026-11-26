@@ -10,6 +10,12 @@ void glyph(civue_icon icon, float size, civue_color color);
 bool image_fill(App *app, const char *url, float radius);
 // the same, the middle of the image cut to the node's shape.
 bool image_cover(App *app, const char *url, float radius);
+// a guild's sticker inside the open node, whole whatever its shape: every
+// frame of one that moves when `animated`, its first one until they came
+// and otherwise. false for a lottie one, which is no image, and until it
+// shows.
+bool sticker_fill(App *app, Snowflake sticker_id, uint8_t format, bool animated,
+                  float opacity);
 // an emoji as discord draws it, `size` points square: one of a guild when
 // `emoji_id`, else the twemoji of `name`, its utf-8, or the system's glyph
 // when discord has none.

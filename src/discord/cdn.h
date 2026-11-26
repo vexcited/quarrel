@@ -74,9 +74,10 @@ typedef enum : uint8_t {
   STICKER_GIF = 4,
 } StickerFormat;
 
-// a sticker as an image. "" for lottie ones, which are no image.
+// a sticker as an image, every frame of one that moves when `animated`,
+// else its first. "" for lottie ones, which are no image.
 char *cdn_sticker(char out[static CDN_URL_MAX], Snowflake sticker_id,
-                  StickerFormat format, uint32_t size);
+                  StickerFormat format, uint32_t size, bool animated);
 
 // an attachment's or an embed's `proxy_url` resized by the media proxy to fit
 // `width` by `height` pixels, as webp. 0 for both keeps its size.

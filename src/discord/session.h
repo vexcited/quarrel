@@ -275,6 +275,21 @@ typedef struct {
   uint64_t generation;
 } SessionForum;
 
+// what discord tells of a sticker that is not one of the user's guilds'.
+typedef struct {
+  Snowflake id;
+  bool loading;
+  // null for what discord did not tell.
+  char *name, *description;
+  // the guild that owns it, 0 for one of discord's own or when unknown.
+  Snowflake guild_id;
+  // that guild as discord lists it for anyone to find: its name, the hash
+  // of its icon and how many of its members are online. `guild_name` is
+  // null for one that is invite-only or gone.
+  char *guild_name, *guild_icon;
+  uint32_t guild_online;
+} StickerInfo;
+
 struct Session {
   SessionState state;
   // never null, and the same store for the session's whole life.
@@ -329,6 +344,18 @@ struct Session {
   FavoriteGifs favorite_gifs;
   // the picker's gifs, see session_gifs.
   Gifs *gifs;
+  // the stickers of the same settings: how much each was used, in no
+  // order, and the ones starred, in the order they were.
+  StickerSettings stickers;
+  // the stickers of the user's guilds used the most, the most used first,
+  // the twenty the client keeps.
+  Snowflake *frecent_stickers;
+  size_t nfrecent_stickers;
+  // saves how much they were used a while after one went.
+  void *sticker_timer;
+  // the stickers asked about, see session_sticker_info.
+  StickerInfo *sticker_infos;
+  size_t nsticker_infos;
   bool frecency_loading, frecency_loaded;
   // the applications asked about, see session_application_icon.
   struct SessionApplication *applications;
@@ -539,6 +566,12 @@ void session_member_list_range(Session *s, uint32_t first_row,
 // when nothing was sent.
 Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
                        Snowflake reply_to, bool reply_ping);
+// the same with stickers of the user's guilds, 3 at most as discord takes,
+// which may go without text.
+Snowflake session_send_stickers(Session *s, Snowflake channel_id,
+                                const char *content,
+                                const Snowflake *sticker_ids, size_t nstickers,
+                                Snowflake reply_to, bool reply_ping);
 // sends a MESSAGE_FAILED message again, or drops it.
 void session_retry(Session *s, Snowflake channel_id, Snowflake nonce);
 void session_discard(Session *s, Snowflake channel_id, Snowflake nonce);
@@ -592,6 +625,18 @@ Gifs *session_gifs(Session *s);
 // stars a gif, newest first, or takes its star away. `gif` is copied.
 void session_set_favorite_gif(Session *s, const FavoriteGif *gif,
                               bool favorite);
+[[gnu::pure]] bool session_favorite_sticker(const Session *s, Snowflake id);
+// stars a sticker or takes its star away, once the settings are known.
+void session_set_favorite_sticker(Session *s, Snowflake id, bool favorite);
+// what discord tells of a sticker, asked once, and of its guild when the
+// user is not in it. never null, `loading` until the answers came.
+const StickerInfo *session_sticker_info(Session *s, Snowflake id);
+// counts a use of each sticker a message discord took carries. for
+// session.c and uploads.c.
+void session_track_stickers(Session *s, const cima_json *message);
+// counts a use of a sticker that went as something else than itself, a
+// link or a gif.
+void session_use_sticker(Session *s, Snowflake id);
 // pins the message or takes its pin away.
 void session_pin(Session *s, Snowflake channel_id, Snowflake message_id,
                  bool pin);

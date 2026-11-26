@@ -54,6 +54,8 @@ typedef enum : uint8_t {
   POPOVER_VOICE_SOUND,
   POPOVER_VOICE_CAMERA,
   POPOVER_GIFS,
+  POPOVER_STICKERS,
+  POPOVER_STICKER_INFO,
   POPOVER_FORUM_VIEW,
   POPOVER_FORUM_TAGS,
   POPOVER_POST_TAGS,
@@ -185,9 +187,12 @@ typedef struct {
   bool upload_spoiler;
   // why files were refused, shown over the window until dismissed. empty
   // for nothing.
-  char upload_title[64], upload_body[160];
+  char upload_title[64], upload_body[224];
   // the message typed is longer than discord takes.
   bool long_message;
+  // the message typed holds an emoji sent as a link where the user may not
+  // embed links: FakeNitro's notice asks before it goes.
+  bool fake_ask;
   // the gif picker: the composer it opens over and the button that opens
   // it, the page it shows and the title of a page of results, what its
   // search holds and since when, and the players of the gifs in view.
@@ -198,6 +203,31 @@ typedef struct {
   double gif_typed_at;
   bool gif_focus;
   struct GifPlayers *gif_players;
+  // the sticker picker: the composer it opens over and the button that
+  // opens it, what its search holds, the sticker pointed at and the section
+  // it is in, where the pointer last was, and the sections folded away, a
+  // guild's by its id.
+  civue_rect sticker_anchor, sticker_button;
+  char *sticker_search;
+  bool sticker_focus;
+  Snowflake sticker_inspected, sticker_section;
+  civue_vec2 sticker_mouse;
+  Ids sticker_folded;
+  // the section its rail jumps to once laid out, 0 for none, and the one
+  // its rail last showed in view.
+  Snowflake sticker_jump, sticker_active;
+  // the sticker whose menu a right click opened, 0 for none, and where.
+  Snowflake sticker_menu;
+  civue_vec2 sticker_menu_at;
+  // the sticker that goes with what is typed, 0 for none, and the channel
+  // it was picked in.
+  Snowflake sticker_pending, sticker_channel;
+  // the sticker of a message whose card is open while the app shows
+  // POPOVER_STICKER_INFO: its message, which of its stickers, and what was
+  // pressed.
+  Snowflake sticker_message;
+  uint32_t sticker_index;
+  civue_rect sticker_info_anchor;
 
   // the message list: whether it follows its end, and what it held last
   // frame, to stay put when history arrives over it.

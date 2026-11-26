@@ -1023,6 +1023,8 @@ static void on_snapshot(void *ctx, const char *type, const char *text,
   s->ready_text = nullptr;
 }
 
+static void take_stickers(Session *s, const char *proto);
+
 // the favorites another client changed. the frecency settings are type 2,
 // and an update only carries the fields that changed.
 static void on_settings_update(Session *s, const cima_json *settings) {
@@ -1031,15 +1033,15 @@ static void on_settings_update(Session *s, const cima_json *settings) {
     return;
   }
 
-  FavoriteGifs favorites =
-    settings_proto_favorite_gifs(json_get_or(settings, "proto", nullptr));
+  const char *proto = json_get_or(settings, "proto", nullptr);
+  FavoriteGifs favorites = settings_proto_favorite_gifs(proto);
 
-  if (!favorites.present) {
-    return;
+  if (favorites.present) {
+    settings_proto_free_favorites(&s->favorite_gifs);
+    s->favorite_gifs = favorites;
   }
 
-  settings_proto_free_favorites(&s->favorite_gifs);
-  s->favorite_gifs = favorites;
+  take_stickers(s, proto);
   changed(s);
 }
 
@@ -1183,6 +1185,12 @@ static void clear_frecency(Session *s) {
   s->frecent_reactions = nullptr;
   s->nfrecent_reactions = 0;
   settings_proto_free_favorites(&s->favorite_gifs);
+  settings_proto_free_stickers(&s->stickers);
+  free(s->frecent_stickers);
+  s->frecent_stickers = nullptr;
+  s->nfrecent_stickers = 0;
+  platform_timer_cancel(s->sticker_timer);
+  s->sticker_timer = nullptr;
   s->frecency_loading = false;
   s->frecency_loaded = false;
 }
@@ -1191,6 +1199,19 @@ typedef struct SessionApplication {
   Snowflake id;
   char *icon;
 } SessionApplication;
+
+static void clear_sticker_infos(Session *s) {
+  for (size_t i = 0; i < s->nsticker_infos; i++) {
+    free(s->sticker_infos[i].name);
+    free(s->sticker_infos[i].description);
+    free(s->sticker_infos[i].guild_name);
+    free(s->sticker_infos[i].guild_icon);
+  }
+
+  free(s->sticker_infos);
+  s->sticker_infos = nullptr;
+  s->nsticker_infos = 0;
+}
 
 static void clear_applications(Session *s) {
   for (size_t i = 0; i < s->napplications; i++) {
@@ -1258,6 +1279,7 @@ static void end_session(Session *s, const char *error) {
   clear_bookmarks(s);
   clear_frecency(s);
   clear_applications(s);
+  clear_sticker_infos(s);
   clear_profile(s);
   clear_invite(s);
   clear_friend(s);
@@ -1805,6 +1827,7 @@ static void session_free(Session *s) {
   clear_bookmarks(s);
   clear_frecency(s);
   clear_applications(s);
+  clear_sticker_infos(s);
   clear_profile(s);
   clear_invite(s);
   clear_friend(s);
@@ -2127,11 +2150,15 @@ static void echo_message(Session *s, const Channel *c, const Message *pending) {
     }
   }
 
+  message_write_stickers(&w, pending);
   json_end_object(&w);
 
   cilo_arena arena = {};
-  store_create_message(
-    s->store, json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr));
+  const cima_json *echoed =
+    json_parse(&arena, cima_json_writer_text(&w), w.len, nullptr);
+
+  store_create_message(s->store, echoed);
+  session_track_stickers(s, echoed);
   cilo_arena_drop(&arena);
   cima_json_writer_dispose(&w);
 }
@@ -2149,6 +2176,7 @@ static void on_sent(void *ctx, const ApiResponse *res) {
     // the gateway usually tells first, and telling twice changes nothing.
     store_create_message(s->store, res->json);
     store_remove_pending(s->store, call->channel_id, call->id);
+    session_track_stickers(s, res->json);
   }
   else {
     store_fail_pending(s->store, call->channel_id, call->id,
@@ -2171,8 +2199,13 @@ static void transmit(Session *s, Channel *c, const Message *pending,
     return;
   }
 
+  Snowflake stickers[MESSAGE_STICKERS_MAX];
+  size_t nstickers = message_sticker_ids(pending, stickers);
+
   ApiSendMessage message = {
     .content = pending->content,
+    .sticker_ids = stickers,
+    .nsticker_ids = nstickers,
     .nonce = pending->nonce,
     .reply_to = pending->reference_id,
     .reply_ping = reply_ping,
@@ -2184,14 +2217,26 @@ static void transmit(Session *s, Channel *c, const Message *pending,
 
 Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
                        Snowflake reply_to, bool reply_ping) {
+  return session_send_stickers(s, channel_id, content, nullptr, 0, reply_to,
+                               reply_ping);
+}
+
+Snowflake session_send_stickers(Session *s, Snowflake channel_id,
+                                const char *content,
+                                const Snowflake *sticker_ids, size_t nstickers,
+                                Snowflake reply_to, bool reply_ping) {
   Channel *c = store_channel(s->store, channel_id);
 
   Upload *files[1];
   bool attached = uploads_of(s, channel_id, 0, files, countof(files)) != 0;
 
-  // files may go without text.
+  nstickers =
+    nstickers < MESSAGE_STICKERS_MAX ? nstickers : MESSAGE_STICKERS_MAX;
+
+  // files and stickers may go without text.
   if (c == nullptr || content == nullptr ||
-      (content[0] == '\0' && !attached) || s->store->self_id == 0) {
+      (content[0] == '\0' && !attached && nstickers == 0) ||
+      s->store->self_id == 0) {
     return 0;
   }
 
@@ -2200,7 +2245,8 @@ Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
   int64_t now = (int64_t)(store_now(s->store) * 1000);
   Snowflake nonce = snowflake_from_time_ms(now) | (++s->nonce_counter & 0xfff);
 
-  Message *pending = store_add_pending(s->store, c, content, nonce, reply_to);
+  Message *pending = store_add_pending(s->store, c, content, nonce, reply_to,
+                                       sticker_ids, nstickers);
 
   if (uploads_attach(s, channel_id, nonce, reply_ping)) {
     uploads_send(s, channel_id, nonce);
@@ -2706,16 +2752,6 @@ void session_bookmark(Session *s, Snowflake channel_id, Snowflake message_id,
   api_request(s->api, &req, on_bookmark_set, call);
 }
 
-// how much a use counts for, from how many days ago it was. the client's.
-static uint32_t use_weight(int64_t days) {
-  return days <= 3    ? 100
-         : days <= 15 ? 70
-         : days <= 30 ? 50
-         : days <= 45 ? 30
-         : days <= 80 ? 10
-                      : 1;
-}
-
 typedef struct {
   char *key;
   uint64_t frecency;
@@ -2757,7 +2793,7 @@ static void rank_reactions(Session *s, FrecencyUse *uses, size_t count) {
 
     for (size_t j = 0; j < use->nrecent_uses; j++) {
       if (use->recent_uses[j] > 0) {
-        score += use_weight((now - use->recent_uses[j]) / 86400000);
+        score += frecency_weight((now - use->recent_uses[j]) / 86400000);
       }
     }
 
@@ -2801,6 +2837,390 @@ static void rank_reactions(Session *s, FrecencyUse *uses, size_t count) {
   free(ranked);
 }
 
+/* ========================================================================== */
+/* stickers: the ones used the most and the ones starred.                     */
+/* ========================================================================== */
+
+// the client keeps this many of the most used, and this many starred.
+constexpr size_t FRECENT_STICKERS = 20;
+constexpr size_t FAVORITE_STICKERS_MAX = 250;
+// the client saves what it counts by itself this long after.
+constexpr double STICKER_SAVE_DELAY = 30;
+
+typedef struct {
+  Snowflake id;
+  uint64_t frecency;
+} RankedSticker;
+
+static int by_sticker_frecency(const void *a, const void *b) {
+  const RankedSticker *x = a, *y = b;
+
+  if (x->frecency != y->frecency) {
+    return x->frecency < y->frecency ? 1 : -1;
+  }
+
+  return x->id < y->id ? -1 : x->id > y->id;
+}
+
+// the stickers used the most among the ones of the user's guilds.
+static void rank_stickers(Session *s) {
+  size_t count = s->stickers.nuses, n = 0;
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+  RankedSticker *ranked = calloc(count ? count : 1, sizeof *ranked);
+
+  if (ranked == nullptr) {
+    cilo_oom(count * sizeof *ranked);
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    const StickerUse *use = &s->stickers.uses[i];
+    uint64_t frecency = settings_proto_sticker_frecency(use, now);
+
+    if (frecency != 0 && store_sticker(s->store, use->id, nullptr) != nullptr) {
+      ranked[n++] = (RankedSticker){.id = use->id, .frecency = frecency};
+    }
+  }
+
+  qsort(ranked, n, sizeof *ranked, by_sticker_frecency);
+  n = n < FRECENT_STICKERS ? n : FRECENT_STICKERS;
+
+  free(s->frecent_stickers);
+  s->frecent_stickers = calloc(n ? n : 1, sizeof *s->frecent_stickers);
+  s->nfrecent_stickers = 0;
+
+  if (s->frecent_stickers == nullptr) {
+    cilo_oom(n * sizeof *s->frecent_stickers);
+  }
+
+  for (size_t i = 0; i < n; i++) {
+    s->frecent_stickers[s->nfrecent_stickers++] = ranked[i].id;
+  }
+
+  free(ranked);
+}
+
+// the stickers of a FrecencyUserSettings, each kind replacing the one known
+// when the message carries it.
+static void take_stickers(Session *s, const char *proto) {
+  StickerSettings got = settings_proto_stickers(proto);
+
+  if (got.has_favorites) {
+    free(s->stickers.favorites);
+    s->stickers.favorites = got.favorites;
+    s->stickers.nfavorites = got.nfavorites;
+    s->stickers.has_favorites = true;
+    got.favorites = nullptr;
+  }
+
+  // what was counted here and not saved yet would be lost to it.
+  if (got.has_uses && s->sticker_timer == nullptr) {
+    free(s->stickers.uses);
+    s->stickers.uses = got.uses;
+    s->stickers.nuses = got.nuses;
+    s->stickers.has_uses = true;
+    got.uses = nullptr;
+  }
+
+  settings_proto_free_stickers(&got);
+  rank_stickers(s);
+}
+
+static void save_frecency(Session *s, char *settings, ApiDone done) {
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_field(&w, "settings", settings);
+  json_end_object(&w);
+
+  ApiRequest req = {
+    .method = "PATCH",
+    .path = "/users/@me/settings-proto/2",
+    .body = cima_json_writer_text(&w),
+  };
+
+  api_request(s->api, &req, done, done ? call_new(s, 0, 0) : nullptr);
+  cima_json_writer_dispose(&w);
+  free(settings);
+}
+
+static void on_sticker_timer(void *ctx) {
+  Session *s = ctx;
+
+  s->sticker_timer = nullptr;
+
+  if (online(s) && s->stickers.has_uses) {
+    int64_t now = (int64_t)(store_now(s->store) * 1000);
+
+    save_frecency(s,
+                  settings_proto_with_sticker_uses(s->stickers.uses,
+                                                   s->stickers.nuses, now),
+                  nullptr);
+  }
+}
+
+static void track_sticker(Session *s, Snowflake id, int64_t now) {
+  StickerSettings *k = &s->stickers;
+  StickerUse *use = nullptr;
+
+  for (size_t i = 0; i < k->nuses && use == nullptr; i++) {
+    use = k->uses[i].id == id ? &k->uses[i] : nullptr;
+  }
+
+  if (use == nullptr) {
+    k->uses = realloc(k->uses, (k->nuses + 1) * sizeof *k->uses);
+
+    if (k->uses == nullptr) {
+      cilo_oom((k->nuses + 1) * sizeof *k->uses);
+    }
+
+    use = &k->uses[k->nuses++];
+    *use = (StickerUse){.id = id};
+  }
+
+  // the oldest goes once there are as many as the client keeps.
+  if (use->nrecent_uses == FRECENCY_SAMPLES) {
+    memmove(use->recent_uses, use->recent_uses + 1,
+            (FRECENCY_SAMPLES - 1) * sizeof *use->recent_uses);
+    use->nrecent_uses--;
+  }
+
+  use->recent_uses[use->nrecent_uses++] = now;
+  use->total_uses++;
+}
+
+// the ones used the most are ranked again, and saved in a while.
+static void stickers_used(Session *s) {
+  rank_stickers(s);
+
+  if (s->sticker_timer == nullptr && online(s)) {
+    s->sticker_timer = platform_timer(STICKER_SAVE_DELAY, on_sticker_timer, s);
+  }
+}
+
+void session_track_stickers(Session *s, const cima_json *message) {
+  const cima_json *items = json_get(message, "sticker_items");
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+  bool any = false;
+
+  // counting before the settings came would save over what they hold.
+  if (!s->stickers.has_uses && !s->offline) {
+    return;
+  }
+
+  CIMA_EACH(item, json_items(items)) {
+    Snowflake id = snowflake_of(json_get(item, "id"));
+
+    if (id != 0) {
+      track_sticker(s, id, now);
+      any = true;
+    }
+  }
+
+  if (any) {
+    stickers_used(s);
+  }
+}
+
+void session_use_sticker(Session *s, Snowflake id) {
+  if (id == 0 || (!s->stickers.has_uses && !s->offline)) {
+    return;
+  }
+
+  track_sticker(s, id, (int64_t)(store_now(s->store) * 1000));
+  stickers_used(s);
+}
+
+static StickerInfo *sticker_info_of(Session *s, Snowflake id) {
+  for (size_t i = 0; i < s->nsticker_infos; i++) {
+    if (s->sticker_infos[i].id == id) {
+      return &s->sticker_infos[i];
+    }
+  }
+
+  return nullptr;
+}
+
+static void on_sticker_guild(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  StickerInfo *info = sticker_info_of(s, call->id);
+
+  call_end(call);
+
+  if (info == nullptr) {
+    return;
+  }
+
+  info->loading = false;
+
+  // a guild nobody may find answers 404.
+  if (res->ok) {
+    str_set(&info->guild_name, json_get_or(res->json, "name", nullptr));
+    str_set(&info->guild_icon, json_get_or(res->json, "icon", nullptr));
+    info->guild_online = (uint32_t)json_get_coerce(
+      res->json, "approximate_presence_count", (uint64_t)0);
+  }
+
+  changed(s);
+}
+
+static void on_sticker_info(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  Snowflake id = call->id;
+  StickerInfo *info = sticker_info_of(s, id);
+
+  call_end(call);
+
+  if (info == nullptr) {
+    return;
+  }
+
+  info->loading = false;
+
+  if (res->ok) {
+    str_set(&info->name, json_get_or(res->json, "name", nullptr));
+    str_set(&info->description, json_get_or(res->json, "description", nullptr));
+    info->guild_id = snowflake_of(json_get(res->json, "guild_id"));
+  }
+
+  // the guild of a sticker from elsewhere, when discord lists it.
+  if (info->guild_id != 0 && store_guild(s->store, info->guild_id) == nullptr) {
+    char path[96];
+
+    snprintf(path, sizeof path, "/stickers/%" PRIu64 "/guild", id);
+    info->loading = true;
+    api_request(s->api,
+                &(ApiRequest){.method = "GET",
+                              .path = path,
+                              .route = "/stickers/:id/guild"},
+                on_sticker_guild, call_new(s, 0, id));
+  }
+
+  changed(s);
+}
+
+const StickerInfo *session_sticker_info(Session *s, Snowflake id) {
+  StickerInfo *known = sticker_info_of(s, id);
+
+  if (known != nullptr) {
+    return known;
+  }
+
+  StickerInfo *grown = realloc(s->sticker_infos, (s->nsticker_infos + 1) *
+                                                   sizeof *s->sticker_infos);
+
+  if (grown == nullptr) {
+    cilo_oom(sizeof *grown);
+  }
+
+  s->sticker_infos = grown;
+
+  StickerInfo *info = &s->sticker_infos[s->nsticker_infos++];
+
+  *info = (StickerInfo){.id = id, .loading = online(s)};
+
+  if (info->loading) {
+    char path[64];
+
+    snprintf(path, sizeof path, "/stickers/%" PRIu64, id);
+    api_request(
+      s->api,
+      &(ApiRequest){.method = "GET", .path = path, .route = "/stickers/:id"},
+      on_sticker_info, call_new(s, 0, id));
+  }
+
+  return info;
+}
+
+bool session_favorite_sticker(const Session *s, Snowflake id) {
+  for (size_t i = 0; i < s->stickers.nfavorites; i++) {
+    if (s->stickers.favorites[i] == id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static void on_sticker_favorites_saved(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  // a failure fetches them again, so what shows is what discord keeps.
+  if (!res->ok) {
+    notify(s, "Your favorite stickers could not be saved.", true);
+    clear_frecency(s);
+    session_fetch_frecency(s);
+  }
+
+  changed(s);
+}
+
+void session_set_favorite_sticker(Session *s, Snowflake id, bool favorite) {
+  StickerSettings *k = &s->stickers;
+  bool known = s->offline || (online(s) && k->has_favorites);
+
+  // saving replaces them all, never before they are known.
+  if (!known || id == 0 || favorite == session_favorite_sticker(s, id)) {
+    return;
+  }
+
+  if (favorite) {
+    // the client's words for it.
+    if (k->nfavorites >= FAVORITE_STICKERS_MAX) {
+      notify(s, "You cannot have more than 250 favorites.", true);
+      changed(s);
+      return;
+    }
+
+    k->favorites =
+      realloc(k->favorites, (k->nfavorites + 1) * sizeof *k->favorites);
+
+    if (k->favorites == nullptr) {
+      cilo_oom((k->nfavorites + 1) * sizeof *k->favorites);
+    }
+
+    k->favorites[k->nfavorites++] = id;
+  }
+  else {
+    size_t kept = 0;
+
+    for (size_t i = 0; i < k->nfavorites; i++) {
+      if (k->favorites[i] != id) {
+        k->favorites[kept++] = k->favorites[i];
+      }
+    }
+
+    k->nfavorites = kept;
+  }
+
+  if (online(s)) {
+    save_frecency(
+      s, settings_proto_with_favorite_stickers(k->favorites, k->nfavorites),
+      on_sticker_favorites_saved);
+  }
+
+  changed(s);
+}
+
 static void on_frecency(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
 
@@ -2822,7 +3242,13 @@ static void on_frecency(void *ctx, const ApiResponse *res) {
     if (settings != nullptr) {
       uses = settings_proto_reaction_uses(settings, &count);
       s->favorite_gifs = settings_proto_favorite_gifs(settings);
+      take_stickers(s, settings);
     }
+
+    // no sticker starred or used is known too, and only then may either
+    // be saved.
+    s->stickers.has_favorites = true;
+    s->stickers.has_uses = true;
 
     // none starred is known too, and only then may a star be saved.
     s->favorite_gifs.present = true;
