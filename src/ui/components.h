@@ -112,6 +112,8 @@ civue_button_state composer_button(App *app, civue_id id, civue_icon icon,
 void gif_picker(App *app, Channel *channel);
 // opens the picker over `anchor`, the composer, or closes it.
 void gif_picker_toggle(App *app, civue_rect anchor);
+// opens it on what `query` finds, as the gif command does.
+void gif_picker_search(App *app, civue_rect anchor, const char *query);
 // lets go of the players of the gifs no frame drew lately. once a frame.
 void gif_players_sweep(App *app);
 void gif_players_free(App *app);

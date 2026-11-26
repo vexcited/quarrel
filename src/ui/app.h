@@ -387,6 +387,8 @@ typedef struct {
 
   // a guild's settings and its channels being made or moved, see server.h.
   struct ServerUi *server;
+  // the list that completes what the composer holds, see complete.h.
+  struct Complete *complete;
 } App;
 
 // forgets what was shown and typed, for another account.

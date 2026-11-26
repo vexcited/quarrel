@@ -2141,6 +2141,26 @@ Message *store_add_pending(Store *s, Channel *c, const char *content,
   return m;
 }
 
+Message *store_add_pending_command(Store *s, Channel *c, Snowflake nonce,
+                                   Snowflake author_id, const char *name) {
+  Message *m = xcalloc(1, sizeof *m);
+
+  m->id = nonce;
+  m->nonce = nonce;
+  m->channel_id = c->id;
+  m->author_id = author_id;
+  m->type = MESSAGE_CHAT_INPUT_COMMAND;
+  m->state = MESSAGE_PENDING;
+  m->content = str_dup("");
+  m->timestamp = now_ms(s);
+  m->interaction_name = str_dup(name);
+  m->interaction_user_id = s->self_id;
+
+  insert_at(c, message_slot(c, m->id), m);
+  store_touch_channel(s, c);
+  return m;
+}
+
 void store_fail_pending(Store *s, Snowflake channel_id, Snowflake nonce,
                         const char *error) {
   Channel *c = store_channel(s, channel_id);

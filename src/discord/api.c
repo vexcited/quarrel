@@ -76,6 +76,8 @@ struct Request {
   char *captcha_key, *captcha_session, *captcha_rqtoken;
   // the base64 of X-Context-Properties, null for none.
   char *context;
+  // X-Audit-Log-Reason, percent encoded, null for none.
+  char *reason;
   ApiDone done;
   void *ctx;
   // freed with the request: what a typed callback needs to answer.
@@ -452,6 +454,7 @@ static void request_free(Request *r) {
   free(r->captcha_session);
   free(r->captcha_rqtoken);
   free(r->context);
+  free(r->reason);
   free(r->owned);
   free(r);
 }
@@ -729,6 +732,10 @@ static void send_now(Bucket *b, Request *r) {
     headers[n++] = (HttpHeader){"X-Context-Properties", r->context};
   }
 
+  if (r->reason != nullptr) {
+    headers[n++] = (HttpHeader){"X-Audit-Log-Reason", r->reason};
+  }
+
   if (api->token != nullptr) {
     headers[n++] = (HttpHeader){"Authorization", api->token};
   }
@@ -824,6 +831,10 @@ static Request *enqueue(Api *api, const ApiRequest *req, ApiDone done,
 
   if (req->context != nullptr) {
     r->context = base64_encode(req->context, strlen(req->context));
+  }
+
+  if (req->reason != nullptr) {
+    r->reason = url_encode(req->reason);
   }
 
   if (req->captcha != nullptr) {

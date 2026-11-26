@@ -974,7 +974,7 @@ bool gateway_request_members(Gateway *g, Snowflake guild_id,
 }
 
 bool gateway_search_members(Gateway *g, Snowflake guild_id, const char *query,
-                            uint32_t limit) {
+                            uint32_t limit, bool presences) {
   if (g->status != GATEWAY_READY || guild_id == 0 || query == nullptr) {
     return false;
   }
@@ -989,7 +989,7 @@ bool gateway_search_members(Gateway *g, Snowflake guild_id, const char *query,
   json_end_array(&w);
   json_field(&w, "query", query);
   json_field(&w, "limit", (int64_t)limit);
-  json_field(&w, "presences", false);
+  json_field(&w, "presences", presences);
   json_end_object(&w);
   json_end_object(&w);
   return send_payload(g, &w);

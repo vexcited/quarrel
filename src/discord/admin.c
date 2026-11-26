@@ -1353,7 +1353,8 @@ void admin_remove_member(Session *s, Snowflake guild_id, Snowflake role_id,
 
 void admin_search_members(Session *s, Snowflake guild_id, const char *query) {
   if (online(s) && s->gateway != nullptr) {
-    gateway_search_members(s->gateway, guild_id, query ? query : "", 10);
+    gateway_search_members(s->gateway, guild_id, query ? query : "", 10,
+                           false);
   }
 }
 

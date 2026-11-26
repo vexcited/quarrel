@@ -23,6 +23,9 @@
 /*                          at `path` instead of connecting, so the ui runs   */
 /*                          without an account. what is sent, edited, read or */
 /*                          reacted to is then applied to the store only.     */
+/*   QUARREL_COMMANDS=path  with a fixture, every guild has the commands of   */
+/*                          the command index at `path`, as discord answers   */
+/*                          one. running one fails for want of a connection.  */
 /*   QUARREL_TOKEN=token    roster_start uses this token and leaves the       */
 /*                          keychain and the saved accounts alone.            */
 /* ========================================================================== */
@@ -445,6 +448,9 @@ struct Session {
   Snowflake leaving_guild;
   // what managing a guild needs, see discord/admin.h. null until used.
   struct Admin *admin;
+  // the slash commands and what running them waits for, see
+  // discord/commands.h. null until used.
+  struct Commands *commands;
   // the account connected or connecting, 0 on the login form.
   Snowflake account_id;
   // bumped with every change of the fields above.

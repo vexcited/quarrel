@@ -1,4 +1,5 @@
 #include "app.h"
+#include "complete.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -135,6 +136,7 @@ void app_reset(App *app) {
   drop(&app->post_body);
   drop(&app->profile_message);
   drop(&app->profile_note);
+  complete_free(app);
 
   app->profile_user = 0;
   app->modal_user = 0;

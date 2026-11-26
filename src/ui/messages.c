@@ -894,6 +894,56 @@ static void reply_line(App *app, const Message *m, Snowflake guild_id) {
   }
 }
 
+// the line over what an application answered a command with: who ran it
+// and what it is called, tied to the avatar like the line of a reply.
+static void command_line(App *app, const Message *m, Snowflake guild_id) {
+  const Look *k = &app->look;
+  Store *store = app->session->store;
+  const User *user = store_user(store, m->interaction_user_id);
+  uint32_t color = store_member_color(store, guild_id, m->interaction_user_id);
+  char name[160];
+
+  snprintf(name, sizeof name, "/%s", m->interaction_name);
+
+  div(relative, flex, items_center, gap(1), h(px(18)), mb(1), text_size(px(14)),
+      line_height(px(18)), text_color(k->subtle)) {
+    div(absolute, left(px(-37)), top(px(8)), w(px(33)), h(px(14)), border_l(2),
+        border_t(2), rounded_tl(px(6)), border_color(rgb(0x4f505a))) {}
+
+    avatar(app, user, guild_id, 16, false, k->chat);
+
+    div(key(id_at(message_key(m), 0x503)), flex_shrink_0, cursor_pointer) {
+      profile_name_trigger(app, m->interaction_user_id, guild_id);
+      text(store_display_name(store, guild_id, m->interaction_user_id),
+           font_weight(medium), whitespace_nowrap,
+           text_color(color ? rgb(color) : k->text));
+    }
+
+    text("used", flex_shrink_0);
+    text(name, min_w(0), truncate, font_weight(medium), text_color(k->link));
+  }
+}
+
+// what stands for the answer of a command that has none yet, in the words
+// of discord's client. null once it has one.
+static const char *command_wait(App *app, const Message *m, char *out,
+                                size_t cap) {
+  if (*m->content || m->nembeds || m->nattachments ||
+      m->state == MESSAGE_FAILED) {
+    return nullptr;
+  }
+
+  if (m->flags & MESSAGE_FLAG_LOADING) {
+    snprintf(out, cap, "%s is thinking...",
+             store_author(app->session->store, m).name);
+    return out;
+  }
+
+  return m->state == MESSAGE_PENDING && m->interaction_name
+           ? "Sending command..."
+           : nullptr;
+}
+
 const char *message_system_text(const Message *m, char *out, size_t cap,
                                 const char *other) {
   switch (m->type) {
@@ -1115,12 +1165,15 @@ static void failure(App *app, const Channel *c, const Message *m) {
       text_color(k->critical_text)) {
     text(m->error ? m->error : "Your message could not be delivered.");
 
-    div(key(id_at(id, 1)), text_color(k->link), cursor_pointer) {
-      if (button().activated) {
-        session_retry(app->session, c->id, m->nonce);
-      }
+    // a command is typed again rather than sent again.
+    if (!m->interaction_name) {
+      div(key(id_at(id, 1)), text_color(k->link), cursor_pointer) {
+        if (button().activated) {
+          session_retry(app->session, c->id, m->nonce);
+        }
 
-      text("Retry");
+        text("Retry");
+      }
     }
 
     div(key(id_at(id, 2)), text_color(k->link), cursor_pointer) {
@@ -1142,6 +1195,8 @@ static void message_body(App *app, const Channel *c, const Message *m,
   Store *store = app->session->store;
   civue_id id = message_key(m);
   bool reply = m->reference_id && !m->forwarded && !message_is_system(m);
+  bool command = !reply && m->interaction_name && m->interaction_user_id;
+  char waits[160];
 
   if (message_is_system(m)) {
     system_message(app, c, m);
@@ -1151,11 +1206,14 @@ static void message_body(App *app, const Channel *c, const Message *m,
   if (reply) {
     reply_line(app, m, c->guild_id);
   }
+  else if (command) {
+    command_line(app, m, c->guild_id);
+  }
 
   if (head) {
     Author author = store_author(store, m);
 
-    div(absolute, left(4), top(px(reply ? 26 : 2))) {
+    div(absolute, left(4), top(px(reply || command ? 26 : 2))) {
       // a webhook has no profile to show.
       if (author.user && !m->webhook_id) {
         div(key(id_at(id, 0x501)), cursor_pointer) {
@@ -1169,6 +1227,10 @@ static void message_body(App *app, const Channel *c, const Message *m,
     }
 
     header(app, c, m);
+  }
+
+  if (command_wait(app, m, waits, sizeof waits)) {
+    text(waits, text_color(app->look.faint));
   }
 
   FakeSticker linked;
@@ -1350,7 +1412,7 @@ static bool starts_group(const Message *m, const Message *before) {
 
   return m->author_id != before->author_id ||
          m->webhook_id != before->webhook_id ||
-         (m->reference_id && !m->forwarded) ||
+         (m->reference_id && !m->forwarded) || m->interaction_name ||
          m->timestamp - before->timestamp > GROUP_GAP_MS ||
          day_of(m->timestamp) != day_of(before->timestamp);
 }

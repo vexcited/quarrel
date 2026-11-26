@@ -153,6 +153,8 @@ typedef struct {
   // where in the client the request comes from, as the json the client
   // sends in X-Context-Properties. null for none.
   const char *context;
+  // why a moderator does this, for the guild's audit log. null for none.
+  const char *reason;
 } ApiRequest;
 
 void api_request(Api *api, const ApiRequest *req, ApiDone done, void *ctx);

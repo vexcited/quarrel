@@ -686,6 +686,17 @@ static bool blank(const char *s) {
   return true;
 }
 
+void gif_picker_search(App *app, civue_rect anchor, const char *query) {
+  if (app->popover != POPOVER_GIFS) {
+    gif_picker_toggle(app, anchor);
+  }
+
+  free(app->gif_search);
+  app->gif_search = strdup(query);
+  app->gif_typed_at = 0;
+  open_page(app, blank(query) ? PAGE_FRONT : PAGE_SEARCH, nullptr);
+}
+
 // the search, or the way back and the title of a page of results.
 static void header(App *app) {
   const Look *k = &app->look;

@@ -1231,6 +1231,11 @@ void store_trim_messages(Store *s, Channel *c, size_t keep);
 Message *store_add_pending(Store *s, Channel *c, const char *content,
                            Snowflake nonce, Snowflake reply_to,
                            const Snowflake *sticker_ids, size_t nstickers);
+// a command of an application shown before it answers, as a message of
+// `author_id`, its bot. `name` is the command as it was typed, without its
+// slash. it wears MESSAGE_FLAG_LOADING once discord told the application.
+Message *store_add_pending_command(Store *s, Channel *c, Snowflake nonce,
+                                   Snowflake author_id, const char *name);
 void store_fail_pending(Store *s, Snowflake channel_id, Snowflake nonce,
                         const char *error);
 void store_remove_pending(Store *s, Snowflake channel_id, Snowflake nonce);

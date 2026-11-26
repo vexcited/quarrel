@@ -10,6 +10,7 @@
 
 #include "discord/admin.h"
 #include "discord/api.h"
+#include "discord/commands.h"
 #include "discord/emoji.h"
 #include "discord/expressions.h"
 #include "discord/gateway.h"
@@ -1066,6 +1067,7 @@ static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   Session *s = ctx;
 
   events_dispatch(s->store, type, data);
+  commands_dispatch(s, type, data);
   watch_status(s);
 
   if (strcmp(type, "MESSAGE_CREATE") == 0) {
@@ -1319,6 +1321,7 @@ static void clear_directories(Session *s);
 
 static void end_session(Session *s, const char *error) {
   uploads_clear(s);
+  commands_clear(s);
   qr_stop(s);
   clear_forum(s);
   clear_directories(s);
@@ -1858,6 +1861,7 @@ static void session_free(Session *s) {
   // after the api, whose answers it would wait for.
   gifs_free(s->gifs);
   admin_free(s->admin);
+  commands_free(s->commands);
   platform_timer_cancel(s->typing_timer);
 
   for (Call *call = s->calls; call != nullptr;) {

@@ -125,6 +125,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/admin.c
   src/discord/api.c
   src/discord/cdn.c
+  src/discord/commands.c
   src/discord/directory.c
   src/discord/emoji.c
   src/discord/emoji_table.c
@@ -243,6 +244,7 @@ add_executable(quarrel
   src/ui/newdm.c
   src/ui/app.c
   src/ui/chat.c
+  src/ui/complete.c
   src/ui/composer.c
   src/ui/cues.c
   src/ui/emojis.c
@@ -255,6 +257,7 @@ add_executable(quarrel
   src/ui/look.c
   src/ui/markup.c
   src/ui/members.c
+  src/ui/mentions.c
   src/ui/media.c
   src/ui/messages.c
   src/ui/profile.c

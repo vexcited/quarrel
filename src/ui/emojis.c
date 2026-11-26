@@ -11,6 +11,7 @@
 
 #include <civue/dsl.h>
 
+#include "complete.h"
 #include "discord/cdn.h"
 #include "discord/emoji.h"
 #include "discord/expressions.h"
@@ -35,8 +36,9 @@ constexpr size_t FREQUENT_MOST = 42;
 constexpr uint32_t LOCKED_ROWS = 3;
 // built this far out of view, so what scrolls in is ready.
 constexpr float AHEAD = 96;
-// the client's rail goes straight to the emojis of unicode past this many
-// guilds.
+// the client completes with this many, and its rail goes straight to the
+// emojis of unicode past this many guilds.
+constexpr size_t COMPLETE_MOST = 10;
 constexpr size_t SHORTCUT_FROM = 7;
 
 /* ========================================================================== */
@@ -278,6 +280,94 @@ static void search(App *app, const Channel *c, EmojiUse use, const char *query,
 }
 
 /* ========================================================================== */
+/* completing a name after a colon in the composer.                           */
+/* ========================================================================== */
+
+static bool blank_byte(char c) {
+  return c == ' ' || c == '\n' || c == '\t' || c == '\r';
+}
+
+// the client's: the word the caret ends starts with a colon, or with one
+// after a parenthesis, and two characters at least follow it.
+int32_t emoji_complete_find(App *, const Channel *, const char *text,
+                            uint32_t caret) {
+  uint32_t start = caret;
+
+  while (start > 0 && !blank_byte(text[start - 1])) {
+    start--;
+  }
+
+  start += start < caret && text[start] == '(';
+
+  if (start >= caret || text[start] != ':' || caret - start < 3) {
+    return -1;
+  }
+
+  // a second colon closes the name: nothing is left to complete.
+  for (uint32_t i = start + 1; i < caret; i++) {
+    if (text[i] == ':') {
+      return -1;
+    }
+  }
+
+  return (int32_t)start;
+}
+
+void emoji_complete_fill(App *app, Channel *c, const char *token,
+                         CompleteList *list) {
+  Cells cells = {};
+  char title[128], label[80], insert[112];
+  const char *query = token + 1;
+
+  // what the user writes the most comes first.
+  session_fetch_frecency(app->session);
+  search(app, c, EMOJI_FOR_CHAT, query, false, &cells);
+
+  // a query that starts with a dash only finds the names that are it, so
+  // that :-1: is not lost among the others.
+  if (*query == '-') {
+    uint32_t kept = 0;
+
+    for (uint32_t i = 0; i < cells.len; i++) {
+      if (strcasecmp(cell_name(&cells.v[i]), query) == 0) {
+        cells.v[kept++] = cells.v[i];
+      }
+    }
+
+    cells.len = kept;
+  }
+
+  if (cells.len) {
+    snprintf(title, sizeof title, "Emoji matching %s", token);
+    complete_title(list, title);
+  }
+
+  for (uint32_t i = 0; i < cells.len && i < COMPLETE_MOST; i++) {
+    const Cell *cell = &cells.v[i];
+    ReactionPick pick = pick_of(cell);
+    size_t len = 0;
+
+    pick_text(insert, sizeof insert - 1, pick);
+    len = strlen(insert);
+    insert[len] = ' ';
+    insert[len + 1] = '\0';
+    snprintf(label, sizeof label, ":%s:", cell_name(cell));
+
+    complete_add(list,
+                 &(CompleteRow){
+                   .icon = COMPLETE_ICON_EMOJI,
+                   .id = pick.id,
+                   .name = pick.name,
+                   .label = label,
+                   .detail = cell->custom ? cell->custom->guild->name : nullptr,
+                   .insert = insert,
+                 });
+  }
+
+  free(cells.v);
+}
+
+/* ========================================================================== */
 /* what the composer shows for the emojis its text names.                     */
 /* ========================================================================== */
 
@@ -306,10 +396,15 @@ static bool colons_cell(App *app, const Channel *c, const char *name,
 
 static uint32_t inlay_find(void *, const char *text, uint32_t len, uint32_t at,
                            float *width) {
+  uint32_t mention = mention_inlay_find(inlaid.app, text, len, at, width);
   const char *name = nullptr;
   size_t taken = 0, name_len = 0;
   uint8_t tone = 0;
   Cell cell;
+
+  if (mention) {
+    return mention;
+  }
 
   if (at == 0 || at < inlaid.asked) {
     inlaid.literal_end = 0;
@@ -373,6 +468,11 @@ static void inlay_paint(civue_ui *ui, void *, const char *text, uint32_t len,
   size_t name_len = 0;
   uint8_t tone = 0;
   Cell cell = {};
+
+  if (text[0] == '<' && text[1] != ':' && text[1] != 'a') {
+    mention_inlay_paint(app, ui, text, len, r);
+    return;
+  }
 
   if (emoji_token(text, len, &emoji_id, &animated, nullptr, nullptr)) {
     if (!emoji_image(app, emoji_id, animated, box)) {

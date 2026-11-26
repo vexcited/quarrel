@@ -9,6 +9,7 @@
 
 #include <civue/dsl.h>
 
+#include "complete.h"
 #include "discord/expressions.h"
 #include "discord/uploads.h"
 #include "forms.h"
@@ -92,12 +93,19 @@ static void submit(App *app, Channel *c, bool sure) {
   Session *session = app->session;
   bool faked = false;
 
-  // the emojis named between colons as a message holds them. the ones
+  // a command runs rather than being said.
+  if (complete_submit(app, c)) {
+    return;
+  }
+
+  // the names typed after an @ or a # as the mentions they are, then the
+  // emojis named between colons, as a message holds them. the emojis
   // discord would refuse go as links to their pictures, as Vencord's
   // FakeNitro sends them.
-  char *written =
-    expressions_send(session->store, c, app->draft ? app->draft : "", &faked);
+  char *named = complete_encode(app, c, app->draft ? app->draft : "");
+  char *written = expressions_send(session->store, c, named, &faked);
 
+  free(named);
   defer free(written);
 
   // a sticker discord would refuse goes as a link too.
@@ -190,7 +198,10 @@ static void take_keys(App *app, Channel *c) {
   for (uint32_t i = 0; i < ui->input.keys.len; i++) {
     civue_key_press press = ui->input.keys.v[i];
 
-    if (press.key == CIVUE_KEY_ENTER && !(press.mods & CIVUE_MOD_SHIFT)) {
+    if (complete_key(app, c, press)) {
+      drop_key(ui, i--);
+    }
+    else if (press.key == CIVUE_KEY_ENTER && !(press.mods & CIVUE_MOD_SHIFT)) {
       drop_key(ui, i--);
       submit(app, c, false);
     }
@@ -524,6 +535,8 @@ static void writing(App *app, Channel *c) {
       emoji_button(app, box);
     }
   }
+
+  complete_popup(app, c, box);
 }
 
 void composer(App *app, Channel *c) {

@@ -5,6 +5,7 @@
 
 #include "http.h"
 #include "ui/alerts.h"
+#include "ui/complete.h"
 #include "ui/components.h"
 #include "ui/cues.h"
 #include "ui/media.h"
@@ -250,6 +251,7 @@ int main() {
 
   media_free(&app);
   gif_players_free(&app);
+  complete_free(&app);
   emoji_picker_free(&app);
   free(app.card_emoji_name);
   server_ui_free(&app);
