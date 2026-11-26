@@ -309,7 +309,7 @@ static void seek_bar(App *app, civue_id id, civue_video *video,
          rgba(0x9799a14d), 3);
     fill(civue_rect_from(track.x0, mid - 3, loaded, mid + 3), rgba(0xffffff4d),
          3);
-    fill(civue_rect_from(track.x0, mid - 3, played, mid + 3), k->brand, 3);
+    fill(civue_rect_from(track.x0, mid - 3, played, mid + 3), k->primary, 3);
 
     if (grab > .5f) {
       fill(
@@ -819,11 +819,12 @@ constexpr float THUMB = 40;
 
 static bool viewer_action(App *app, civue_id id, civue_icon glyph_icon,
                           const char *label) {
+  const Look *k = &app->look;
   bool pressed = false;
 
   div(key(id), flex, items_center, justify_center, flex_shrink_0, size(8),
-      rounded(md), text_color(rgb(0xdbdbde)),
-      hover(bg(rgba(0xffffff14)), text_color(CIVUE_WHITE)), cursor_pointer) {
+      rounded(md), text_color(k->text),
+      hover(bg(k->hover), text_color(k->strong)), cursor_pointer) {
     civue_button_state state = button();
 
     pressed = state.activated;
@@ -838,12 +839,13 @@ static bool viewer_action(App *app, civue_id id, civue_icon glyph_icon,
 // a round button 40 points across.
 static bool viewer_button(App *app, civue_id id, civue_icon glyph_icon,
                           const char *label) {
+  const Look *k = &app->look;
   bool pressed = false;
 
   div(key(id), flex, items_center, justify_center, flex_shrink_0, size(10),
-      rounded(full), bg(rgb(0x17181c)), border(1),
-      border_color(rgba(0x97979f29)), text_color(rgb(0xdbdbde)),
-      hover(bg(rgb(0x242529)), text_color(CIVUE_WHITE)), cursor_pointer) {
+      rounded(full), bg(k->frame), border(1), border_color(k->border_strong),
+      text_color(k->text), hover(bg(k->surface_high), text_color(k->strong)),
+      cursor_pointer) {
     civue_button_state state = button();
 
     pressed = state.activated;
@@ -896,7 +898,7 @@ static BarResult viewer_bar(App *app, const MediaItem *item) {
     }
 
     div(flex, items_center, gap(1), flex_shrink_0, p(px(3)), rounded(lg),
-        bg(rgb(0x17181c)), border(1), border_color(rgba(0x97979f29))) {
+        bg(app->look.frame), border(1), border_color(app->look.border_strong)) {
       if (item->kind == MEDIA_IMAGE) {
         result.zoom = viewer_action(app, id("viewer-zoom"),
                                     m->zoomed ? CIVUE_ICON(lucide, zoom_out)
@@ -1111,7 +1113,7 @@ static void viewer_thumbs(App *app, size_t *to) {
       char url[CDN_URL_MAX];
 
       div(key(id_at(id("viewer-thumb"), i)), relative, size(px(THUMB)),
-          flex_shrink_0, bg(rgb(0x17181c)), cursor_pointer) {
+          flex_shrink_0, bg(app->look.frame), cursor_pointer) {
         if (button().activated) {
           *to = i;
         }

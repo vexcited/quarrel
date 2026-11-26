@@ -213,20 +213,22 @@ void explore_open_guild(App *app, Snowflake id, PreviewFrom from) {
   }
 }
 
-static bool outlined(civue_id id, const char *label, civue_icon *glyph_icon,
-                     bool enabled) {
+// a button over the primary color, drawn in what is written on it.
+static bool outlined(const Look *k, civue_id id, const char *label,
+                     civue_icon *glyph_icon, bool enabled) {
   bool pressed = false;
 
   div(key(id), flex, items_center, gap(1), flex_shrink_0, h(6), px(2),
-      rounded(md), border(1), border_color(CIVUE_WHITE),
-      hover(bg(rgba(0xffffff26))), active(bg(rgba(0xffffff40))),
+      rounded(md), border(1), border_color(k->on_primary),
+      hover(bg(civue_alpha(k->on_primary, .15f))),
+      active(bg(civue_alpha(k->on_primary, .25f))),
       font_weight(medium),
       style(.cursor = enabled ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
             .has_cursor = true)) {
     pressed = button().activated && enabled;
 
     if (glyph_icon) {
-      glyph(*glyph_icon, 14, CIVUE_WHITE);
+      glyph(*glyph_icon, 14, k->on_primary);
     }
 
     text(label, whitespace_nowrap, max_w(px(260)), truncate);
@@ -256,11 +258,11 @@ void preview_bar(App *app) {
   }
 
   div(key(id("preview-bar")), flex, items_center, gap(3), flex_shrink_0,
-      min_h(9), mb(2), px(2), rounded(lg), bg(k->brand), text_size(px(14)),
-      line_height(px(18)), text_color(CIVUE_WHITE)) {
+      min_h(9), mb(2), px(2), rounded(lg), bg(k->primary), text_size(px(14)),
+      line_height(px(18)), text_color(k->on_primary)) {
     window_handle(id("preview-bar-handle"));
 
-    if (outlined(id("preview-back"), "Back", &back, true)) {
+    if (outlined(k, id("preview-back"), "Back", &back, true)) {
       explore_open(app);
     }
 
@@ -268,7 +270,7 @@ void preview_bar(App *app) {
          "chatting!",
          flex_1, min_w(0), truncate, text_center);
 
-    if (outlined(id("preview-join"), label, nullptr, !joining)) {
+    if (outlined(k, id("preview-join"), label, nullptr, !joining)) {
       session_join_preview(s, g->id);
     }
   }
@@ -341,7 +343,7 @@ static void server_card(App *app, const Card *c) {
           glyph(CIVUE_ICON(lucide, badge_check), 16, k->positive);
         }
         else if (c->partnered) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, k->brand_text);
+          glyph(CIVUE_ICON(lucide, badge_check), 16, k->accent_text);
         }
 
         text(c->name ? c->name : "", min_w(0), truncate, text_size(px(16)),
@@ -579,7 +581,7 @@ bool explore_tab(App *app, civue_id id, const char *label, bool on) {
 
     if (on) {
       civue_rect r = here();
-      fill(xywh((float)r.x0, (float)r.y1, (float)civue_rect_w(r), 2), k->brand,
+      fill(xywh((float)r.x0, (float)r.y1, (float)civue_rect_w(r), 2), k->primary,
            1);
     }
   }
@@ -646,8 +648,8 @@ static void hub_card(App *app, bool member) {
   div(key(id("explore-hub-join")), flex, flex_col, h(px(CARD_HEIGHT)), min_w(0),
       p(4), rounded(lg), border(1), border_color(k->border), bg(k->surface)) {
     div(flex, items_center, justify_center, size(12), flex_shrink_0,
-        rounded(full), bg(k->brand)) {
-      glyph(CIVUE_ICON(lucide, graduation_cap), 24, CIVUE_WHITE);
+        rounded(full), bg(k->primary)) {
+      glyph(CIVUE_ICON(lucide, graduation_cap), 24, k->on_primary);
     }
 
     text(member ? "Attend multiple schools?"
@@ -664,9 +666,9 @@ static void hub_card(App *app, bool member) {
 
     div(key(id("explore-hub-button")), flex, items_center, justify_center,
         flex_shrink_0, h(10), rounded(lg), font_weight(medium),
-        text_color(member ? k->strong : CIVUE_WHITE),
-        bg(member ? k->surface_high : k->brand),
-        hover(bg(member ? k->hover : k->brand_hover)), cursor_pointer) {
+        text_color(member ? k->strong : k->on_primary),
+        bg(member ? k->surface_high : k->primary),
+        hover(bg(member ? k->hover : k->primary_hover)), cursor_pointer) {
       if (button().activated) {
         hub_join_open(app);
       }
@@ -768,7 +770,7 @@ static void language_menu(App *app, Discovery *d) {
   overlay() {
     div(key(id("explore-languages")), flex, flex_col, left(px(anchor.x0)),
         top(px(top)), w(px(width)), max_h(px(height)), p(1), rounded(lg),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_y_scroll, scrollbars(&app->thin_bars),
         text_size(px(14)), line_height(px(18)), text_color(k->text)) {
       card = here();
@@ -834,7 +836,7 @@ static void filters(App *app, Discovery *d) {
       py(6), pr(4), text_size(px(14)), line_height(px(18))) {
     div(key(id("explore-language-select")), flex, items_center, gap(2),
         flex_shrink_0, h(9), px(3), mb(4), rounded(lg), bg(k->input), border(1),
-        border_color(open ? k->brand : k->border_strong), cursor_pointer) {
+        border_color(open ? k->ring : k->border_strong), cursor_pointer) {
       if (button().activated) {
         app_toggle(app, POPOVER_EXPLORE_LANGUAGE);
       }
@@ -895,7 +897,7 @@ bool explore_nothing(App *app, civue_id id, const char *category) {
           text_color(k->text)) {
         text("Try searching for something else or");
 
-        div(key(id), text_color(k->link), hover(text_color(k->brand_hover)),
+        div(key(id), text_color(k->link), hover(text_color(k->primary_hover)),
             cursor_pointer) {
           pressed = button().activated;
           text("see results from all categories", whitespace_nowrap);

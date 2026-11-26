@@ -159,9 +159,8 @@ static void button_component(Walk *w, const Component *c) {
   // one of a message not sent yet, or of a preview, answers nothing.
   bool dead = c->disabled || w->m->state != MESSAGE_SENT ||
               (link ? !c->url : !c->custom_id);
-  // the colors of the buttons of discord's forms, see forms.c.
-  civue_color ground = rgba(0x97979f1f), lit = rgba(0x97979f29);
-  civue_color down = rgba(0x97979f33), edge = rgba(0x97979f0a);
+  // the colors of the buttons of the forms, see forms.c.
+  civue_color ground = k->hover, lit = k->pressed, down = k->selected;
   civue_color ink = k->strong;
 
   // a premium button sells something Quarrel has no shop for.
@@ -170,29 +169,27 @@ static void button_component(Walk *w, const Component *c) {
   }
 
   if (c->style == BUTTON_STYLE_PRIMARY) {
-    ground = k->brand, lit = k->brand_hover, down = k->brand_active;
+    ground = k->primary, lit = k->primary_hover, down = k->primary_active;
+    ink = k->on_primary;
   }
   else if (c->style == BUTTON_STYLE_SUCCESS) {
-    ground = k->positive, lit = rgb(0x006c37), down = rgb(0x005f30);
+    ground = k->positive, lit = k->positive_hover, down = k->positive_active;
+    ink = k->on_positive;
   }
   else if (c->style == BUTTON_STYLE_DANGER) {
-    ground = k->danger, lit = rgb(0xa9232e), down = rgb(0x971d28);
-  }
-
-  if (c->style != BUTTON_STYLE_SECONDARY && !link) {
-    ink = CIVUE_WHITE, edge = rgba(0xffffff14);
+    ground = k->danger, lit = k->danger_hover, down = k->danger_active;
+    ink = k->on_danger;
   }
 
   if (dead || busy) {
-    ground = civue_alpha(ground, ground.a * .5f);
+    ground = civue_alpha(ground, .5f);
     lit = down = ground;
-    edge = civue_alpha(edge, edge.a * .5f);
     ink = civue_alpha(ink, .5f);
   }
 
   div(key(id), flex, items_center, justify_center, gap(1), flex_shrink_0, h(8),
       min_w(px(c->text ? 60 : 32)), max_w(full), px(px(11)), border(1),
-      border_color(edge), rounded(lg), bg(ground), hover(bg(lit)),
+      border_color(CIVUE_CLEAR), rounded(lg), bg(ground), hover(bg(lit)),
       active(bg(down)), text_size(px(14)), line_height(px(18)),
       font_weight(medium), text_color(ink),
       style(.cursor = dead ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
@@ -263,7 +260,7 @@ static void select_component(Walk *w, const Component *c) {
 
   div(key(id), flex, items_center, gap(2), flex_shrink_0, w(full),
       max_w(px(SELECT_WIDTH)), h(11), px(3), rounded(lg), bg(k->input),
-      border(1), border_color(open ? k->brand : k->border_strong),
+      border(1), border_color(open ? k->ring : k->border_strong),
       text_size(px(16)), line_height(px(20)),
       style(.cursor = dead ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
             .has_cursor = true)) {
@@ -368,9 +365,9 @@ static void container(Walk *w, const Component *c, float room) {
           app_reveal(app, id);
         }
 
-        div(px(3), py(px(6)), rounded(full), bg(rgba(0x00000099))) {
+        div(px(3), py(px(6)), rounded(full), bg(k->popover)) {
           text("SPOILER", text_size(px(15)), line_height(px(18)),
-               font_weight(semibold), text_color(CIVUE_WHITE));
+               font_weight(semibold), text_color(k->strong));
         }
       }
     }
@@ -482,9 +479,9 @@ static bool select_option(App *app, civue_id id, const ComponentOption *o,
     if (on || several) {
       div(flex, items_center, justify_center, size(5), flex_shrink_0,
           rounded(full), border(on ? 0 : 1), border_color(k->border_strong),
-          style(.bg = on ? k->brand : CIVUE_CLEAR)) {
+          style(.bg = on ? k->primary : CIVUE_CLEAR)) {
         if (on) {
-          icon(lucide, check, size(px(14)), text_color(CIVUE_WHITE));
+          icon(lucide, check, size(px(14)), text_color(k->on_primary));
         }
       }
     }
@@ -529,7 +526,7 @@ void component_select(App *app, Channel *channel) {
   overlay() {
     div(key(id("component-select")), flex, flex_col, w(px(width)),
         max_h(px(height)), left(px(anchor.x0)), top(px(top)), rounded(lg),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_y_scroll, scrollbars(&app->bars)) {
       card = here();
 

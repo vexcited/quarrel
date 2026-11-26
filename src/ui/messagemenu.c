@@ -175,7 +175,7 @@ static void menu(App *app, const Channel *c, const Message *m) {
 
   overlay() {
     div(key(base), flex, flex_col, left(px(card.x0)), top(px(card.y0)),
-        w(px(MENU_WIDTH)), p(1), rounded(xl), bg(k->surface_high), border(1),
+        w(px(MENU_WIDTH)), p(1), rounded(xl), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg)) {
       card = here();
 
@@ -436,7 +436,7 @@ static void forward_picker(App *app, const Channel *c, const Message *m) {
   overlay() {
     div(key(id("forward-picker")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(PICKER_WIDTH)), h(px(PICKER_HEIGHT)),
-        rounded(xl), bg(k->surface_high), border(1),
+        rounded(xl), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg), overflow_hidden) {
       card = here();
 

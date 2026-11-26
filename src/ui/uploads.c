@@ -10,6 +10,7 @@
 #include <civue/dsl.h>
 
 #include "discord/uploads.h"
+#include "forms.h"
 #include "widgets.h"
 
 // the web client's tray: cards of 200 points, padded by 8, 24 apart.
@@ -269,7 +270,7 @@ void upload_button(App *app, Channel *c) {
     overlay() {
       div(key(id("upload-menu")), flex, flex_col, left(px(anchor.x0 - 4)),
           bottom(px(ui->size.y - anchor.y0 + 20)), w(px(264)), p(2),
-          rounded(lg), bg(k->surface_high), border(1),
+          rounded(lg), bg(k->popover), border(1),
           border_color(k->border_strong), shadow(lg)) {
         card = here();
 
@@ -420,7 +421,7 @@ static void card(App *app, Upload *u) {
 
     if (u->state == UPLOAD_FAILED && u->error) {
       div(absolute, left(px(CARD_PAD)), top(px(CARD_PAD)), px(1), rounded(sm),
-          bg(k->danger), text_color(CIVUE_WHITE), text_size(px(10)),
+          bg(k->danger), text_color(k->on_danger), text_size(px(10)),
           line_height(px(14)), font_weight(semibold)) {
         text("FAILED");
       }
@@ -443,7 +444,7 @@ static void card(App *app, Upload *u) {
         }
 
         remove = bar_button(app, id_at(key_id, 3), CIVUE_ICON(lucide, trash_2),
-                            "Remove Attachment", rgb(0xff9d9a));
+                            "Remove Attachment", k->critical_text);
       }
     }
   }
@@ -519,13 +520,14 @@ void upload_drop_zone(App *app, Channel *c) {
   overlay() {
     div(key(id("upload-drop")), left(0), top(0), w(px(ui->size.x)),
         h(px(ui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000cc))) {
+        bg(app->look.scrim)) {
       div(flex, w(px(310)), h(px(170)), p(2), rounded(px(10)),
-          bg(app->look.brand)) {
+          bg(app->look.primary)) {
         div(flex, flex_col, items_center, justify_center, flex_1, px(4),
-            rounded(px(6)), border(2), border_color(rgba(0xffffff66)),
-            text_color(CIVUE_WHITE)) {
-          glyph(CIVUE_ICON(lucide, files), 48, CIVUE_WHITE);
+            rounded(px(6)), border(2),
+            border_color(civue_alpha(app->look.on_primary, .4f)),
+            text_color(app->look.on_primary)) {
+          glyph(CIVUE_ICON(lucide, files), 48, app->look.on_primary);
 
           text(title, mt(3), max_w(full), truncate, text_size(px(22)),
                line_height(px(28)), font_weight(bold));
@@ -590,7 +592,7 @@ void upload_progress(App *app, Channel *c, const Message *m) {
 
     div(flex, flex_col, flex_1, min_w(0), gap(1)) {
       div(flex, items_center, gap(1), min_w(0)) {
-        text(line, min_w(0), truncate, text_color(CIVUE_WHITE));
+        text(line, min_w(0), truncate, text_color(k->strong));
 
         if (!processing) {
           text(size, flex_shrink_0, ml(1), text_size(px(12)),
@@ -607,11 +609,11 @@ void upload_progress(App *app, Channel *c, const Message *m) {
           float shown =
             civue_animate(ui, id_at(id("upload-bar"), m->nonce), done, .2f);
 
-          div(relative, flex_1, h(2), rounded(full),
-              bg(civue_alpha(rgb(0x97979f), .2f)), overflow_hidden) {
+          div(relative, flex_1, h(2), rounded(full), bg(k->selected),
+              overflow_hidden) {
             div(absolute, left(0), top(0), h(full), w(px(0)),
                 style(.w = civue_relative(shown)), rounded(full),
-                bg(k->brand)) {}
+                bg(k->primary)) {}
           }
         }
       }
@@ -634,11 +636,6 @@ void upload_progress(App *app, Channel *c, const Message *m) {
 /* the dialogs.                                                               */
 /* ========================================================================== */
 
-static void field_label(const Look *k, const char *label) {
-  text(label, mt(2), text_size(px(14)), line_height(px(18)),
-       font_weight(medium), text_color(k->strong));
-}
-
 // the files' modal: their name, their alt text and whether they are a
 // spoiler.
 static void editor(App *app, Upload *u) {
@@ -649,31 +646,32 @@ static void editor(App *app, Upload *u) {
 
   overlay() {
     div(key(id("upload-editor-backdrop")), left(0), top(0), w(px(ui->size.x)),
-        h(px(ui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(ui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       close = button().activated;
 
-      div(key(id("upload-editor")), flex, flex_col, gap(2), w(px(440)), p(6),
-          rounded(xl), bg(k->surface), border(1), border_color(k->border),
-          shadow(lg), text_color(k->text)) {
+      div(key(id("upload-editor")), flex, flex_col, gap(4),
+          w(px(dialog_width())), p(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20))) {
         button();
 
-        text(u->filename, text_size(px(20)), line_height(px(24)), truncate,
+        // a dialog's title, cut short as a file's name may be long.
+        text(u->filename, text_size(px(18)), line_height(px(22)), truncate,
              font_weight(semibold), text_color(k->strong));
 
-        field_label(k, "Filename");
-
-        div(key(id("upload-editor-name")), w(full), h(10)) {
-          save = text_field(&app->upload_name, "", field_look(k)).submitted;
+        div(flex, flex_col) {
+          form_label(k, "Filename");
+          save = form_input(app, id("upload-editor-name"), &app->upload_name,
+                            "", nullptr, 0)
+                   .submitted;
         }
 
         if (media) {
-          field_label(k, "Description (Alt Text)");
-
-          div(key(id("upload-editor-alt")), w(full), h(10)) {
-            save |=
-              text_field(&app->upload_alt, "Add a description", field_look(k))
-                .submitted;
+          div(flex, flex_col) {
+            form_label(k, "Description (Alt Text)");
+            save |= form_input(app, id("upload-editor-alt"), &app->upload_alt,
+                               "Add a description", nullptr, 0)
+                      .submitted;
           }
         }
 
@@ -681,29 +679,24 @@ static void editor(App *app, Upload *u) {
           app->upload_name && !strncmp(app->upload_name, "SPOILER_", 8);
         bool on = app->upload_spoiler || forced;
 
-        div(key(id("upload-editor-spoiler")), flex, items_center, gap(2), mt(2),
+        div(key(id("upload-editor-spoiler")), flex, items_center, gap(2),
             cursor_pointer) {
-          if (button().activated && !forced) {
+          bool flip = button().activated;
+
+          flip |= form_checkbox(app, id("upload-editor-spoiler-box"), on);
+
+          if (flip && !forced) {
             app->upload_spoiler = !app->upload_spoiler;
           }
 
-          div(flex, items_center, justify_center, size(5), flex_shrink_0,
-              rounded(md), border(2),
-              border_color(on ? k->brand : k->border_strong),
-              style(.bg = on ? k->brand : CIVUE_CLEAR),
-              text_color(CIVUE_WHITE)) {
-            if (on) {
-              icon(lucide, check, size(px(14)));
-            }
-          }
-
-          text("Mark as spoiler", text_color(k->strong));
+          text("Mark as spoiler", font_weight(medium), text_color(k->strong));
         }
 
-        div(flex, gap(2), flex_shrink_0, mt(4)) {
-          close |=
-            dialog_button(k, id("upload-editor-cancel"), "Cancel", false);
-          save |= dialog_button(k, id("upload-editor-save"), "Save", true);
+        div(flex, justify_end, gap(2), flex_shrink_0) {
+          close |= form_button(app, id("upload-editor-cancel"), "Cancel",
+                               BUTTON_OUTLINE, false);
+          save |= form_button(app, id("upload-editor-save"), "Save",
+                              BUTTON_PRIMARY, false);
         }
       }
     }
@@ -736,27 +729,27 @@ static void message_box(App *app, const char *title, const char *body,
 
   overlay() {
     div(key(id("upload-notice-backdrop")), left(0), top(0), w(px(ui->size.x)),
-        h(px(ui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(ui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       *closed = button().activated;
 
-      div(key(id("upload-notice")), flex, flex_col, gap(2), w(px(400)), p(6),
-          rounded(xl), bg(k->surface), border(1), border_color(k->border),
-          shadow(lg), text_color(k->text)) {
+      div(key(id("upload-notice")), flex, flex_col, gap(4),
+          w(px(dialog_width())), p(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20))) {
         button();
 
-        text(title, text_size(px(20)), line_height(px(24)),
-             font_weight(semibold), text_color(k->strong));
-        text(body, text_color(k->subtle));
+        dialog_header(k, title, body);
 
-        div(flex, gap(2), flex_shrink_0, mt(4)) {
+        div(flex, justify_end, gap(2), flex_shrink_0) {
           if (action) {
-            *closed |=
-              dialog_button(k, id("upload-notice-cancel"), "Cancel", false);
-            *acted = dialog_button(k, id("upload-notice-act"), action, true);
+            *closed |= form_button(app, id("upload-notice-cancel"), "Cancel",
+                                   BUTTON_OUTLINE, false);
+            *acted = form_button(app, id("upload-notice-act"), action,
+                                 BUTTON_PRIMARY, false);
           }
           else {
-            *closed |= dialog_button(k, id("upload-notice-ok"), "Okay", true);
+            *closed |= form_button(app, id("upload-notice-ok"), "Okay",
+                                   BUTTON_PRIMARY, false);
           }
         }
       }

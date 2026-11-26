@@ -624,10 +624,11 @@ static void drag_follow(Drag *d, Snowflake id, const civue_button_state *state,
   }
 }
 
-// the drag of a list of roles, `inset` the room before its line: the green
-// line where the role goes, and the move once it is let go.
+// the drag of a list of roles, `inset` the room before its line: the line
+// where the role goes, and the move once it is let go.
 static void roles_drop(App *app, ServerUi *ui, Guild *g, Role **roles,
                        const civue_rect *rects, size_t count, float inset) {
+  const Look *k = &app->look;
   civue_ui *cui = civue_ui_current();
   Drag *d = &ui->role_drag;
   size_t from = count, to = count;
@@ -664,7 +665,7 @@ static void roles_drop(App *app, ServerUi *ui, Guild *g, Role **roles,
       civue_rect bar = civue_rect_from(r.x0 + inset, y - 2, r.x1 - 8, y + 2);
 
       civue_shadow(cui, bar, 2, 3, civue_v2(0, 0), rgba(0x00000066));
-      fill(bar, rgb(FORM_GREEN), 2);
+      fill(bar, k->drop, 2);
     }
   }
 
@@ -710,8 +711,8 @@ static void everyone_card(App *app, ServerUi *ui, Guild *g) {
   const Look *k = &app->look;
   bool open = false;
 
-  div(key(id("roles-everyone")), flex, items_center, flex_shrink_0, p(4),
-      pr(6), rounded(lg), bg(rgb(0x242429)), border(1), border_color(k->border),
+  div(key(id("roles-everyone")), flex, items_center, flex_shrink_0, p(4), pr(6),
+      rounded(lg), bg(k->surface), border(1), border_color(k->border),
       text_color(k->subtle), hover(bg(k->hover), text_color(k->strong)),
       cursor_pointer) {
     open = button().activated;
@@ -786,7 +787,7 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
     if (form_button_small(app, id("roles-create"),
                           a->role.status == ADMIN_BUSY ? "Creating..."
                                                        : "Create Role",
-                          BUTTON_BRAND, a->role.status == ADMIN_BUSY)) {
+                          BUTTON_PRIMARY, a->role.status == ADMIN_BUSY)) {
       admin_create_role(app->session, g->id);
     }
   }
@@ -881,8 +882,8 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
 
         div(flex, items_center, justify_end, gap(2), flex_1, ml(4)) {
           div(key(id_at(id("roles-edit"), r->id)), flex, items_center,
-              justify_center, size(8), rounded(full), bg(rgba(0x97979f1f)),
-              hover(bg(rgba(0x97979f29))), text_color(k->strong)) {
+              justify_center, size(8), rounded(full), bg(k->hover),
+              hover(bg(k->pressed)), text_color(k->strong)) {
             open |= button().activated;
 
             if (locked) {
@@ -894,8 +895,8 @@ static void roles_list(App *app, ServerUi *ui, Guild *g) {
           }
 
           div(key(id_at(id("roles-more"), r->id)), flex, items_center,
-              justify_center, size(8), rounded(full), bg(rgba(0x97979f1f)),
-              hover(bg(rgba(0x97979f29))), text_color(k->strong)) {
+              justify_center, size(8), rounded(full), bg(k->hover),
+              hover(bg(k->pressed)), text_color(k->strong)) {
             if (button().activated) {
               ui->role_menu = r->id;
               ui->role_menu_at = here();
@@ -1017,16 +1018,13 @@ static void editor_column(App *app, ServerUi *ui, Guild *g, bool *back) {
   }
 }
 
-static void swatch(civue_id id, uint32_t color, bool on, float w, float h,
+static void swatch(civue_id id, civue_color color, bool on, float w, float h,
                    bool pencil, bool *pressed) {
-  float luminance = (0.299f * (float)((color >> 16) & 0xff) +
-                     0.587f * (float)((color >> 8) & 0xff) +
-                     0.114f * (float)(color & 0xff)) /
-                    255;
-  civue_color mark = luminance > .6f ? rgb(0x000000) : CIVUE_WHITE;
+  float luminance = 0.299f * color.r + 0.587f * color.g + 0.114f * color.b;
+  civue_color mark = luminance > .6f ? CIVUE_BLACK : CIVUE_WHITE;
 
   div(key(id), relative, flex, items_center, justify_center, flex_shrink_0,
-      style(.w = civue_px(w), .h = civue_px(h)), rounded(lg), bg(rgb(color)),
+      style(.w = civue_px(w), .h = civue_px(h)), rounded(lg), bg(color),
       text_color(mark), cursor_pointer) {
     *pressed = button().activated;
 
@@ -1234,8 +1232,8 @@ static void display_tab(App *app, RoleDraft *d, bool editable) {
     form_input(app, id("role-name"), &d->name, "", nullptr, 100);
   }
   else {
-    div(flex, items_center, h(10), px(3), rounded(lg), bg(rgba(0x0000001f)),
-        border(1), border_color(k->border)) {
+    div(flex, items_center, h(10), px(3), rounded(lg), bg(k->field), border(1),
+        border_color(k->border)) {
       text(d->name ? d->name : "", text_color(k->faint));
     }
   }
@@ -1260,7 +1258,7 @@ static void display_tab(App *app, RoleDraft *d, bool editable) {
       preset = preset || SWATCHES[i] == d->color;
     }
 
-    swatch(id("role-color-default"), ROLE_DEFAULT_COLOR, d->color == 0, 66,
+    swatch(id("role-color-default"), rgb(ROLE_DEFAULT_COLOR), d->color == 0, 66,
            50, false, &pressed);
 
     if (pressed && editable) {
@@ -1268,7 +1266,7 @@ static void display_tab(App *app, RoleDraft *d, bool editable) {
     }
 
     div(flex, flex_col) {
-      swatch(id("role-color-custom"), preset ? 0x4e5058 : d->color, !preset,
+      swatch(id("role-color-custom"), preset ? k->rule : rgb(d->color), !preset,
              66, 50, true, &pressed);
       custom = here();
     }
@@ -1283,7 +1281,7 @@ static void display_tab(App *app, RoleDraft *d, bool editable) {
           for (int col = 0; col < 10; col++) {
             uint32_t c = SWATCHES[row * 10 + col];
 
-            swatch(id_at(id("role-swatch"), row * 10 + col), c,
+            swatch(id_at(id("role-swatch"), row * 10 + col), rgb(c),
                    d->color == c, 20, 20, false, &pressed);
 
             if (pressed && editable) {
@@ -1508,7 +1506,7 @@ static void members_tab(App *app, ServerUi *ui, Guild *g, bool editable) {
     }
 
     if (form_button_small(app, id("role-member-add"), "Add Members",
-                          BUTTON_BRAND, !removable)) {
+                          BUTTON_PRIMARY, !removable)) {
       ui->picker_open = true;
       ui->picks.len = 0;
       free(ui->picker_search);
@@ -1521,7 +1519,7 @@ static void members_tab(App *app, ServerUi *ui, Guild *g, bool editable) {
 
   if (total > a->nmembers && a->members_role == ui->role_id) {
     div(flex, items_center, gap(2), flex_shrink_0, mt(4), p(3), rounded(lg),
-        bg(rgba(0x5865f229)), text_color(k->text)) {
+        bg(civue_alpha(k->primary, .16f)), text_color(k->text)) {
       icon(lucide, info, size(5), flex_shrink_0);
       text("Not all members are shown, use Search to find specific members",
            text_size(px(14)), line_height(px(18)));
@@ -1630,7 +1628,7 @@ static void role_editor(App *app, ServerUi *ui, Guild *g) {
           bool on = ui->role_tab == t;
           bool disabled = everyone && t != ROLE_TAB_PERMISSIONS;
           civue_color color = disabled ? k->muted
-                              : on     ? rgb(FORM_TEXT_BRAND)
+                              : on     ? k->accent_text
                                        : k->subtle;
 
           div(key(id_at(id("role-tab"), t)), relative, flex, flex_col,
@@ -1651,8 +1649,7 @@ static void role_editor(App *app, ServerUi *ui, Guild *g) {
 
             if (on || lit) {
               div(absolute, left(0), bottom(px(-2)), w(full), h(px(2)),
-                  rounded_t(px(2)),
-                  bg(on ? rgb(FORM_TEXT_BRAND) : k->strong)) {}
+                  rounded_t(px(2)), bg(on ? k->accent_text : k->strong)) {}
             }
           }
         }
@@ -1715,7 +1712,7 @@ static void role_menu(App *app, ServerUi *ui, Guild *g) {
 
   overlay() {
     div(key(id("role-menu")), flex, flex_col, w(px(200)), left(px(left)),
-        top(px(ui->role_menu_at.y1 + 4)), p(2), rounded(lg), bg(rgb(0x28282d)),
+        top(px(ui->role_menu_at.y1 + 4)), p(2), rounded(lg), bg(k->popover),
         border(1), border_color(k->border), shadow(lg)) {
       card = here();
 
@@ -1846,19 +1843,18 @@ static void member_picker(App *app, ServerUi *ui, Guild *g) {
 
   overlay() {
     div(key(id("picker-shade")), left(0), top(0), w(px(cui->size.x)),
-        h(px(cui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(cui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       close = button().activated;
 
-      div(key(id("picker")), flex, flex_col, w(px(480)), h(px(560)),
-          rounded(xl), bg(k->surface), border(1), border_color(k->border),
-          shadow(lg), text_color(k->text), overflow_hidden) {
+      // a header, a list that scrolls and a foot, each 24 from the edges.
+      div(key(id("picker")), flex, flex_col, w(px(dialog_width())),
+          h(px(560)), rounded(px(DIALOG_RADIUS)), bg(k->dialog), border(1),
+          border_color(k->border), shadow(lg), text_color(k->text),
+          text_size(px(14)), line_height(px(20)), overflow_hidden) {
         button();
 
-        div(flex, flex_col, gap(1), flex_shrink_0, px(6), pt(6), pb(3)) {
-          text("Add members", text_size(px(20)), line_height(px(24)),
-               font_weight(semibold), text_color(k->strong));
-          text(subtitle, mb(3), text_color(k->subtle));
+        div(flex, flex_col, gap(4), flex_shrink_0, px(6), pt(6), pb(4)) {
+          dialog_header(k, "Add members", subtitle);
           form_input(app, id("picker-search"), &ui->picker_search,
                      "Search members", nullptr, 0);
         }
@@ -1889,7 +1885,7 @@ static void member_picker(App *app, ServerUi *ui, Guild *g) {
                 hover(bg(k->selected)), cursor_pointer) {
               bool flip = button().activated;
 
-              avatar(app, u, g->id, 24, false, k->surface);
+              avatar(app, u, g->id, 24, false, k->dialog);
               text(store_display_name(store, g->id, m->user_id), ml(2), mr(1),
                    min_w(0), truncate, text_size(px(14)), line_height(px(18)),
                    text_color(k->strong));
@@ -1920,10 +1916,10 @@ static void member_picker(App *app, ServerUi *ui, Guild *g) {
           }
         }
 
-        div(flex, justify_end, gap(2), flex_shrink_0, px(6), py(4)) {
+        div(flex, justify_end, gap(2), flex_shrink_0, px(6), pt(4), pb(6)) {
           close |= form_button(app, id("picker-cancel"), "Cancel",
-                               BUTTON_SECONDARY, false);
-          add = form_button(app, id("picker-add"), "Add", BUTTON_BRAND,
+                               BUTTON_OUTLINE, false);
+          add = form_button(app, id("picker-add"), "Add", BUTTON_PRIMARY,
                             ui->picks.len == 0 || ui->picks.len > ADD_MOST);
         }
       }

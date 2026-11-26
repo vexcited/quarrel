@@ -1380,7 +1380,7 @@ static void row_icon(App *app, const Row *r) {
   switch (r->icon) {
     case COMPLETE_ICON_USER:
       avatar(app, store_user(store, r->id), here ? here->guild_id : 0, 24,
-             false, k->surface_high);
+             false, k->popover);
       break;
     case COMPLETE_ICON_EMOJI:
       div(flex, items_center, justify_center, size(6), flex_shrink_0) {
@@ -1589,7 +1589,7 @@ void complete_popup(App *app, Channel *c, civue_rect box) {
   overlay() {
     div(key(id("complete")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(width)), h(px(height)), rounded(lg),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_hidden) {
       // a press on the card is not one on what is behind it.
       button();

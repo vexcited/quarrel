@@ -7,6 +7,7 @@
 
 #include "alerts.h"
 #include "cues.h"
+#include "forms.h"
 #include "voice/camera.h"
 #include "voice/devices.h"
 #include "voice/mictest.h"
@@ -27,9 +28,12 @@ constexpr float DIALOG_MAX = 1400;
 constexpr float FULL_UNDER = 1080;
 constexpr float WIDE_OVER = 1600;
 constexpr float STACK_UNDER = 800;
-constexpr float SIDEBAR = 240;
+constexpr float SIDEBAR = 256;
 constexpr float PAGE_MAX = 696;
-constexpr float ROW = 40;
+// a select and a button, as shadcn's: 36 tall.
+constexpr float ROW = 36;
+// a row of the list a select opens.
+constexpr float OPTION = 32;
 // what the camera shows before it films.
 constexpr float PREVIEW = 220;
 
@@ -50,52 +54,51 @@ static const char *const PAGE_NAMES[] = {
 /* the sidebar.                                                               */
 /* ========================================================================== */
 
+// a row of the sidebar as shadcn's settings draw theirs: a ghost button 36
+// tall, 12 to the sides, a 16 point icon 8 before 14 point text. the
+// destructive one is red and reddens under the pointer.
 static bool nav_item(App *app, civue_id id, civue_icon icon, const char *label,
-                     bool active, civue_color color) {
+                     bool active, bool destructive) {
   const Look *k = &app->look;
+  civue_color ink = destructive ? k->critical_text : k->text;
+  civue_color lit = destructive ? civue_alpha(k->danger, .2f) : k->hover;
   bool pressed = false;
 
-  div(key(id), flex, items_center, gap(2), flex_shrink_0, p(1), rounded(lg),
-      text_color(active ? k->strong : color),
-      style(.bg = active ? k->selected : CIVUE_CLEAR),
-      hover(bg(active ? k->selected : k->hover), text_color(k->strong)),
-      cursor_pointer) {
+  div(key(id), flex, items_center, gap(2), flex_shrink_0, h(9), px(3),
+      rounded(lg), text_color(ink), text_size(px(14)), line_height(px(20)),
+      font_weight(medium), style(.bg = active ? k->selected : CIVUE_CLEAR),
+      hover(bg(active ? k->selected : lit)), cursor_pointer) {
     pressed = button().activated;
 
     civue_node_icon(civue_ui_current(), icon,
-                    &CIVUE_NODE_STYLE(.w = civue_px(20), .h = civue_px(20),
+                    &CIVUE_NODE_STYLE(.w = civue_px(16), .h = civue_px(16),
                                       .shrink = 0, .has_shrink = true));
-    text(label, flex_1, min_w(0), truncate, font_weight(medium));
+    text(label, flex_1, min_w(0), truncate);
   }
 
   return pressed;
 }
 
-// the parts of the page under its item, by a line whose lit stretch says
-// which one shows. the part pressed, -1 for none.
+// the parts of the page under its item, as shadcn's sub menus: 14 in, a
+// line at their left and rows 28 tall. the part pressed, -1 for none.
 static int subnav(App *app) {
   const Look *k = &app->look;
   int pressed = -1;
 
-  div(flex, gap(px(13)), flex_shrink_0, ml(px(13)), py(1)) {
-    div(relative, w(px(2)), flex_shrink_0, rounded(full), bg(k->border)) {
-      div(absolute, left(0), top(px((float)app->settings_part * 32)), w(px(2)),
-          h(5), rounded(full), bg(k->strong)) {}
-    }
+  div(flex, flex_col, gap(1), flex_shrink_0, mx(px(14)), px(px(10)),
+      py(px(2)), border_l(1), border_color(k->border)) {
+    for (int part = 0; part < PARTS; part++) {
+      bool active = app->settings_part == part;
 
-    div(flex, flex_col, gap(3), flex_1, min_w(0)) {
-      for (int part = 0; part < PARTS; part++) {
-        bool active = app->settings_part == part;
-
-        div(key(id_at(id("settings-part"), part)), flex, items_center, h(5),
-            text_color(active ? k->strong : k->faint),
-            hover(text_color(k->strong)), cursor_pointer) {
-          if (button().activated) {
-            pressed = part;
-          }
-
-          text(PART_NAMES[part], truncate);
+      div(key(id_at(id("settings-part"), part)), flex, items_center, h(7),
+          px(2), rounded(lg), text_size(px(14)), line_height(px(20)),
+          text_color(k->text), style(.bg = active ? k->selected : CIVUE_CLEAR),
+          hover(bg(active ? k->selected : k->hover)), cursor_pointer) {
+        if (button().activated) {
+          pressed = part;
         }
+
+        text(PART_NAMES[part], truncate);
       }
     }
   }
@@ -103,9 +106,24 @@ static int subnav(App *app) {
   return pressed;
 }
 
+// opens `page`. what the voice page was testing stops once it is left.
+static void open_page(App *app, SettingsPage page) {
+  if (app->settings_page == SETTINGS_VOICE && page != SETTINGS_VOICE) {
+    app->settings_select = -1;
+    mictest_stop();
+    camera_stop();
+  }
+
+  app->settings_page = page;
+}
+
+// the label of a group of rows, shadcn's: 32 tall, 12 point, the text's
+// color at 70 percent.
 static void section_label(const Look *k, const char *label) {
-  text(label, flex_shrink_0, mx(2), mt(2), mb(1), text_size(px(12)),
-       line_height(px(16)), font_weight(medium), text_color(k->faint));
+  div(flex, items_center, flex_shrink_0, h(8), px(2)) {
+    text(label, truncate, text_size(px(12)), line_height(px(16)),
+         font_weight(medium), text_color(civue_alpha(k->text, .7f)));
+  }
 }
 
 // the part asked for and whether to log out.
@@ -114,27 +132,35 @@ static int sidebar(App *app, bool *leave) {
   const Store *store = app->session->store;
   int part = -1;
 
-  div(flex, flex_col, flex_shrink_0, w(px(SIDEBAR)), h(full), pt(4), pl(3),
-      bg(k->frame), border_r(1), border_color(k->border)) {
-    div(flex, items_center, gap(3), flex_shrink_0, pl(1), pr(4), pb(2)) {
-      avatar(app, store->self, 0, 40, false, k->frame);
-      text(store_user_name(store->self), flex_1, min_w(0), truncate,
-           font_weight(semibold), text_color(k->strong));
+  div(flex, flex_col, flex_shrink_0, w(px(SIDEBAR)), h(full), bg(k->frame),
+      border_r(1), border_color(k->border)) {
+    // shadcn's header: a large row of 48, the avatar 32 beside two lines.
+    div(flex, items_center, gap(2), flex_shrink_0, h(12), m(2), px(2)) {
+      avatar(app, store->self, 0, 32, false, k->frame);
+
+      div(flex, flex_col, flex_1, min_w(0)) {
+        text(store_user_name(store->self), truncate, text_size(px(14)),
+             line_height(px(20)), font_weight(semibold),
+             text_color(k->strong));
+        text("User Settings", truncate, text_size(px(12)),
+             line_height(px(16)), text_color(k->subtle));
+      }
     }
 
-    div(key(id("settings-nav")), flex, flex_col, gap(4), flex_1, min_h(0),
-        overflow_y_scroll, scrollbars(&app->thin_bars), pt(3), pb(4), pl(1),
-        pr(3)) {
-      div(flex, flex_col, gap(1), flex_shrink_0, pb(1), border_b(1),
-          border_color(k->border)) {
-        bool voice = app->settings_page == SETTINGS_VOICE;
+    div(flex_shrink_0, h(px(1)), mx(2), bg(k->border)) {}
+
+    div(key(id("settings-nav")), flex, flex_col, flex_1, min_h(0),
+        overflow_y_scroll, scrollbars(&app->thin_bars), p(2)) {
+      div(flex, flex_col, gap(1), flex_shrink_0) {
+        SettingsPage now = app->settings_page;
+        bool voice = now == SETTINGS_VOICE;
 
         section_label(k, "Experience");
 
         if (nav_item(app, id("settings-voice"), CIVUE_ICON(lucide, mic),
-                     PAGE_NAMES[SETTINGS_VOICE], voice, k->subtle) &&
+                     PAGE_NAMES[SETTINGS_VOICE], voice, false) &&
             !voice) {
-          app->settings_page = SETTINGS_VOICE;
+          open_page(app, SETTINGS_VOICE);
           part = PART_VOICE;
         }
 
@@ -146,20 +172,17 @@ static int sidebar(App *app, bool *leave) {
 
         if (nav_item(app, id("settings-notifications"),
                      CIVUE_ICON(lucide, bell),
-                     PAGE_NAMES[SETTINGS_NOTIFICATIONS], !voice, k->subtle) &&
-            voice) {
-          // what the page left was testing stops with it.
-          app->settings_page = SETTINGS_NOTIFICATIONS;
-          app->settings_select = -1;
-          mictest_stop();
-          camera_stop();
+                     PAGE_NAMES[SETTINGS_NOTIFICATIONS],
+                     now == SETTINGS_NOTIFICATIONS, false)) {
+          open_page(app, SETTINGS_NOTIFICATIONS);
         }
       }
 
+      div(flex_shrink_0, h(px(1)), my(2), mx(2), bg(k->border)) {}
+
       div(flex, flex_col, gap(1), flex_shrink_0) {
         *leave = nav_item(app, id("settings-logout"),
-                          CIVUE_ICON(lucide, log_out), "Log Out", false,
-                          k->critical_text);
+                          CIVUE_ICON(lucide, log_out), "Log Out", false, true);
       }
     }
   }
@@ -177,7 +200,7 @@ static void heading(const Look *k, const char *label) {
 }
 
 static void field_label(const Look *k, const char *name) {
-  text(name, flex_shrink_0, mb(2), font_weight(medium), text_color(k->strong));
+  form_label(k, name);
 }
 
 // the name a box shows for what is picked of a kind.
@@ -207,8 +230,9 @@ static void select_box(App *app, AudioKind kind) {
   picked_name(app, kind, name, sizeof name);
 
   div(key(id_at(id("settings-select"), kind)), flex, items_center, gap(2),
-      flex_shrink_0, h(px(ROW)), px(3), rounded(lg), bg(k->input), border(1),
-      border_color(open ? k->brand : k->border_strong), cursor_pointer) {
+      flex_shrink_0, h(px(ROW)), px(3), rounded(lg), bg(k->field), border(1),
+      border_color(open ? k->ring : k->border_strong), text_size(px(14)),
+      line_height(px(20)), cursor_pointer) {
     if (open) {
       app->settings_select_rect = here();
     }
@@ -219,12 +243,10 @@ static void select_box(App *app, AudioKind kind) {
     }
 
     if (kind == AUDIO_CAMERAS) {
-      icon(lucide, camera, size(px(18)), flex_shrink_0,
-           text_color(k->subtle));
+      icon(lucide, camera, size(4), flex_shrink_0, text_color(k->subtle));
     }
 
-    text(name, flex_1, min_w(0), truncate, font_weight(medium),
-         text_color(k->strong));
+    text(name, flex_1, min_w(0), truncate, text_color(k->strong));
 
     if (open) {
       icon(lucide, chevron_up, size(4), flex_shrink_0, text_color(k->subtle));
@@ -241,24 +263,19 @@ static bool option(App *app, civue_id id, const char *name, bool camera,
   const Look *k = &app->look;
   bool pressed = false;
 
-  div(key(id), flex, items_center, gap(2), flex_shrink_0, h(px(ROW)), px(2),
-      rounded(lg), style(.bg = on ? k->selected : CIVUE_CLEAR),
+  div(key(id), flex, items_center, gap(2), flex_shrink_0, h(px(OPTION)),
+      px(2), rounded(md), text_size(px(14)), line_height(px(20)),
       hover(bg(k->hover)), cursor_pointer) {
     pressed = button().activated;
 
     if (camera) {
-      icon(lucide, camera, size(px(18)), flex_shrink_0,
-           text_color(k->subtle));
+      icon(lucide, camera, size(4), flex_shrink_0, text_color(k->subtle));
     }
 
-    text(name, flex_1, min_w(0), truncate, font_weight(medium),
-         text_color(k->strong));
+    text(name, flex_1, min_w(0), truncate, text_color(k->strong));
 
     if (on) {
-      div(flex, items_center, justify_center, size(5), flex_shrink_0,
-          rounded(full), bg(k->brand), text_color(CIVUE_WHITE)) {
-        icon(lucide, check, size(px(14)));
-      }
+      icon(lucide, check, size(4), flex_shrink_0, text_color(k->strong));
     }
   }
 
@@ -279,7 +296,7 @@ static void select_list(App *app) {
   bool standard = kind != AUDIO_CAMERAS;
   size_t count = app->ndevices[kind];
   int current = device_picked(app, kind);
-  float height = 10 + ROW * (float)(count + (standard ? 1 : 0));
+  float height = 10 + OPTION * (float)(count + (standard ? 1 : 0));
   float top = (float)box.y1 + 4;
   bool chosen = false;
   char name[160];
@@ -291,9 +308,8 @@ static void select_list(App *app) {
 
   overlay() {
     div(key(id("settings-options")), flex, flex_col, left(px(box.x0)),
-        top(px(top)), w(px(box.x1 - box.x0)), p(1), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg)) {
+        top(px(top)), w(px(box.x1 - box.x0)), p(1), rounded(lg),
+        bg(k->popover), border(1), border_color(k->border), shadow(md)) {
       list = here();
 
       if (standard) {
@@ -369,8 +385,8 @@ static void volume_field(App *app, bool input, bool *let_go) {
     }                                                  \
   }
 
-// the microphone's loudness as thin bars, the lit ones going from orange
-// to green along the row.
+// the microphone's loudness as thin bars, the lit ones going from the
+// theme's warning to its positive along the row.
 static void test_meter(App *app, float level) {
   const Look *k = &app->look;
   civue_rect r = here();
@@ -378,7 +394,7 @@ static void test_meter(App *app, float level) {
   // on a scale of decibels: 60 of them.
   float decibels = level > 0 ? 20 * log10f(level) : -100;
   int lit = (int)((decibels + 60) / 60 * (float)bars);
-  civue_color low = rgba(0xf2a640ff), high = rgba(0x86d17bff);
+  civue_color low = k->warning, high = k->positive_text;
 
   for (int i = 0; i < bars; i++) {
     double x = r.x0 + i * 8;
@@ -408,26 +424,22 @@ static float mic_test(App *app) {
   div(flex, items_start, gap(4), flex_shrink_0, mb(6)) {
     // a call has the microphone, and shows how loud it is by itself.
     if (!calling) {
-      div(key(id("mic-test")), flex, items_center, justify_center, h(px(ROW)),
-          px(4), flex_shrink_0, rounded(lg), bg(k->brand),
-          hover(bg(k->brand_hover)), active(bg(k->brand_active)),
-          text_color(CIVUE_WHITE), cursor_pointer) {
-        if (button().activated) {
-          if (running) {
-            mictest_stop();
-          }
-          else {
-            mictest_start(civue_window_wake);
-          }
+      if (form_button(app, id("mic-test"),
+                      !running   ? "Mic Test"
+                      : starting ? "Starting..."
+                                 : "Stop Testing",
+                      BUTTON_PRIMARY, false)) {
+        if (running) {
+          mictest_stop();
         }
-
-        text(!running ? "Mic Test" : starting ? "Starting..." : "Stop Testing",
-             font_weight(medium));
+        else {
+          mictest_start(civue_window_wake);
+        }
       }
     }
 
     div(flex, flex_col, flex_1, min_w(0)) {
-      div(flex_shrink_0, h(6), my(2)) {
+      div(flex_shrink_0, h(6), my(px(6))) {
         test_meter(app, level);
       }
 
@@ -461,21 +473,22 @@ static bool profile(App *app, civue_id id, const char *name, const char *about,
   const Look *k = &app->look;
   bool pressed = false;
 
-  div(key(id), flex, gap(3), flex_shrink_0, cursor_pointer) {
+  // shadcn's radio: 16 across with a dot of 8, 12 before its label.
+  div(key(id), flex, items_start, gap(3), flex_shrink_0, text_size(px(14)),
+      line_height(px(20)), cursor_pointer) {
     pressed = button().activated;
 
-    div(flex, items_center, justify_center, size(6), flex_shrink_0,
-        rounded(full), border(2), style(.bg = on ? k->brand : CIVUE_CLEAR),
-        border_color(on ? k->brand : k->border_strong)) {
+    div(flex, items_center, justify_center, size(4), flex_shrink_0, mt(px(2)),
+        rounded(full), border(1), bg(k->field),
+        border_color(on ? k->primary : k->border_strong)) {
       if (on) {
-        div(size(px(8)), rounded(full), bg(k->chat)) {}
+        div(size(2), rounded(full), bg(k->primary)) {}
       }
     }
 
-    div(flex, flex_col, gap(1), flex_1, min_w(0), pt(px(2))) {
+    div(flex, flex_col, gap(px(2)), flex_1, min_w(0)) {
       text(name, font_weight(medium), text_color(k->strong));
-      text(about, text_size(px(14)), line_height(px(18)),
-           text_color(k->subtle));
+      text(about, text_color(k->subtle));
     }
   }
 
@@ -511,15 +524,11 @@ static void input_profile(App *app) {
   }
 
   if (now == PROFILE_STUDIO && AUDIO_HAS_MODES) {
-    div(key(id("mic-modes")), flex, items_center, justify_center, self_start,
-        h(8), px(3), ml(9), mt(3), flex_shrink_0, rounded(lg),
-        bg(k->surface_high), hover(bg(k->hover)), text_color(k->strong),
-        cursor_pointer) {
-      if (button().activated) {
+    div(flex, flex_shrink_0, ml(7), mt(3)) {
+      if (form_button_small(app, id("mic-modes"), "Open Mic Mode",
+                            BUTTON_OUTLINE, false)) {
         audio_show_modes();
       }
-
-      text("Open Mic Mode", text_size(px(14)), font_weight(medium));
     }
   }
 }
@@ -541,13 +550,7 @@ static bool switch_box(App *app, civue_id id, const char *name,
       }
     }
 
-    div(key(id), relative, w(10), h(6), flex_shrink_0, rounded(full),
-        style(.bg = on ? k->brand : k->border_strong), cursor_pointer) {
-      pressed = button().activated;
-
-      div(absolute, top(px(3)), left(px(on ? 19 : 3)), size(px(18)),
-          rounded(full), bg(CIVUE_WHITE)) {}
-    }
+    pressed = form_switch(app, id, on, false);
   }
 
   return pressed;
@@ -609,7 +612,7 @@ static void sensitivity_slider(App *app, float level) {
   const Look *k = &app->look;
   float value = devices_sensitivity();
   float decibels = level > 0 ? fmaxf(20 * log10f(level), -100) : -100;
-  civue_color quiet = rgba(0xf2a640ff), sent = k->positive;
+  civue_color quiet = k->warning, sent = k->positive;
   char line[64];
 
   div(key(id("settings-sensitivity")), flex_shrink_0, h(6), mx(2), px(2)) {
@@ -639,7 +642,7 @@ static void sensitivity_slider(App *app, float level) {
       fill(civue_rect_from(x, mid - 3, heard, mid + 3), sent, 3);
     }
 
-    fill(civue_rect_from(x - 8, mid - 8, x + 8, mid + 8), CIVUE_WHITE, 8);
+    fill(civue_rect_from(x - 8, mid - 8, x + 8, mid + 8), k->strong, 8);
   }
 
   snprintf(line, sizeof line, "Sends what is louder than %.0f dB.",
@@ -670,21 +673,25 @@ static void noise_row(App *app) {
            text_color(k->subtle));
     }
 
-    div(flex, gap(1), flex_shrink_0, p(1), rounded(lg), bg(k->input),
-        border(1), border_color(k->border_strong)) {
+    // shadcn's tabs: a muted list 36 tall, 3 of padding, the active one on
+    // a field's ground and edge.
+    div(flex, items_center, flex_shrink_0, h(9), p(px(3)), rounded(lg),
+        bg(k->surface_high)) {
       for (int i = 0; i < NOISES; i++) {
         bool on = now == i;
 
         div(key(id_at(id("settings-noise"), i)), flex, items_center,
-            justify_center, h(8), px(3), rounded(md),
-            style(.bg = on ? k->brand : CIVUE_CLEAR),
-            text_color(on ? CIVUE_WHITE : k->subtle),
-            hover(text_color(on ? CIVUE_WHITE : k->strong)), cursor_pointer) {
+            justify_center, h(full), px(2), rounded(lg), border(1),
+            border_color(on ? k->border_strong : CIVUE_CLEAR),
+            style(.bg = on ? k->field : CIVUE_CLEAR),
+            text_color(on ? k->strong : k->subtle), hover(text_color(k->strong)),
+            text_size(px(14)), line_height(px(20)), font_weight(medium),
+            cursor_pointer) {
           if (button().activated && !on) {
             devices_set_noise((VoiceNoise)i);
           }
 
-          text(NAMES[i], text_size(px(14)), font_weight(medium));
+          text(NAMES[i], whitespace_nowrap);
         }
       }
     }
@@ -721,17 +728,7 @@ static void custom_input(App *app, float level) {
 }
 
 static bool video_button(App *app, civue_id id, const char *label) {
-  const Look *k = &app->look;
-  bool pressed = false;
-
-  div(key(id), flex, items_center, justify_center, h(px(ROW)), px(4),
-      flex_shrink_0, rounded(lg), bg(k->brand), hover(bg(k->brand_hover)),
-      active(bg(k->brand_active)), text_color(CIVUE_WHITE), cursor_pointer) {
-    pressed = button().activated;
-    text(label, font_weight(medium));
-  }
-
-  return pressed;
+  return form_button(app, id, label, BUTTON_PRIMARY, false);
 }
 
 // what the camera picked sees, in a box as wide as the page, `wide`.
@@ -914,7 +911,7 @@ void settings_dialog(App *app) {
   overlay() {
     div(key(id("settings-backdrop")), left(0), top(0), w(px(width)),
         h(px(height)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        bg(k->scrim)) {
       close = button().activated && !listing;
 
       div(key(id("settings")), flex, w(px(wide)), h(px(tall)), bg(k->frame),

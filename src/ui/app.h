@@ -125,6 +125,8 @@ typedef struct {
   // the roster's current one, taken at the start of each frame.
   Session *session;
   civue_images *images;
+  // the theme kept in the preferences, and its colors.
+  Theme theme;
   Look look;
   civue_scrollbar_look bars, thin_bars;
 

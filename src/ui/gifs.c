@@ -27,7 +27,6 @@ constexpr double SEARCH_REST = 0.25;
 constexpr float AHEAD = 240;
 constexpr double PLAYER_KEEP = 1;
 constexpr uint32_t PLAYERS_MAX = 24;
-constexpr uint32_t STAR_COLOR = 0xf0b232;
 
 #define PROVIDER_KEY "gif_provider"
 
@@ -299,8 +298,7 @@ static bool star(App *app, civue_id id, bool starred, bool shown) {
       justify_center, p(px(6)), rounded(px(5)), bg(k->surface_high),
       cursor_pointer) {
     civue_button_state state = button();
-    civue_color color = starred || state.response.hovered ? rgb(STAR_COLOR)
-                                                           : k->text;
+    civue_color color = starred || state.response.hovered ? k->star : k->subtle;
 
     pressed = state.activated;
 
@@ -363,7 +361,7 @@ static bool front_tile(App *app, civue_id id, Spot s, const char *still,
       cursor_pointer) {
     civue_button_state state = button();
     bool over = state.response.hovered;
-    civue_color veil = kind == TILE_FAVORITES ? civue_alpha(k->brand, .8f)
+    civue_color veil = kind == TILE_FAVORITES ? civue_alpha(k->primary, .8f)
                        : over                 ? rgba(0x000000a8)
                                               : rgba(0x00000080);
 
@@ -375,7 +373,7 @@ static bool front_tile(App *app, civue_id id, Spot s, const char *still,
 
     div(absolute, left(0), top(0), w(full), h(full), flex, items_center,
         justify_center, gap(1), px(2), rounded(px(5)), bg(veil),
-        text_color(CIVUE_WHITE),
+        text_color(kind == TILE_FAVORITES ? k->on_primary : CIVUE_WHITE),
         border(over ? 1 : 0), border_color(k->border_strong)) {
       if (kind == TILE_FAVORITES) {
         icon(lucide, star, size(5), flex_shrink_0);
@@ -496,8 +494,8 @@ static void results(App *app, const Channel *c, civue_id list,
     note(app, g->error);
 
     div(key(id("gif-retry")), flex_shrink_0, self_center, px(4), py(2),
-        rounded(lg), bg(k->brand), hover(bg(k->brand_hover)),
-        text_size(px(14)), font_weight(medium), text_color(CIVUE_WHITE),
+        rounded(lg), bg(k->primary), hover(bg(k->primary_hover)),
+        text_size(px(14)), font_weight(medium), text_color(k->on_primary),
         cursor_pointer) {
       if (button().activated) {
         gifs_search(g, query);
@@ -863,7 +861,7 @@ void gif_picker(App *app, Channel *c) {
   overlay() {
     div(key(id("gif-picker")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(width)), h(px(height)), pt(4), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_hidden) {
       card = here();
 

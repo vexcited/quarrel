@@ -209,17 +209,17 @@ static void tab(App *app, FriendsTab which, const char *label) {
   }
 }
 
-// the client's tab in the brand's color, light while it is open.
+// the client's tab in the primary color, light while it is open.
 static void add_friend_tab(App *app) {
   const Look *k = &app->look;
   bool on = app->friends_tab == FRIENDS_ADD;
-  civue_color ground = on ? civue_alpha(k->brand, .16f) : k->brand;
+  civue_color ground = on ? civue_alpha(k->primary, .16f) : k->primary;
 
   div(key(id_at(id("friends-tab"), FRIENDS_ADD)), flex, items_center,
       flex_shrink_0, h(8), px(3), rounded(lg), font_weight(medium),
-      text_color(on ? k->brand_text : CIVUE_WHITE), style(.bg = ground),
-      hover(bg(on ? ground : k->brand_hover)),
-      active(bg(on ? ground : k->brand_active)), cursor_pointer) {
+      text_color(on ? k->accent_text : k->on_primary), style(.bg = ground),
+      hover(bg(on ? ground : k->primary_hover)),
+      active(bg(on ? ground : k->primary_active)), cursor_pointer) {
     if (button().activated) {
       app->friends_tab = FRIENDS_ADD;
     }
@@ -303,20 +303,21 @@ static civue_field_look bare_field(const Look *k) {
     .idle = box,
     .hovered = box,
     .placeholder = k->muted,
-    .selection = civue_alpha(k->brand, .45f),
+    .selection = k->selection,
   };
 }
 
 static bool send_button(const Look *k, bool enabled) {
   bool pressed = false;
-  civue_color ground = enabled ? k->brand : civue_alpha(k->brand, .5f);
+  civue_color ground = enabled ? k->primary : civue_alpha(k->primary, .5f);
 
   div(key(id("add-friend-send")), flex, items_center, justify_center,
       flex_shrink_0, h(8), px(3), rounded(lg), bg(ground),
-      text_color(enabled ? CIVUE_WHITE : civue_alpha(CIVUE_WHITE, .5f)),
+      text_color(enabled ? k->on_primary
+                         : civue_alpha(k->on_primary, .5f)),
       text_size(px(14)), line_height(px(16)), font_weight(medium),
-      style(.hover = {.bg = k->brand_hover, .has_bg = enabled},
-            .active = {.bg = k->brand_active, .has_bg = enabled},
+      style(.hover = {.bg = k->primary_hover, .has_bg = enabled},
+            .active = {.bg = k->primary_active, .has_bg = enabled},
             .cursor = enabled ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
             .has_cursor = true)) {
     pressed = button().activated && enabled;
@@ -404,7 +405,7 @@ static void add_friend(App *app) {
 
   civue_color edge = sent                  ? k->online
                      : failed              ? k->critical_text
-                     : app->friend_focused ? k->link
+                     : app->friend_focused ? k->ring
                                            : k->border_strong;
   size_t length = note_length(app->friend_note);
   char left[8];
@@ -422,7 +423,7 @@ static void add_friend(App *app) {
            text_color(k->text));
 
       div(flex, flex_col, mt(4), px(3), rounded(px(16)),
-          bg(failed ? civue_alpha(k->danger, .04f) : rgba(0x00000014)),
+          bg(failed ? civue_alpha(k->danger, .04f) : k->field),
           border(1), border_color(edge)) {
         div(flex, items_center, gap(4), py(px(2))) {
           div(key(tag_id), flex_1, min_w(0), h(px(40)), text_size(px(16)),
@@ -567,7 +568,7 @@ static void live_badge(const Look *k) {
   div(flex, items_center, flex_shrink_0, h(4), px(1), rounded(full),
       bg(k->danger)) {
     text("LIVE", px(1), text_size(px(12)), line_height(px(16)),
-         font_weight(bold), text_color(CIVUE_WHITE));
+         font_weight(bold), text_color(k->on_danger));
   }
 }
 

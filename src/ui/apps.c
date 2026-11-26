@@ -440,9 +440,9 @@ static uint32_t pager(App *app, civue_id id, uint32_t page, uint32_t pages) {
 
       div(key(id_at(id, shown[i])), flex, items_center, justify_center,
           min_w(8), h(8), px(1), rounded(full),
-          style(.bg = on ? k->brand : CIVUE_CLEAR),
-          hover(bg(on ? k->brand : k->hover)),
-          text_color(on ? CIVUE_WHITE : k->text), cursor_pointer) {
+          style(.bg = on ? k->primary : CIVUE_CLEAR),
+          hover(bg(on ? k->primary : k->hover)),
+          text_color(on ? k->on_primary : k->text), cursor_pointer) {
         if (button().activated && !on) {
           asked = shown[i];
         }
@@ -1053,7 +1053,7 @@ static void data_access(App *app, const DirectoryApp *d) {
         text("All apps can access a set of baseline data. Please visit the");
 
         div(key(id("apps-help")), text_color(k->link),
-            hover(text_color(k->brand_hover)), cursor_pointer) {
+            hover(text_color(k->primary_hover)), cursor_pointer) {
           // the article the client's link opens.
           if (button().activated) {
             civue_open_url("https://support.discord.com/hc/en-us/articles/"
@@ -1072,7 +1072,7 @@ static void data_access(App *app, const DirectoryApp *d) {
                "the developer's");
 
           div(key(id("apps-privacy")), text_color(k->link),
-              hover(text_color(k->brand_hover)), cursor_pointer) {
+              hover(text_color(k->primary_hover)), cursor_pointer) {
             if (button().activated) {
               civue_open_url(d->privacy_url);
             }
@@ -1155,7 +1155,7 @@ static void support_server(App *app, const AppGuild *g) {
           glyph(CIVUE_ICON(lucide, badge_check), 16, k->positive);
         }
         else if (g->partnered) {
-          glyph(CIVUE_ICON(lucide, badge_check), 16, k->brand_text);
+          glyph(CIVUE_ICON(lucide, badge_check), 16, k->accent_text);
         }
 
         text(g->name, min_w(0), truncate, text_size(px(14)),
@@ -1469,7 +1469,7 @@ static void app_page(App *app, Apps *a, Snowflake id) {
         }
 
         div(flex, items_center, gap(2), flex_shrink_0) {
-          if (form_button(app, id("apps-add"), "Add App", BUTTON_BRAND,
+          if (form_button(app, id("apps-add"), "Add App", BUTTON_PRIMARY,
                           !app_installs(d))) {
             install(app, d);
           }

@@ -35,6 +35,10 @@ void tag_chip(App *app, const User *u);
 void mention_badge(const Look *k, uint32_t count);
 // every mention waiting in the store.
 uint32_t mentions_of(Store *store);
+// a triangle 10 wide and 5 deep from the edge of the tooltip `box` that
+// faces `anchor`, as shadcn's tooltips point.
+void tooltip_arrow(civue_rect box, civue_rect anchor, civue_tooltip_side side,
+                   civue_color color);
 // a label by what answered `resp` after a moment of hover.
 void hint(App *app, civue_id id, const civue_response *resp, const char *label,
           civue_tooltip_side side);
@@ -47,10 +51,6 @@ bool icon_button(App *app, civue_id id, civue_icon icon, float size,
 // a row of a menu, 40 points high, true when pressed.
 bool menu_row(App *app, civue_id id, civue_icon icon, const char *label,
               civue_color color);
-// a button of a dialog's foot, as wide as it may be, true when pressed. the
-// primary one is the brand's.
-bool dialog_button(const Look *k, civue_id id, const char *label,
-                   bool primary);
 [[gnu::const]] civue_icon activity_icon(ActivityType type);
 civue_field_look field_look(const Look *k);
 civue_scrollbar_look scrollbars_of(App *app, float size);

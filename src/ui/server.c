@@ -357,15 +357,14 @@ static bool nav_item(App *app, civue_id id, const char *label, bool active,
   bool pressed = false;
   civue_color color = destructive ? k->critical_text : k->subtle;
 
-  div(key(id), flex, items_center, flex_shrink_0, h(8), px(px(10)),
-      mb(px(2)), rounded(md),
-      text_color(active ? k->strong : color),
+  div(key(id), flex, items_center, flex_shrink_0, h(8), px(px(10)), mb(px(2)),
+      rounded(md), text_color(active ? k->strong : color),
       style(.bg = active ? k->selected : CIVUE_CLEAR),
-      hover(bg(destructive ? rgba(0xd22d3914)
+      hover(bg(destructive ? civue_alpha(k->danger, .08f)
                : active    ? k->selected
                            : k->hover),
             text_color(destructive ? k->critical_text : k->strong)),
-      active(bg(destructive ? rgba(0xd22d3914) : k->selected)),
+      active(bg(destructive ? civue_alpha(k->danger, .08f) : k->selected)),
       style(.cursor = active ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
             .has_cursor = true)) {
     pressed = button().activated;
@@ -382,8 +381,7 @@ static void nav_header(const Look *k, const char *label, bool first) {
 }
 
 static void nav_separator(const Look *k) {
-  (void)k;
-  div(flex_shrink_0, h(px(1)), mx(px(10)), my(2), bg(rgba(0x97979f1f))) {}
+  div(flex_shrink_0, h(px(1)), mx(px(10)), my(2), bg(k->border)) {}
 }
 
 typedef struct {
@@ -569,7 +567,7 @@ static void profile_preview(App *app, const Guild *g, const GuildDraft *d) {
 
   div(flex, flex_col, w(px(300)), flex_shrink_0, rounded(xl), bg(k->frame),
       border(1), border_color(k->border), overflow_hidden) {
-    div(flex_shrink_0, h(px(90)), bg(k->brand)) {}
+    div(flex_shrink_0, h(px(90)), bg(k->banner)) {}
 
     div(flex, flex_col, gap(2), px(4), pb(4), mt(px(-36))) {
       div(flex, items_center, justify_center, size(px(72)), flex_shrink_0,
@@ -643,7 +641,7 @@ static void profile_page(App *app, ServerUi *ui, Guild *g, float wide) {
 
       div(flex, gap(2), flex_shrink_0) {
         if (form_button_small(app, id("profile-icon"), "Change Server Icon",
-                              BUTTON_BRAND, !editable) &&
+                              BUTTON_PRIMARY, !editable) &&
             pick_image(&d->icon_path)) {
           d->icon_removed = false;
         }
@@ -827,9 +825,8 @@ static void perk_section(App *app, civue_id id, const char *title,
            text_color(k->subtle));
 
       div(flex, mt(4)) {
-        pick = form_button_small(app, id_in(id, "upload"),
-                                 "Upload Background", BUTTON_BRAND,
-                                 !unlocked || !editable);
+        pick = form_button_small(app, id_in(id, "upload"), "Upload Background",
+                                 BUTTON_PRIMARY, !unlocked || !editable);
       }
 
       if (!unlocked) {
@@ -840,7 +837,7 @@ static void perk_section(App *app, civue_id id, const char *title,
     div(flex, flex_col, items_center, flex_1, min_w(0)) {
       div(key(id), relative, flex, items_center, justify_center, w(full),
           h(px(180)), rounded(lg), overflow_hidden,
-          bg(unlocked ? rgb(0x7e4ee3) : rgb(0x4e5058)),
+          bg(unlocked ? k->primary : k->rule),
           style(.cursor = unlocked && editable ? CIVUE_CURSOR_POINTER
                                                : CIVUE_CURSOR_DEFAULT,
                 .has_cursor = true)) {
@@ -1106,12 +1103,12 @@ static void community_landing(App *app, ServerUi *ui, Guild *g) {
      "Get direct updates about new features built for communities from "
      "Discord."},
   };
-  static const uint32_t TINTS[] = {0x3d9e60, 0x5865f2, 0xdc4247};
+  civue_color tints[] = {k->online, k->primary, k->dnd};
 
   div(flex, flex_col, items_center, flex_shrink_0, text_center) {
     div(flex, items_center, justify_center, w(full), h(px(204)), mb(5)) {
       div(flex, items_center, justify_center, size(px(120)), rounded(full),
-          bg(k->chat), text_color(k->brand)) {
+          bg(k->chat), text_color(k->primary)) {
         icon(lucide, house, size(px(64)));
       }
     }
@@ -1127,7 +1124,7 @@ static void community_landing(App *app, ServerUi *ui, Guild *g) {
       civue_button_state state = {};
 
       if (form_button(app, id("community-start"), "Enable Community",
-                      BUTTON_BRAND, !admin)) {
+                      BUTTON_PRIMARY, !admin)) {
         ui->community_open = true;
         ui->community_step = COMMUNITY_INTRO;
         ui->community_rules = 1;
@@ -1157,7 +1154,7 @@ static void community_landing(App *app, ServerUi *ui, Guild *g) {
       for (size_t i = 0; i < 3; i++) {
         div(flex, flex_col, p(4), rounded(lg), bg(k->chat), text_left) {
           div(flex, items_center, justify_center, size(10), rounded(full),
-              bg(k->frame), text_color(rgb(TINTS[i]))) {
+              bg(k->frame), text_color(tints[i])) {
             if (i == 2) {
               icon(lucide, info, size(6));
             }
@@ -1322,13 +1319,12 @@ static void community_enable(App *app, ServerUi *ui, Guild *g) {
 // a line of a checklist, with discord's green check before it.
 static void check_item(const Look *k, const char *title, const char *about) {
   div(flex, items_start, gap(2), flex_shrink_0) {
-    icon(lucide, circle_check, size(5), flex_shrink_0, mt(px(1)),
+    icon(lucide, circle_check, size(4), flex_shrink_0, mt(px(2)),
          text_color(k->online));
 
     div(flex, flex_col, gap(1), flex_1, min_w(0)) {
       text(title, font_weight(medium), text_color(k->strong));
-      text(about, text_size(px(14)), line_height(px(18)),
-           text_color(k->subtle));
+      text(about, text_color(k->subtle));
     }
   }
 }
@@ -1380,7 +1376,7 @@ static void risky_table(const Look *k, Permissions everyone) {
 
           div(flex, items_center, gap(2)) {
             div(size(px(6)), rounded(full), flex_shrink_0,
-                bg(enabled ? k->idle : rgba(0x97979f14))) {}
+                bg(enabled ? k->idle : k->hover)) {}
             text(NAMES[i].name, text_size(px(14)), line_height(px(18)),
                  text_color(k->text));
           }
@@ -1443,18 +1439,22 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
 
   overlay() {
     div(key(id("community-shade")), left(0), top(0), w(px(cui->size.x)),
-        h(px(cui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(cui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       close = button().activated && !busy;
 
-      div(key(id("community-dialog")), flex, flex_col, w(px(480)),
-          rounded(xl), bg(k->surface), border(1), border_color(k->border),
-          shadow(lg), text_color(k->text), overflow_hidden) {
+      // a banner or the progress at its top, then what the step asks and
+      // its foot, 24 from the edges and 16 apart.
+      div(key(id("community-dialog")), flex, flex_col, gap(4),
+          w(px(dialog_width())), pb(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20)),
+          overflow_hidden) {
         button();
 
         if (step == COMMUNITY_INTRO) {
-          div(flex, items_center, justify_center, h(px(140)),
-              bg(rgb(0x1e6b45)), text_color(CIVUE_WHITE)) {
+          div(flex, items_center, justify_center, h(px(140)), mb(2),
+              rounded_t(px(DIALOG_RADIUS)), bg(k->positive),
+              text_color(k->on_positive)) {
             icon(lucide, house, size(px(64)));
           }
         }
@@ -1469,30 +1469,26 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
 
               fill(civue_rect_from(bar.x0, bar.y0,
                                    bar.x0 + (bar.x1 - bar.x0) * done, bar.y1),
-                   k->brand, 2);
+                   k->primary, 2);
             }
           }
         }
 
-        div(flex, flex_col, gap(2), p(6)) {
+        div(flex, flex_col, gap(4), px(6)) {
           switch (step) {
             case COMMUNITY_INTRO:
-              text("Enable Community", text_size(px(20)), line_height(px(24)),
-                   font_weight(semibold), text_color(k->strong));
-              text("Community Servers are larger spaces built around shared "
-                   "interests. Enabling Community requires setting up safety "
-                   "settings, an Updates channel, and moderation settings.",
-                   text_color(k->subtle));
+              dialog_header(k, "Enable Community",
+                            "Community Servers are larger spaces built around "
+                            "shared interests. Enabling Community requires "
+                            "setting up safety settings, an Updates channel, "
+                            "and moderation settings.");
               break;
             case COMMUNITY_SAFETY:
-              text("Keep your community safe", text_size(px(20)),
-                   line_height(px(24)), font_weight(semibold),
-                   text_color(k->strong));
-              text("To ensure user safety, Community Servers must have the "
-                   "following moderation settings enabled.",
-                   text_color(k->subtle));
+              dialog_header(k, "Keep your community safe",
+                            "To ensure user safety, Community Servers must "
+                            "have the following moderation settings enabled.");
 
-              div(flex, flex_col, gap(3), mt(4)) {
+              div(flex, flex_col, gap(3)) {
                 if (g->verification_level == VERIFICATION_NONE) {
                   check_item(k, "Verified email required",
                              "To minimize spam, members of the server must "
@@ -1511,19 +1507,16 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
               }
               break;
             case COMMUNITY_BASICS:
-              text("Set up the basics", text_size(px(20)), line_height(px(24)),
-                   font_weight(semibold), text_color(k->strong));
-              text("Tell us which channel has your server rules and which "
-                   "channel we should send announcements to!",
-                   text_color(k->subtle));
+              dialog_header(k, "Set up the basics",
+                            "Tell us which channel has your server rules and "
+                            "which channel we should send announcements to!");
 
-              div(flex, flex_col, gap(4), mt(4)) {
+              div(flex, flex_col, gap(4)) {
                 div(flex, flex_col) {
                   form_label(k, "Rules or Guidelines Channel");
                   text("Optionally select a channel for your server rules or "
                        "guidelines, or choose None.",
-                       mb(2), text_size(px(14)), line_height(px(18)),
-                       text_color(k->subtle));
+                       mb(2), text_color(k->subtle));
                   community_channel(app, ui, id("community-dialog-rules"), g,
                                     &ui->community_rules);
                 }
@@ -1534,8 +1527,7 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
                        "updates for Community admins and moderators. As some "
                        "info might be sensitive, we recommend selecting a "
                        "role-restricted channel.",
-                       mb(2), text_size(px(14)), line_height(px(18)),
-                       text_color(k->subtle));
+                       mb(2), text_color(k->subtle));
                   community_channel(app, ui, id("community-dialog-updates"), g,
                                     &ui->community_updates);
 
@@ -1548,11 +1540,9 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
               }
               break;
             case COMMUNITY_FINISH:
-              text("Update default settings", text_size(px(20)),
-                   line_height(px(24)), font_weight(semibold),
-                   text_color(k->strong));
+              dialog_header(k, "Update default settings", nullptr);
 
-              div(flex, flex_col, gap(3), mt(2)) {
+              div(flex, flex_col, gap(3)) {
                 if (g->default_notifications != NOTIFY_ONLY_MENTIONS) {
                   check_item(k, "Set default settings to Mentions Only",
                              "Because Community Servers tend to have a lot of "
@@ -1574,16 +1564,14 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
               break;
             case COMMUNITY_RULES:
             case COMMUNITY_STEPS:
-              text("One last step", text_size(px(20)), line_height(px(24)),
-                   font_weight(semibold), text_color(k->strong));
+              dialog_header(k, "One last step", nullptr);
 
-              div(flex, flex_col, mt(2)) {
+              div(flex, flex_col) {
                 form_label(k, "Follow the rules");
                 text("By setting your server as a Community Server, you agree "
                      "that your server complies with our Community Server "
                      "Guidelines.",
-                     mb(4), text_size(px(14)), line_height(px(18)),
-                     text_color(k->subtle));
+                     mb(4), text_color(k->subtle));
 
                 div(key(id("community-agree-row")), flex, items_center, gap(2),
                     cursor_pointer) {
@@ -1603,30 +1591,24 @@ static void community_dialog(App *app, ServerUi *ui, Guild *g) {
           }
 
           if (a->save.status == ADMIN_FAILED && a->save.error != nullptr) {
-            text(a->save.error, mt(2), text_size(px(14)), line_height(px(18)),
-                 text_color(k->critical_text));
+            text(a->save.error, text_color(k->critical_text));
           }
         }
 
-        div(flex, items_center, gap(2), flex_shrink_0, px(6), pb(6)) {
+        div(flex, items_center, justify_end, gap(2), flex_shrink_0, px(6)) {
           if (step == COMMUNITY_INTRO) {
-            div(flex_1, flex, flex_col) {
-              close |= form_button(app, id("community-cancel"), "Cancel",
-                                   BUTTON_SECONDARY, false);
-            }
-
-            div(flex_1, flex, flex_col) {
-              next = form_button(app, id("community-next"), primary,
-                                 BUTTON_BRAND, false);
-            }
+            close |= form_button(app, id("community-cancel"), "Cancel",
+                                 BUTTON_OUTLINE, false);
+            next = form_button(app, id("community-next"), primary,
+                               BUTTON_PRIMARY, false);
           }
           else {
             back = form_button(app, id("community-back"), "Back",
-                               BUTTON_SECONDARY, busy);
+                               BUTTON_OUTLINE, busy);
             div(flex_1) {}
             next = form_button(
               app, id("community-next"), busy ? "Enabling..." : primary,
-              BUTTON_BRAND,
+              BUTTON_PRIMARY,
               busy || (step == COMMUNITY_RULES && !ui->community_agreed));
           }
         }
@@ -1785,7 +1767,7 @@ static void emoji_page(App *app, ServerUi *ui, Guild *g) {
 
   div(flex, items_center, gap(4), flex_shrink_0, mt(6), mb(8)) {
     if (form_button_small(app, id("emoji-upload"), "Upload Emoji",
-                          BUTTON_BRAND, a->action.status == ADMIN_BUSY)) {
+                          BUTTON_PRIMARY, a->action.status == ADMIN_BUSY)) {
       emoji_upload(app, ui, g);
     }
 
@@ -2019,41 +2001,37 @@ static void delete_dialog(App *app, ServerUi *ui, Guild *g) {
 
   overlay() {
     div(key(id("delete-guild-shade")), left(0), top(0), w(px(cui->size.x)),
-        h(px(cui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(cui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       close = button().activated && !busy;
 
-      div(key(id("delete-guild")), flex, flex_col, w(px(440)), rounded(xl),
-          bg(k->surface), border(1), border_color(k->border), shadow(lg),
-          text_color(k->text), overflow_hidden) {
+      div(key(id("delete-guild")), flex, flex_col, gap(4),
+          w(px(dialog_width())), p(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20))) {
         button();
 
-        div(flex, flex_col, gap(3), px(6), pt(6), pb(4)) {
-          text(title, truncate, text_size(px(20)), line_height(px(24)),
-               font_weight(semibold), text_color(k->strong));
+        dialog_header(k, title, nullptr);
 
-          div(flex, flex_col, p(3), rounded(md), bg(rgba(0xd22d3929))) {
-            text(body, text_size(px(14)), line_height(px(18)),
-                 text_color(k->strong));
-          }
+        div(flex, flex_col, p(3), rounded(lg),
+            bg(civue_alpha(k->danger, .16f))) {
+          text(body, text_color(k->strong));
+        }
 
-          if (!g->mfa_required) {
-            div(flex, flex_col, mt(2)) {
-              form_label(k, "Enter server name");
-              form_input(app, id("delete-guild-name"), &ui->confirm_text, "",
-                         nullptr, 100);
-            }
-          }
-
-          if (a->leave.error != nullptr) {
-            text(a->leave.error, text_size(px(14)), line_height(px(18)),
-                 text_color(k->critical_text));
+        if (!g->mfa_required) {
+          div(flex, flex_col) {
+            form_label(k, "Enter server name");
+            form_input(app, id("delete-guild-name"), &ui->confirm_text, "",
+                       nullptr, 100);
           }
         }
 
-        div(flex, justify_end, gap(2), flex_shrink_0, px(6), pt(2), pb(4)) {
+        if (a->leave.error != nullptr) {
+          text(a->leave.error, text_color(k->critical_text));
+        }
+
+        div(flex, justify_end, gap(2), flex_shrink_0) {
           close |= form_button(app, id("delete-guild-no"), "Cancel",
-                               BUTTON_SECONDARY, busy);
+                               BUTTON_OUTLINE, busy);
           yes = form_button(app, id("delete-guild-yes"),
                             busy ? "Deleting..." : "Delete Server",
                             BUTTON_DANGER, busy || !typed);

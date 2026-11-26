@@ -8,12 +8,6 @@
 
 #include "widgets.h"
 
-// discord's tokens these controls are drawn with, the dark theme's.
-constexpr uint32_t INPUT_BG = 0x0000001f;
-constexpr uint32_t BUTTON_EDGE = 0xffffff14;
-constexpr uint32_t NOTICE_CRITICAL = 0x4f000f;
-constexpr uint32_t NOTICE_CRITICAL_TEXT = 0xffc0bd;
-
 /* ========================================================================== */
 /* buttons.                                                                   */
 /* ========================================================================== */
@@ -22,52 +16,56 @@ static bool button_of(App *app, civue_id id, const char *label,
                       ButtonKind kind, bool disabled, bool small) {
   const Look *k = &app->look;
   bool pressed = false;
-  civue_color bg = k->brand, over = k->brand_hover, down = k->brand_active;
-  civue_color color = CIVUE_WHITE, edge = rgba(BUTTON_EDGE);
+  civue_color bg = k->primary, over = k->primary_hover;
+  civue_color down = k->primary_active, color = k->on_primary;
+  civue_color edge = CIVUE_CLEAR;
 
   switch (kind) {
     case BUTTON_DANGER:
       bg = k->danger;
-      over = rgb(0xa9232e);
-      down = rgb(0x971d28);
-      break;
-    case BUTTON_GREEN:
-      bg = k->positive;
-      over = rgb(0x006c37);
-      down = rgb(0x005f30);
+      over = k->danger_hover;
+      down = k->danger_active;
+      color = k->on_danger;
       break;
     case BUTTON_SECONDARY:
     case BUTTON_DANGER_SECONDARY:
-      bg = rgba(0x97979f1f);
-      over = rgba(0x97979f29);
-      down = rgba(0x97979f33);
-      edge = rgba(0x97979f0a);
+      bg = k->secondary;
+      over = down = k->secondary_hover;
       color = kind == BUTTON_SECONDARY ? k->strong : k->critical_text;
       break;
+    case BUTTON_OUTLINE:
+      bg = k->field;
+      over = down = k->hover;
+      edge = k->border_strong;
+      color = k->strong;
+      break;
     case BUTTON_LINK:
-      bg = over = down = edge = CIVUE_CLEAR;
+      bg = over = down = CIVUE_CLEAR;
       color = k->text;
       break;
-    case BUTTON_BRAND:
+    case BUTTON_PRIMARY:
       break;
   }
 
+  // shadcn's: half as opaque, the same under the pointer.
   if (disabled) {
-    bg = civue_alpha(bg, bg.a * .5f);
+    bg = civue_alpha(bg, .5f);
     over = down = bg;
-    edge = civue_alpha(edge, edge.a * .5f);
     color = civue_alpha(color, .5f);
+    edge = civue_alpha(edge, .5f);
   }
 
-  div(key(id), flex, items_center, justify_center, flex_shrink_0, border(1),
-      border_color(edge), rounded(lg), bg(bg), hover(bg(over)),
+  // shadcn's default and small sizes: 36 and 32 tall, 16 and 12 to the
+  // sides, 14 point text.
+  div(key(id), flex, items_center, justify_center, flex_shrink_0, rounded(lg),
+      border(1), border_color(edge), bg(bg), hover(bg(over)),
       active(bg(down)), text_color(color), font_weight(medium),
-      style(.h = civue_px(small ? 32 : 40),
-            .min_w = civue_px(kind == BUTTON_LINK ? 0 : small ? 60 : 100),
-            .padding[1] = civue_px(kind == BUTTON_LINK ? 4 : small ? 11 : 15),
-            .padding[3] = civue_px(kind == BUTTON_LINK ? 4 : small ? 11 : 15),
-            .text_size = civue_px(small ? 14 : 16),
-            .line_height = civue_px(18),
+      whitespace_nowrap,
+      style(.h = civue_px(small ? 32 : 36),
+            .padding[1] = civue_px(kind == BUTTON_LINK ? 4 : small ? 12 : 16),
+            .padding[3] = civue_px(kind == BUTTON_LINK ? 4 : small ? 12 : 16),
+            .text_size = civue_px(14),
+            .line_height = civue_px(20),
             .cursor = disabled ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
             .has_cursor = true)) {
     civue_button_state state = button();
@@ -80,7 +78,7 @@ static bool button_of(App *app, civue_id id, const char *label,
       civue_rect r = content();
       double y = (r.y0 + r.y1) / 2 + 9;
 
-      fill(civue_rect_from(r.x0, y, r.x1, y + 1), k->strong, 0);
+      fill(civue_rect_from(r.x0, y, r.x1, y + 1), color, 0);
     }
   }
 
@@ -116,28 +114,22 @@ bool form_switch(App *app, civue_id id, bool on, bool disabled) {
   bool flipped = false;
   // the thumb slides over 300 milliseconds, as discord's does.
   float at = civue_animate(ui, id_in(id, "thumb"), on ? 1 : 0, .3f);
-  civue_color track = mix(rgba(0x0000001f), k->brand, at);
-  civue_color edge = mix(rgba(0x97979f33), rgba(0x97979f1f), at);
+  // shadcn's: the track is a field's when off, the thumb the text's.
+  civue_color track = mix(k->selected, k->primary, at);
+  civue_color thumb = mix(k->strong, k->on_primary, at);
   float fade = disabled ? .5f : 1;
 
-  div(key(id), relative, flex_shrink_0, w(px(48)), h(px(24)), rounded(full),
-      border(1), border_color(civue_alpha(edge, edge.a * fade)),
-      bg(civue_alpha(track, track.a * fade)),
+  // shadcn's: 32 by 18, a thumb of 16.
+  div(key(id), relative, flex_shrink_0, w(px(32)), h(px(18)), rounded(full),
+      bg(civue_alpha(track, fade)),
       style(.cursor = disabled ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
             .has_cursor = true)) {
     civue_button_state state = button();
 
     flipped = state.activated && !disabled;
 
-    if (state.response.hovered && !disabled) {
-      civue_rect r = here();
-
-      civue_stroke(ui, r, at > .5f ? rgba(0x97979f1f) : rgba(0x97979f66), 1,
-                   12);
-    }
-
-    div(absolute, top(px(3)), left(px(3 + 24 * at)), size(px(16)),
-        rounded(full), bg(civue_alpha(CIVUE_WHITE, fade))) {}
+    div(absolute, top(px(1)), left(px(1 + 14 * at)), size(px(16)),
+        rounded(full), bg(civue_alpha(thumb, fade))) {}
   }
 
   return flipped;
@@ -175,9 +167,10 @@ bool form_checkbox(App *app, civue_id id, bool on) {
   const Look *k = &app->look;
   bool pressed = false;
 
-  div(key(id), flex, items_center, justify_center, size(5), flex_shrink_0,
-      rounded(md), border(on ? 0 : 2), border_color(rgba(0x97979fa3)),
-      style(.bg = on ? k->brand : CIVUE_CLEAR), text_color(CIVUE_WHITE),
+  div(key(id), flex, items_center, justify_center, size(4), flex_shrink_0,
+      rounded(px(4)), border(1),
+      border_color(on ? k->primary : k->border_strong),
+      bg(on ? k->primary : k->field), text_color(k->on_primary),
       cursor_pointer) {
     pressed = button().activated;
 
@@ -189,16 +182,32 @@ bool form_checkbox(App *app, civue_id id, bool on) {
   return pressed;
 }
 
-// the round mark of a choice, 20 across.
+float dialog_width(void) {
+  return fminf(DIALOG_WIDTH, (float)civue_ui_current()->size.x - 32);
+}
+
+void dialog_header(const Look *k, const char *title, const char *about) {
+  div(flex, flex_col, gap(2), flex_shrink_0, min_w(0)) {
+    text(title, text_size(px(18)), line_height(px(22)), font_weight(semibold),
+         text_color(k->strong));
+
+    if (about != nullptr) {
+      text(about, text_size(px(14)), line_height(px(20)),
+           text_color(k->subtle));
+    }
+  }
+}
+
+// the round mark of a choice, 16 across as shadcn's.
 static void radio_mark(const Look *k, bool on, bool hovered) {
-  div(flex, items_center, justify_center, size(5), flex_shrink_0,
-      rounded(full), border(2),
-      border_color(on        ? k->brand
-                   : hovered ? rgba(0x97979fcc)
-                             : rgba(0x97979fa3)),
-      style(.bg = on ? k->brand : CIVUE_CLEAR)) {
+  div(flex, items_center, justify_center, size(4), flex_shrink_0, mt(px(2)),
+      rounded(full), border(1),
+      border_color(on        ? k->primary
+                   : hovered ? k->ring
+                             : k->border_strong),
+      bg(k->field)) {
     if (on) {
-      div(size(px(8)), rounded(full), bg(CIVUE_WHITE)) {}
+      div(size(2), rounded(full), bg(k->primary)) {}
     }
   }
 }
@@ -224,11 +233,12 @@ bool form_radio(App *app, civue_id id, const civue_icon *glyph_icon,
           glyph(*glyph_icon, 20, civue_alpha(k->strong, fade));
         }
 
-        text(title, text_color(civue_alpha(k->strong, fade)));
+        text(title, text_size(px(14)), line_height(px(20)),
+             font_weight(medium), text_color(civue_alpha(k->strong, fade)));
       }
 
       if (about != nullptr) {
-        text(about, text_size(px(14)), line_height(px(18)),
+        text(about, text_size(px(14)), line_height(px(20)),
              text_color(civue_alpha(k->subtle, fade)));
       }
     }
@@ -252,11 +262,12 @@ void form_legend(const Look *k, const char *title, const char *about) {
 }
 
 void form_label(const Look *k, const char *title) {
-  text(title, flex_shrink_0, mb(2), font_weight(medium), text_color(k->strong));
+  text(title, flex_shrink_0, mb(2), text_size(px(14)), line_height(px(20)),
+       font_weight(medium), text_color(k->strong));
 }
 
 void form_note(const Look *k, const char *line) {
-  text(line, flex_shrink_0, mt(2), text_size(px(14)), line_height(px(18)),
+  text(line, flex_shrink_0, mt(2), text_size(px(14)), line_height(px(20)),
        text_color(k->subtle));
 }
 
@@ -271,8 +282,7 @@ void form_heading(const Look *k, const char *title, const char *about) {
 }
 
 void form_divider(const Look *k) {
-  (void)k;
-  div(flex_shrink_0, h(px(1)), my(10), bg(rgba(0x97979f70))) {}
+  div(flex_shrink_0, h(px(1)), my(10), bg(k->border)) {}
 }
 
 // cuts `*value` to `most` bytes, never in the middle of a character.
@@ -292,7 +302,7 @@ static void clamp(char **value, size_t most) {
 
 static civue_field_look input_look(const Look *k, float pad) {
   civue_field_box idle = {
-    .bg = rgba(INPUT_BG),
+    .bg = k->field,
     .border = k->border_strong,
     .border_width = 1,
     .radius = 8,
@@ -300,7 +310,7 @@ static civue_field_look input_look(const Look *k, float pad) {
   };
   civue_field_box editing = idle;
 
-  editing.border = k->brand;
+  editing.border = k->ring;
   editing.border_width = 2;
 
   return (civue_field_look){
@@ -308,8 +318,8 @@ static civue_field_look input_look(const Look *k, float pad) {
     .editing = editing,
     .idle = idle,
     .hovered = idle,
-    .placeholder = rgb(0x8f9097),
-    .selection = civue_alpha(k->brand, .45f),
+    .placeholder = k->muted,
+    .selection = k->selection,
   };
 }
 
@@ -320,14 +330,15 @@ civue_field_response form_input(App *app, civue_id id, char **value,
   civue_field_response r = {};
   civue_field_look look = input_look(k, prefix != nullptr ? 32 : 12);
 
-  div(relative, flex, items_center, flex_shrink_0, h(10)) {
-    div(key(id), flex_1, min_w(0), h(full), text_size(px(16)),
+  // shadcn's: 36 tall, 12 to the sides, 14 point text.
+  div(relative, flex, items_center, flex_shrink_0, h(9)) {
+    div(key(id), flex_1, min_w(0), h(full), text_size(px(14)),
         line_height(px(20))) {
       r = text_field(value, placeholder, look);
     }
 
     if (prefix != nullptr) {
-      text(prefix, absolute, left(px(12)), top(px(10)), text_size(px(16)),
+      text(prefix, absolute, left(px(12)), top(px(8)), text_size(px(14)),
            line_height(px(20)), text_color(k->subtle));
     }
   }
@@ -352,8 +363,8 @@ civue_field_response form_area(App *app, civue_id id, char **value,
   civue_ui *ui = civue_ui_current();
   civue_field_response r = {};
 
-  div(key(id), flex_shrink_0, text_size(px(16)), line_height(px(20)),
-      style(.h = civue_px(24 + 20 * (float)lines))) {
+  div(key(id), flex_shrink_0, text_size(px(14)), line_height(px(20)),
+      style(.h = civue_px(16 + 20 * (float)lines))) {
     r = civue_text_area(ui, id, here(), value, placeholder,
                         civue_node_text_style(ui), input_look(k, 12));
   }
@@ -392,11 +403,12 @@ int form_select(App *app, Dropdown *d, civue_id id, const char *const *names,
     d->chosen_for = 0;
   }
 
-  div(key(id), flex, items_center, gap(1), flex_shrink_0, h(10), pl(3),
-      pr(2), rounded(lg), bg(civue_alpha(rgba(INPUT_BG), fade * .12f)),
+  div(key(id), flex, items_center, gap(2), flex_shrink_0, h(9), px(3),
+      rounded(lg), text_size(px(14)), line_height(px(20)),
+      bg(civue_alpha(k->field, fade)),
       border(open ? 2 : 1),
-      border_color(open ? k->brand
-                        : civue_alpha(k->border_strong, .2f * fade)),
+      border_color(open ? k->ring
+                        : civue_alpha(k->border_strong, fade)),
       style(.cursor = disabled ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
             .has_cursor = true)) {
     if (open) {
@@ -420,15 +432,15 @@ int form_select(App *app, Dropdown *d, civue_id id, const char *const *names,
     }
 
     text(shown != nullptr ? shown : "", flex_1, min_w(0), truncate,
-         text_color(civue_alpha(picked ? k->text : rgb(0x8f9097), fade)));
+         text_color(civue_alpha(picked ? k->text : k->muted, fade)));
 
     if (open) {
-      icon(lucide, chevron_up, size(5), flex_shrink_0,
-           text_color(civue_alpha(k->strong, fade)));
+      icon(lucide, chevron_up, size(4), flex_shrink_0,
+           text_color(civue_alpha(k->subtle, fade)));
     }
     else {
-      icon(lucide, chevron_down, size(5), flex_shrink_0,
-           text_color(civue_alpha(k->strong, fade)));
+      icon(lucide, chevron_down, size(4), flex_shrink_0,
+           text_color(civue_alpha(k->subtle, fade)));
     }
   }
 
@@ -446,7 +458,8 @@ void form_dropdowns(App *app, Dropdown *d) {
   }
 
   civue_rect box = d->box;
-  float row = 40;
+  // shadcn's rows: 6 above and under a line of 20.
+  float row = 32;
   float most = fminf(ui->size.y * .5f, 10 + row * 8);
   float height = fminf(10 + row * (float)d->count, most);
   float top = (float)box.y1 + 4;
@@ -459,8 +472,9 @@ void form_dropdowns(App *app, Dropdown *d) {
   overlay() {
     div(key(id_in(d->open, "list")), flex, flex_col, left(px(box.x0)),
         top(px(top)), w(px(box.x1 - box.x0)), style(.h = civue_px(height)),
-        p(1), rounded(lg), bg(rgb(0x28282d)), border(1),
-        border_color(k->border), shadow(lg), overflow_y_scroll,
+        p(1), rounded(lg), bg(k->popover), border(1),
+        border_color(k->border), shadow(md), overflow_y_scroll,
+        text_size(px(14)), line_height(px(20)),
         scrollbars(&app->thin_bars)) {
       list = here();
       button();
@@ -469,8 +483,8 @@ void form_dropdowns(App *app, Dropdown *d) {
         bool on = (int)i == d->current;
 
         div(key(id_at(id_in(d->open, "option"), i)), flex, items_center,
-            gap(2), flex_shrink_0, h(px(row - 2)), px(3), rounded(md),
-            style(.bg = on ? k->hover : CIVUE_CLEAR), hover(bg(k->hover)),
+            gap(2), flex_shrink_0, h(px(row)), px(2), rounded(md),
+            hover(bg(k->hover)),
             cursor_pointer) {
           if (button().activated) {
             chosen = (int)i;
@@ -480,7 +494,7 @@ void form_dropdowns(App *app, Dropdown *d) {
                text_color(on ? k->strong : k->text));
 
           if (on) {
-            icon(lucide, check, size(5), flex_shrink_0, text_color(k->brand));
+            icon(lucide, check, size(4), flex_shrink_0, text_color(k->strong));
           }
         }
       }
@@ -571,10 +585,10 @@ NoticeAction form_notice(App *app, civue_rect region, bool shown, bool saving,
       div(key(id("notice")), flex, items_center, gap(3), left(px(left)),
           top(px(top)), w(px(width)), pl(4), pr(px(10)), py(px(10)),
           rounded(lg),
-          bg(mix(rgb(0x2c2d32), rgb(NOTICE_CRITICAL), flush)), border(1),
-          border_color(mix(k->border, k->critical_text, flush)), shadow(lg),
-          style(.text_color = civue_alpha(mix(CIVUE_WHITE,
-                                              rgb(NOTICE_CRITICAL_TEXT),
+          bg(mix(k->popover, mix(k->popover, k->danger, .3f), flush)),
+          border(1), border_color(mix(k->border_strong, k->critical_text, flush)),
+          shadow(lg),
+          style(.text_color = civue_alpha(mix(k->strong, k->critical_text,
                                               flush),
                                           rise),
                 .has_text_color = true)) {
@@ -593,7 +607,7 @@ NoticeAction form_notice(App *app, civue_rect region, bool shown, bool saving,
 
           if (form_button_small(app, id("notice-save"),
                                 saving ? "Saving..." : "Save Changes",
-                                BUTTON_GREEN, saving)) {
+                                BUTTON_PRIMARY, saving)) {
             action = NOTICE_SAVE;
           }
         }
@@ -617,35 +631,31 @@ int form_confirm(App *app, civue_id id, const char *title, const char *body,
   overlay() {
     div(key(id_in(id, "shade")), left(0), top(0), w(px(ui->size.x)),
         h(px(ui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        bg(k->scrim)) {
       if (button().activated && !busy) {
         answer = -1;
       }
 
-      div(key(id), flex, flex_col, w(px(440)), rounded(xl), bg(k->surface),
-          border(1), border_color(k->border), shadow(lg), text_color(k->text),
-          overflow_hidden) {
+      div(key(id), flex, flex_col, gap(4), w(px(dialog_width())), p(6),
+          rounded(px(DIALOG_RADIUS)), bg(k->dialog), border(1),
+          border_color(k->border), shadow(lg), text_color(k->text)) {
         button();
 
-        div(flex, flex_col, gap(3), px(6), pt(6), pb(4)) {
-          text(title, text_size(px(20)), line_height(px(24)),
-               font_weight(semibold), text_color(k->strong));
-          text(body, text_color(k->subtle));
+        dialog_header(k, title, body);
 
-          if (error != nullptr) {
-            text(error, text_size(px(14)), line_height(px(18)),
-                 text_color(k->critical_text));
-          }
+        if (error != nullptr) {
+          text(error, text_size(px(14)), line_height(px(20)),
+               text_color(k->critical_text));
         }
 
-        div(flex, justify_end, gap(2), flex_shrink_0, px(6), pt(2), pb(4)) {
-          if (form_button(app, id_in(id, "no"), "Cancel", BUTTON_SECONDARY,
+        div(flex, justify_end, gap(2), flex_shrink_0) {
+          if (form_button(app, id_in(id, "no"), "Cancel", BUTTON_OUTLINE,
                           busy)) {
             answer = -1;
           }
 
           if (form_button(app, id_in(id, "yes"), busy ? "Working..." : yes,
-                          danger ? BUTTON_DANGER : BUTTON_BRAND, busy)) {
+                          danger ? BUTTON_DANGER : BUTTON_PRIMARY, busy)) {
             answer = 1;
           }
         }

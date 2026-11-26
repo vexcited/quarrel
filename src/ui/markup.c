@@ -140,10 +140,10 @@ static void paint_piece(Flow *f, const Run *r, const char *s, size_t n,
 
   // a mention lights up as discord's do.
   bool lit = hovered && r->pill && (r->user_id || r->channel_id);
-  civue_color ink = lit ? CIVUE_WHITE : r->color;
+  civue_color ink = lit ? k->on_primary : r->color;
 
   if (r->pill) {
-    fill(civue_rect_inflate(at, 2, -1), lit ? k->brand : r->ground, 4);
+    fill(civue_rect_inflate(at, 2, -1), lit ? k->primary : r->ground, 4);
   }
 
   if (n) {
@@ -154,8 +154,13 @@ static void paint_piece(Flow *f, const Run *r, const char *s, size_t n,
 
   double middle = y + f->line / 2;
 
-  if (r->underline || (hovered && r->url)) {
-    civue_hline(f->ui, x, x + w, middle + st.size * .5, r->color);
+  // a link is underlined as shadcn's are, faintly until the pointer is over
+  // it.
+  if (r->underline || r->url) {
+    float seen = r->underline || hovered ? 1 : .4f;
+
+    civue_hline(f->ui, x, x + w, middle + st.size * .5,
+                civue_alpha(r->color, seen));
   }
 
   if (r->strike) {
@@ -428,7 +433,7 @@ static void code_block(Flow *f, const MdNode *node) {
                          f->width - f->indent, h);
 
     civue_fill_stroke(f->ui, at, k->frame, k->border, 1, 8);
-    civue_draw_text(f->ui, b, point(at.x0 + pad, at.y0 + pad), rgb(0xe4e4e6));
+    civue_draw_text(f->ui, b, point(at.x0 + pad, at.y0 + pad), k->text);
   }
 
   f->y += h + 4;
@@ -614,6 +619,7 @@ static void subtext(Flow *f, const MdNode *node, const Run *r) {
 }
 
 static void quote(Flow *f, const MdNode *node, const Run *r) {
+  const Look *k = &f->app->look;
   float top = f->y, indent = f->indent;
 
   f->indent += 16;
@@ -624,7 +630,7 @@ static void quote(Flow *f, const MdNode *node, const Run *r) {
 
   if (f->paint) {
     fill(xywh(f->origin.x + indent, f->origin.y + top, 4, f->y - top),
-         rgb(0x4f505a), 2);
+         k->rule, 2);
   }
 }
 

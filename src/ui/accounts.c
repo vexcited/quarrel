@@ -98,7 +98,7 @@ static bool status_row(App *app, UserStatus status, const char *label,
 
     div(flex, items_center, justify_center, size(8), flex_shrink_0) {
       div(size(3)) {
-        status_dot(status, here(), k, k->surface_high);
+        status_dot(status, here(), k, k->popover);
       }
     }
 
@@ -135,8 +135,7 @@ static int64_t status_durations(App *app, civue_rect card, civue_rect *box) {
   overlay() {
     div(key(id("status-durations")), flex, flex_col, left(px(card.x1 + 4)),
         top(px(app->status_menu_row.y0 - 8)), w(px(184)), p(2), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg)) {
+        bg(k->popover), border(1), border_color(k->border_strong), shadow(lg)) {
       *box = here();
 
       for (size_t i = 0; i < countof(spans); i++) {
@@ -222,7 +221,7 @@ static void separator(const Look *k) {
 static void profile_banner(App *app, const User *self) {
   const Look *k = &app->look;
   char url[CDN_URL_MAX] = "";
-  civue_color ground = self->has_accent ? rgb(self->accent_color) : k->brand;
+  civue_color ground = self->has_accent ? rgb(self->accent_color) : k->banner;
 
   cdn_banner(url, self->id, self->banner, 640);
 
@@ -246,8 +245,8 @@ static void profile(App *app) {
 
   div(relative, flex, items_center, justify_end, flex_shrink_0, h(10), px(3)) {
     div(absolute, left(px(12)), top(px(-PROFILE_AVATAR / 2 - 4)), p(1),
-        rounded(full), bg(k->surface_high)) {
-      avatar(app, self, 0, PROFILE_AVATAR, true, k->surface_high);
+        rounded(full), bg(k->popover)) {
+      avatar(app, self, 0, PROFILE_AVATAR, true, k->popover);
     }
 
     status_bubble(app, self);
@@ -321,8 +320,8 @@ void account_switcher(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("accounts")), flex, flex_col, left(px(anchor.x0)),
         top(px(anchor.y1 + 6)), w(px(SWITCHER_WIDTH)), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg), overflow_hidden) {
+        bg(k->popover), border(1), border_color(k->border_strong), shadow(lg),
+        overflow_hidden) {
       card = here();
       profile(app);
 

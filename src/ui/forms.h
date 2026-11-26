@@ -4,27 +4,23 @@
 #include "app.h"
 
 /* ========================================================================== */
-/* the controls of discord's settings and dialogs, drawn as its stylesheets   */
-/* draw them.                                                                 */
+/* the controls of the settings and dialogs, laid out as discord's and drawn  */
+/* as shadcn's, in the colors of the theme.                                   */
 /* ========================================================================== */
 
-// discord's green, of drop lines and of its save button.
-constexpr uint32_t FORM_GREEN = 0x3d9e60;
-// --text-brand, of the selected tab.
-constexpr uint32_t FORM_TEXT_BRAND = 0x798df9;
-
 typedef enum : uint8_t {
-  BUTTON_BRAND,
+  BUTTON_PRIMARY,
   BUTTON_DANGER,
-  BUTTON_GREEN,
   BUTTON_SECONDARY,
+  // a field's ground and edge, as the cancel of a dialog.
+  BUTTON_OUTLINE,
   // a gray button with red text.
   BUTTON_DANGER_SECONDARY,
   // text alone, underlined on hover.
   BUTTON_LINK,
 } ButtonKind;
 
-// a button 40 points tall, true when pressed. a disabled one is dimmed and
+// a button 36 points tall, true when pressed. a disabled one is dimmed and
 // never pressed.
 bool form_button(App *app, civue_id id, const char *label, ButtonKind kind,
                  bool disabled);
@@ -32,7 +28,7 @@ bool form_button(App *app, civue_id id, const char *label, ButtonKind kind,
 bool form_button_small(App *app, civue_id id, const char *label,
                        ButtonKind kind, bool disabled);
 
-// a switch 48 by 24, true when flipped.
+// a switch 44 by 24, true when flipped.
 bool form_switch(App *app, civue_id id, bool on, bool disabled);
 // a title and what it does, the switch at the right. true when flipped.
 bool form_switch_row(App *app, civue_id id, const char *title,
@@ -129,8 +125,18 @@ NoticeAction form_notice(App *app, civue_rect region, bool shown, bool saving,
                          const char *error, const Nag *n);
 
 /* ========================================================================== */
-/* dialogs.                                                                   */
+/* dialogs, as shadcn's: 512 wide at most and 16 from the window's sides, 24  */
+/* of padding and their parts 16 apart, the buttons at the right of the foot. */
 /* ========================================================================== */
+
+constexpr float DIALOG_WIDTH = 512;
+constexpr float DIALOG_RADIUS = 10;
+
+// the width of a dialog in this window.
+float dialog_width(void);
+// a dialog's title, 18 points semibold, and what it is about under it in 14
+// muted, when not null.
+void dialog_header(const Look *k, const char *title, const char *about);
 
 // a dialog asking to confirm something that cannot be undone, `danger`
 // for a red button. 1 for yes, -1 for no, 0 while it waits.

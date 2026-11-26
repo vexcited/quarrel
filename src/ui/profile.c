@@ -34,7 +34,6 @@ constexpr float MODAL_CUTOUT = 8;
 
 // discord's default color of a role without one.
 constexpr uint32_t ROLE_DEFAULT = 0x99aab5;
-constexpr uint32_t BANNER_LOADING = 0x111214;
 
 // the colors a profile is drawn in, its theme's or the app's.
 typedef struct {
@@ -256,7 +255,7 @@ static civue_color banner_ground(App *app, const User *u, const Profile *p,
 
   civue_image_info info = civue_images_get(app->images, ui, url, 160);
 
-  return info.color ? rgba(info.color) : rgb(BANNER_LOADING);
+  return info.color ? rgba(info.color) : app->look.frame;
 }
 
 static void banner(App *app, const User *u, const Profile *p, const Paint *c,
@@ -271,7 +270,7 @@ static void banner(App *app, const User *u, const Profile *p, const Paint *c,
 
   div(flex_shrink_0, w(full), h(px(height)), rounded_t(px(radius)),
       overflow_hidden,
-      style(.bg = *url ? rgb(BANNER_LOADING) : ground, .has_bg = true)) {
+      style(.bg = *url ? app->look.frame : ground, .has_bg = true)) {
     if (*url) {
       image_cover(app, url, 0);
     }
@@ -410,9 +409,9 @@ static bool names(App *app, civue_id key, const User *u, const Profile *p,
       text(u->username ? u->username : "", min_w(0), truncate);
 
       if (u->bot) {
-        div(flex_shrink_0, px(px(5)), rounded(sm), bg(app->look.brand)) {
+        div(flex_shrink_0, px(px(5)), rounded(sm), bg(app->look.primary)) {
           text("APP", text_size(px(12)), line_height(px(16)),
-               font_weight(semibold), text_color(CIVUE_WHITE));
+               font_weight(semibold), text_color(app->look.on_primary));
         }
       }
 
@@ -643,7 +642,7 @@ static void card_menu(App *app, const User *u, const Profile *p,
   overlay() {
     div(key(id("profile-menu")), flex, flex_col, left(px(anchor.x1 - 220)),
         top(px(anchor.y1 + 8)), w(px(220)), p(2), rounded(lg),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg)) {
       *card = here();
 
@@ -1051,8 +1050,7 @@ void profile_popout(App *app) {
         card_footer(app, u, p, &c);
       }
 
-      civue_stroke(ui, civue_rect_inflate(card, 1, 1), rgba(0xffffff14), 1,
-                   9);
+      civue_stroke(ui, civue_rect_inflate(card, 1, 1), app->look.border, 1, 9);
     }
   }
 
@@ -1101,14 +1099,18 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
   bool self = u->id == s->store->self_id;
   bool friends = type == RELATIONSHIP_FRIEND || type == RELATIONSHIP_OUTGOING;
   bool message = false, add = false;
+  // a themed profile's button is its own color darkened, under white.
   civue_color primary = c->themed ? mix(c->primary, CIVUE_BLACK, .35f)
-                                  : k->brand;
+                                  : k->primary;
+  civue_color lit =
+    c->themed ? mix(primary, CIVUE_BLACK, .1f) : k->primary_hover;
+  civue_color ink = c->themed ? CIVUE_WHITE : k->on_primary;
 
   div(flex, items_center, gap(2), flex_wrap) {
     if (!self && !friends && !u->bot && type != RELATIONSHIP_BLOCKED) {
       div(key(id("modal-add")), flex, items_center, gap(2), h(8), px(3),
-          rounded(lg), bg(primary), hover(bg(mix(primary, CIVUE_BLACK, .1f))),
-          text_color(CIVUE_WHITE), font_weight(medium), cursor_pointer) {
+          rounded(lg), bg(primary), hover(bg(lit)), text_color(ink),
+          font_weight(medium), cursor_pointer) {
         add = button().activated;
         icon(lucide, user_plus, size(px(16)));
         text(type == RELATIONSHIP_INCOMING ? "Accept" : "Add Friend");
@@ -1130,11 +1132,10 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
           rounded(lg), font_weight(medium),
           style(.bg = self ? civue_alpha(primary, .5f) : primary,
                 .has_bg = true,
-                .text_color = civue_alpha(CIVUE_WHITE, self ? .5f : 1),
+                .text_color = civue_alpha(ink, self ? .5f : 1),
                 .has_text_color = true, .has_cursor = !self,
                 .cursor = CIVUE_CURSOR_POINTER),
-          hover(bg(self ? civue_alpha(primary, .5f)
-                        : mix(primary, CIVUE_BLACK, .1f)))) {
+          hover(bg(self ? civue_alpha(primary, .5f) : lit))) {
         message = button().activated && !self;
         icon(lucide, message_circle, size(px(16)));
         text("Message");
@@ -1299,7 +1300,7 @@ static void modal_roles(App *app, const User *u, const Profile *p,
   free(roles);
 }
 
-static civue_field_look note_look(const Paint *c) {
+static civue_field_look note_look(const Look *k, const Paint *c) {
   civue_field_box box = {.text = c->text, .radius = 4};
   civue_field_box editing = box;
 
@@ -1311,7 +1312,7 @@ static civue_field_look note_look(const Paint *c) {
     .idle = box,
     .hovered = editing,
     .placeholder = c->faint,
-    .selection = rgba(0x5865f273),
+    .selection = k->selection,
   };
 }
 
@@ -1339,7 +1340,7 @@ static void note(App *app, const User *u, const Profile *p, const Paint *c) {
       civue_field_response field =
         civue_text_area(ui, id_in(key, "field"), r, &app->profile_note,
                         "Click to add a note",
-                        civue_node_text_style(ui), note_look(c));
+                        civue_node_text_style(ui), note_look(&app->look, c));
 
       // as discord's, it keeps 256 characters.
       if (field.changed && app->profile_note &&
@@ -1424,7 +1425,7 @@ static void modal_card(App *app, const User *u, const Profile *p,
 static bool tab(App *app, civue_id id, const char *label, bool on,
                 const Paint *c) {
   bool pressed = false;
-  civue_color brand = c->themed ? c->strong : rgb(0x798df9);
+  civue_color mark = c->themed ? c->strong : app->look.accent_text;
 
   div(key(id), relative, flex, flex_col, pb(4), cursor_pointer,
       text_size(px(14)), line_height(px(18)), font_weight(semibold),
@@ -1435,11 +1436,10 @@ static bool tab(App *app, civue_id id, const char *label, bool on,
 
     if (on) {
       div(absolute, left(0), right(0), bottom(px(-1)), h(px(2)),
-          rounded_t(px(2)), bg(brand)) {}
+          rounded_t(px(2)), bg(mark)) {}
     }
   }
 
-  (void)app;
   return pressed;
 }
 
@@ -1712,7 +1712,7 @@ void profile_modal(App *app) {
   overlay() {
     div(key(id("modal-backdrop")), left(0), top(0), w(px(vw)), h(px(vh)),
         flex, items_center, justify_center,
-        bg(civue_alpha(rgba(0x000000b8), eased))) {
+        bg(civue_alpha(k->scrim, eased))) {
       close = button().activated;
 
       div(key(id("modal")), relative, flex, flex_shrink_0,

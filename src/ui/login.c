@@ -37,12 +37,16 @@ static void field_label(const Look *k, const char *label) {
 static bool primary_button(const Look *k, civue_id id, const char *label,
                            bool enabled) {
   bool pressed = false;
-  civue_color ground = enabled ? k->brand : civue_alpha(k->brand, .5f);
+  civue_color ground = enabled ? k->primary : civue_alpha(k->primary, .5f);
+  civue_color ink =
+    enabled ? k->on_primary : civue_alpha(k->on_primary, .5f);
 
-  div(key(id), flex, items_center, justify_center, w(full), h(10), rounded(lg),
-      bg(ground), text_color(CIVUE_WHITE), font_weight(medium),
-      style(.hover = {.bg = k->brand_hover, .has_bg = enabled},
-            .active = {.bg = k->brand_active, .has_bg = enabled},
+  // shadcn's default button as wide as the form: 36 tall, 14 point text.
+  div(key(id), flex, items_center, justify_center, w(full), h(9), px(4),
+      rounded(lg), bg(ground), text_color(ink), text_size(px(14)),
+      line_height(px(20)), font_weight(medium),
+      style(.hover = {.bg = k->primary_hover, .has_bg = enabled},
+            .active = {.bg = k->primary_active, .has_bg = enabled},
             .cursor = enabled ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
             .has_cursor = true)) {
     pressed = button().activated && enabled;
@@ -256,7 +260,7 @@ static void wandering_cubes(const Look *k) {
       double side = 10 * (scales[at] + (scales[at + 1] - scales[at]) * f);
 
       fill(xywh(r.x0 + x + 5 - side / 2, r.y0 + y + 5 - side / 2, side, side),
-           k->brand, 0);
+           k->primary, 0);
     }
 
     civue_request_repaint_after(ui, 1. / 60);
@@ -328,6 +332,7 @@ static void qr_modules(const char *url, civue_rect box) {
       double left = round((x0 + col * cell) * scale) / scale;
       double right = round((x0 + end * cell) * scale) / scale;
 
+      // a code stays black on white whatever the theme, as scanners want it.
       fill(xywh(left, top, right - left, bottom - top), CIVUE_BLACK, 0);
       col = end;
     }
@@ -394,7 +399,7 @@ static void qr_scanned(App *app, const SessionQr *qr) {
   text(line, text_color(k->text), text_center);
 
   div(mt(4)) {
-    div(key(id("qr-restart")), text_color(k->brand), text_size(px(14)),
+    div(key(id("qr-restart")), text_color(k->primary), text_size(px(14)),
         line_height(px(18)), cursor_pointer) {
       if (button().activated) {
         session_qr_restart(app->session);
@@ -434,8 +439,8 @@ static void method_choice(App *app, SessionMfaMethod method, const char *label,
   }
 
   div(key(id_at(id("mfa-method"), method)), px(3), py(1p5), rounded(lg),
-      border(1), border_color(chosen ? k->brand : k->border_strong),
-      style(.bg = chosen ? civue_alpha(k->brand, .2f) : CIVUE_CLEAR),
+      border(1), border_color(chosen ? k->primary : k->border_strong),
+      style(.bg = chosen ? civue_alpha(k->primary, .2f) : CIVUE_CLEAR),
       hover(bg(k->hover)), text_size(px(14)), line_height(px(18)),
       font_weight(medium), cursor_pointer) {
     if (button().activated) {
@@ -629,7 +634,7 @@ void connecting_screen(App *app) {
   div(size(full), flex, flex_col, items_center, justify_center, gap(4),
       bg(k->frame), text_color(k->text), text_size(px(16)),
       line_height(px(20))) {
-    icon(ic, baseline_discord, size(16), text_color(k->brand));
+    icon(ic, baseline_discord, size(16), text_color(k->primary));
     text("Connecting...", font_weight(semibold), text_color(k->strong));
 
     if (app->session->error) {

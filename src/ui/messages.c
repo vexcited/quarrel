@@ -641,7 +641,7 @@ static void embed(App *app, civue_id id, const EmbedView *v,
 
   // the colored edge is the card's own ground, showing left of its content.
   div(flex, w(px(width)), max_w(full), pl(1), rounded(px(4)),
-      bg(plain ? rgb(0x4e4f58) : rgb(e->color)), overflow_hidden) {
+      bg(plain ? k->rule : rgb(e->color)), overflow_hidden) {
     div(flex, flex_col, flex_1, min_w(0), pt(px(2)), pr(4), pb(4), pl(3),
         bg(k->surface_high), border_y(1), border_r(1),
         border_color(k->border)) {
@@ -822,9 +822,9 @@ static void reactions(App *app, const Message *m) {
 
       div(key(id_at(message_key(m), 0x200 + i)), flex, items_center, gap(px(6)),
           h(7), px(px(7)), rounded(lg),
-          bg(r->me ? civue_alpha(k->brand, .24f) : k->hover), border(1),
-          border_color(r->me ? k->brand : CIVUE_CLEAR),
-          hover(border_color(r->me ? k->brand : k->border_strong)),
+          bg(r->me ? civue_alpha(k->primary, .24f) : k->hover), border(1),
+          border_color(r->me ? k->primary : CIVUE_CLEAR),
+          hover(border_color(r->me ? k->primary : k->border_strong)),
           cursor_pointer) {
         if (button().activated) {
           session_react(app->session, m->channel_id, m->id, r->emoji_id,
@@ -858,7 +858,7 @@ static void reply_line(App *app, const Message *m, Snowflake guild_id) {
   div(relative, flex, items_center, gap(1), h(px(18)), mb(1), text_size(px(14)),
       line_height(px(18)), text_color(k->subtle)) {
     div(absolute, left(px(-37)), top(px(8)), w(px(33)), h(px(14)), border_l(2),
-        border_t(2), rounded_tl(px(6)), border_color(rgb(0x4f505a))) {}
+        border_t(2), rounded_tl(px(6)), border_color(k->rule)) {}
 
     if (!to) {
       text("Original message was deleted", italic, text_color(k->muted));
@@ -908,7 +908,7 @@ static void command_line(App *app, const Message *m, Snowflake guild_id) {
   div(relative, flex, items_center, gap(1), h(px(18)), mb(1), text_size(px(14)),
       line_height(px(18)), text_color(k->subtle)) {
     div(absolute, left(px(-37)), top(px(8)), w(px(33)), h(px(14)), border_l(2),
-        border_t(2), rounded_tl(px(6)), border_color(rgb(0x4f505a))) {}
+        border_t(2), rounded_tl(px(6)), border_color(k->rule)) {}
 
     avatar(app, user, guild_id, 16, false, k->chat);
 
@@ -1003,7 +1003,7 @@ static void system_message(App *app, const Channel *c, const Message *m) {
       icon(lucide, pin, size(px(18)), text_color(k->subtle));
     }
     else if (boost) {
-      icon(lucide, gem, size(px(18)), text_color(rgb(0xff73fa)));
+      icon(lucide, gem, size(px(18)), text_color(k->accent_text));
     }
     else {
       icon(lucide, info, size(px(18)), text_color(k->subtle));
@@ -1044,9 +1044,9 @@ static void header(App *app, const Channel *c, const Message *m) {
     }
 
     if (tagged) {
-      div(self_center, flex_shrink_0, px(px(5)), rounded(sm), bg(k->brand)) {
+      div(self_center, flex_shrink_0, px(px(5)), rounded(sm), bg(k->primary)) {
         text("APP", text_size(px(12)), line_height(px(16)),
-             font_weight(semibold), text_color(CIVUE_WHITE));
+             font_weight(semibold), text_color(k->on_primary));
       }
     }
 
@@ -1285,7 +1285,7 @@ static void message(App *app, Channel *c, Message *m, bool head, float width) {
              message_popover_open(app, m);
   bool editing = app->editing && app->editing == m->id;
   civue_color ground = m->mentions_me ? k->mentioned
-                       : editing      ? civue_alpha(k->brand, .12f)
+                       : editing      ? civue_alpha(k->primary, .12f)
                                       : k->message_hover;
   civue_color ink = m->state == MESSAGE_PENDING  ? k->faint
                     : m->state == MESSAGE_FAILED ? k->critical_text
@@ -1348,7 +1348,7 @@ static void divider(const Look *k, const char *label, bool fresh) {
     if (fresh) {
       div(px(1), rounded_l(sm), bg(k->danger)) {
         text("NEW", text_size(px(10)), line_height(px(13)), font_weight(bold),
-             text_color(CIVUE_WHITE));
+             text_color(k->on_danger));
       }
     }
   }

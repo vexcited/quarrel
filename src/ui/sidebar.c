@@ -97,7 +97,7 @@ static void channel_row(App *app, Guild *guild, Channel *c, bool thread) {
   Unread unread = store_channel_unread(store, c);
   bool lit = unread.unread && !unread.muted;
   civue_color color = selected || lit ? k->strong
-                      : unread.muted  ? rgb(0x4f505a)
+                      : unread.muted  ? k->dim
                                       : k->faint;
 
   color = civue_alpha(color, color.a * channel_drag_alpha(app, c));
@@ -325,7 +325,7 @@ static void private_row(App *app, Channel *c) {
       cdn_channel_icon(url, c->id, c->icon, 64);
 
       div(flex, items_center, justify_center, size(8), flex_shrink_0,
-          rounded(full), bg(k->brand), text_color(CIVUE_WHITE)) {
+          rounded(full), bg(k->primary), text_color(k->on_primary)) {
         if (!*url || !image_fill(app, url, 16)) {
           icon(lucide, users, size(4));
         }

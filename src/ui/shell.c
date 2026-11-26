@@ -91,7 +91,7 @@ static void hub_badge(App *app) {
     civue_response hovered = civue_interact(civue_ui_current(), id, here(),
                                             CIVUE_SENSE_HOVER);
 
-    glyph(CIVUE_ICON(lucide, graduation_cap), 11, CIVUE_WHITE);
+    glyph(CIVUE_ICON(lucide, graduation_cap), 11, k->strong);
     hint(app, id, &hovered, "Student Hub", CIVUE_TOOLTIP_BELOW);
   }
 }
@@ -404,9 +404,9 @@ void notice_toast(App *app) {
         left(px(window.x / 2 - width / 2)), top(px(window.y - 16 - 36)),
         w(px(width))) {
       div(flex, items_center, gap(2), max_w(full), px(3), py(2), rounded(lg),
-          bg(k->surface_high), border(1), border_color(k->border_strong),
-          shadow(lg), text_size(px(14)), line_height(px(18)),
-          font_weight(medium), text_color(k->strong)) {
+          bg(k->popover), border(1), border_color(k->border_strong), shadow(lg),
+          text_size(px(14)), line_height(px(18)), font_weight(medium),
+          text_color(k->strong)) {
         if (session->notice_failed) {
           icon(lucide, circle_alert, size(4), flex_shrink_0,
                text_color(k->critical_text));

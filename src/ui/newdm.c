@@ -33,7 +33,7 @@ static bool friend_row(App *app, const User *user, bool picked, bool full) {
       cursor_pointer) {
     pressed = button().activated;
 
-    avatar(app, user, 0, 32, true, k->surface_high);
+    avatar(app, user, 0, 32, true, k->popover);
 
     div(flex, flex_col, flex_1, min_w(0)) {
       text(store_user_name(user), truncate, text_size(px(14)),
@@ -44,7 +44,7 @@ static bool friend_row(App *app, const User *user, bool picked, bool full) {
 
     if (picked) {
       div(flex, items_center, justify_center, size(5), flex_shrink_0,
-          rounded(md), bg(k->brand), text_color(CIVUE_WHITE)) {
+          rounded(md), bg(k->primary), text_color(k->on_primary)) {
         icon(lucide, check, size(px(14)));
       }
     }
@@ -81,7 +81,7 @@ void new_dm(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("new-dm-card")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(CARD_WIDTH)), h(px(height)), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_hidden) {
       div(flex, flex_col, gap(1), flex_shrink_0, px(4), pt(4)) {
         text("New Message", text_size(px(16)), line_height(px(22)),
@@ -128,8 +128,8 @@ void new_dm(App *app, civue_rect anchor) {
         div(key(id("pick-create")), flex, items_center, justify_center, h(9),
             rounded(lg), text_size(px(14)), line_height(px(18)),
             font_weight(medium),
-            style(.bg = ready ? k->brand : k->hover,
-                  .text_color = ready ? CIVUE_WHITE : k->faint,
+            style(.bg = ready ? k->primary : k->hover,
+                  .text_color = ready ? k->on_primary : k->faint,
                   .has_text_color = true,
                   .cursor = ready ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
                   .has_cursor = true)) {

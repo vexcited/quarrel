@@ -516,7 +516,7 @@ static void writing(App *app, Channel *c) {
         .idle = {.text = k->text},
         .hovered = {.text = k->text},
         .placeholder = k->faint,
-        .selection = civue_alpha(k->brand, .45f),
+        .selection = k->selection,
       };
       civue_field_response field = civue_text_area_inlaid(
         ui, id, here(), &app->draft, placeholder, style, look, inlays);

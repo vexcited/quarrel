@@ -14,7 +14,6 @@
 #include "forms.h"
 #include "widgets.h"
 
-constexpr float DIALOG_WIDTH = 480;
 constexpr float ICON = 80;
 
 // the permissions the client's dialog knows, in its order.
@@ -364,12 +363,12 @@ static void step_install(App *app) {
   const Look *k = &app->look;
   AuthorizeUi *au = app->authorize;
 
-  div(flex, flex_col, items_center, gap(2), px(6), pt(8), pb(4)) {
-    text(au->name, text_center, text_size(px(20)), line_height(px(24)),
+  div(flex, flex_col, items_center, gap(2), px(6), pt(6), pb(4)) {
+    text(au->name, text_center, text_size(px(18)), line_height(px(22)),
          font_weight(semibold), text_color(k->strong));
   }
 
-  div(flex, flex_col, gap(2), px(6), pb(6)) {
+  div(flex, flex_col, gap(2), px(6), pb(4)) {
     if (way(app, id("authorize-user"), CIVUE_ICON(lucide, user_plus),
             "Add to My Apps", "Use this app everywhere!")) {
       choose(app, OAUTH_USER);
@@ -393,7 +392,7 @@ static void faces(App *app, const Oauth *o) {
     reaches |= oauth_has_scope(o->scopes, SCOPES[i].scope);
   }
 
-  div(flex, flex_col, items_center, gap(1), px(6), pt(8), pb(4)) {
+  div(flex, flex_col, items_center, gap(1), px(6), pt(6), pb(4)) {
     div(flex, items_center, gap(4), mb(3)) {
       app_icon(app, o->client_id, o->icon, o->name, ICON);
 
@@ -403,15 +402,15 @@ static void faces(App *app, const Oauth *o) {
         }
       }
 
-      avatar(app, self, 0, ICON, false, k->surface);
+      avatar(app, self, 0, ICON, false, k->dialog);
     }
 
     div(flex, items_center, justify_center, gap(1), max_w(full)) {
-      text(o->name, min_w(0), truncate, text_size(px(16)), line_height(px(20)),
+      text(o->name, min_w(0), truncate, text_size(px(18)), line_height(px(22)),
            font_weight(semibold), text_color(k->strong));
 
       if (o->bot_id && o->bot_verified) {
-        glyph(CIVUE_ICON(lucide, badge_check), 16, k->brand_text);
+        glyph(CIVUE_ICON(lucide, badge_check), 16, k->accent_text);
       }
     }
 
@@ -498,8 +497,7 @@ static void servers(App *app, const Oauth *o) {
   }
 
   div(flex, flex_col, gap(2)) {
-    text("Add to server:", text_size(px(14)), line_height(px(18)),
-         font_weight(medium), text_color(k->strong));
+    text("Add to server:", font_weight(medium), text_color(k->strong));
 
     int chosen = form_select(app, &au->servers, id("authorize-server"), names,
                              count, current, "Select a server", o->sending);
@@ -564,7 +562,7 @@ static void details(App *app, const Oauth *o) {
       div(flex, items_center, gap(3), pl(6), text_size(px(12)),
           line_height(px(16)), text_color(k->link)) {
         if (o->privacy_url) {
-          div(key(id("authorize-privacy")), hover(text_color(k->brand_hover)),
+          div(key(id("authorize-privacy")), hover(text_color(k->primary_hover)),
               cursor_pointer) {
             if (button().activated) {
               civue_open_url(o->privacy_url);
@@ -575,7 +573,7 @@ static void details(App *app, const Oauth *o) {
         }
 
         if (o->terms_url) {
-          div(key(id("authorize-terms")), hover(text_color(k->brand_hover)),
+          div(key(id("authorize-terms")), hover(text_color(k->primary_hover)),
               cursor_pointer) {
             if (button().activated) {
               civue_open_url(o->terms_url);
@@ -598,15 +596,14 @@ static void step_permissions(App *app, const Oauth *o) {
   Permissions may = g ? grantable(g) : 0;
   char line[320];
 
-  div(flex, flex_col, gap(4), px(6), pt(6), pb(2), max_h(px(460)),
+  div(flex, flex_col, gap(4), px(6), pt(6), pb(4), max_h(px(460)),
       overflow_y_scroll, scrollbars(&app->thin_bars)) {
     if (o->permissions & may) {
       snprintf(line, sizeof line,
                "Confirm that you want to grant %s the following permissions "
                "on %s:",
                o->name, g ? g->name : "");
-      text(line, text_size(px(14)), line_height(px(18)), font_weight(medium),
-           text_color(k->text));
+      text(line, font_weight(medium), text_color(k->text));
 
       for (size_t i = 0; i < countof(PERMISSIONS); i++) {
         Permissions bit = PERMISSIONS[i].bit;
@@ -635,13 +632,12 @@ static void step_permissions(App *app, const Oauth *o) {
                "%s has also asked for the following permissions, but you "
                "can't grant them:",
                o->name);
-      text(line, text_size(px(14)), line_height(px(18)), font_weight(medium),
-           text_color(k->text));
+      text(line, font_weight(medium), text_color(k->text));
 
       for (size_t i = 0; i < countof(PERMISSIONS); i++) {
         if (o->permissions & ~may & PERMISSIONS[i].bit) {
           div(flex, items_center, gap(3)) {
-            glyph(CIVUE_ICON(lucide, x), 20, k->muted);
+            glyph(CIVUE_ICON(lucide, x), 16, k->muted);
             text(PERMISSIONS[i].name, flex_1, min_w(0), text_color(k->muted));
           }
         }
@@ -732,23 +728,26 @@ void authorize_dialog(App *app) {
   overlay() {
     div(key(id("authorize-shade")), left(0), top(0), w(px(ui->size.x)),
         h(px(ui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        bg(k->scrim)) {
       if (button().activated && !(asking && o->sending)) {
         close = true;
       }
 
-      div(key(id("authorize")), flex, flex_col, w(px(DIALOG_WIDTH)),
-          max_h(px(ui->size.y - 48)), rounded(xl), bg(k->surface), border(1),
-          border_color(k->border), shadow(lg), text_size(px(14)),
-          line_height(px(18)), text_color(k->text), overflow_hidden) {
+      // each step's parts lay their own paddings: 24 from the edges and
+      // 16 apart, as a shadcn dialog's.
+      div(key(id("authorize")), flex, flex_col, w(px(dialog_width())),
+          max_h(px(ui->size.y - 48)), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_size(px(14)), line_height(px(20)), text_color(k->text),
+          overflow_hidden) {
         button();
 
         if (!asking) {
           step_install(app);
 
-          div(flex, justify_end, flex_shrink_0, px(6), pb(4)) {
+          div(flex, justify_end, flex_shrink_0, px(6), pb(6)) {
             close |= form_button(app, id("authorize-cancel"), "Cancel",
-                                 BUTTON_SECONDARY, false);
+                                 BUTTON_OUTLINE, false);
           }
         }
         else if (o->done) {
@@ -764,33 +763,31 @@ void authorize_dialog(App *app) {
                      "%s has been authorized and added to your apps!", o->name);
           }
 
-          div(flex, flex_col, items_center, gap(3), px(6), pt(8), pb(6)) {
+          div(flex, flex_col, items_center, gap(2), px(6), pt(6), pb(4)) {
             glyph(CIVUE_ICON(lucide, circle_check), 48, k->positive);
-            text("Success!", text_size(px(20)), line_height(px(24)),
+            text("Success!", mt(2), text_size(px(18)), line_height(px(22)),
                  font_weight(semibold), text_color(k->strong));
-            text(line, text_center, text_color(k->text));
+            text(line, text_center, text_color(k->subtle));
           }
 
-          div(flex, justify_end, gap(2), flex_shrink_0, px(6), pb(4)) {
+          div(flex, justify_end, gap(2), flex_shrink_0, px(6), pb(6)) {
             close |= form_button(app, id("authorize-close"), "Close",
-                                 BUTTON_SECONDARY, false);
+                                 BUTTON_OUTLINE, false);
 
             if (g && store_guild(app->session->store, g->id)) {
               go = form_button(app, id("authorize-go"), "Go to Server",
-                               BUTTON_BRAND, false);
+                               BUTTON_PRIMARY, false);
             }
           }
         }
         else if (o->error) {
-          div(flex, flex_col, gap(3), px(6), pt(6), pb(4)) {
-            text("Error", text_size(px(20)), line_height(px(24)),
-                 font_weight(semibold), text_color(k->strong));
-            text(o->error, text_color(k->subtle));
+          div(flex, flex_col, px(6), pt(6), pb(4)) {
+            dialog_header(k, "Error", o->error);
           }
 
-          div(flex, justify_end, flex_shrink_0, px(6), pb(4)) {
+          div(flex, justify_end, flex_shrink_0, px(6), pb(6)) {
             close |= form_button(app, id("authorize-close"), "Close",
-                                 BUTTON_SECONDARY, false);
+                                 BUTTON_OUTLINE, false);
           }
         }
         else if (!o->ready) {
@@ -814,7 +811,7 @@ void authorize_dialog(App *app) {
             faces(app, o);
 
             // as tall as what it holds, up to what the window leaves it.
-            div(flex, flex_col, gap(5), flex_shrink_0, px(6), pb(4),
+            div(flex, flex_col, gap(4), flex_shrink_0, px(6), pb(4),
                 max_h(px(fmaxf(160, (float)ui->size.y - 340))),
                 overflow_y_scroll, scrollbars(&app->thin_bars)) {
               scopes(app, o);
@@ -827,27 +824,27 @@ void authorize_dialog(App *app) {
             }
           }
 
-          div(flex, justify_between, gap(2), flex_shrink_0, px(6), pt(3), pb(4),
+          div(flex, justify_between, gap(2), flex_shrink_0, px(6), pt(4), pb(6),
               border_t(1), border_color(k->border)) {
             if (au->step == STEP_PERMISSIONS) {
               back = form_button(app, id("authorize-back"), "Back",
-                                 BUTTON_SECONDARY, o->sending);
+                                 BUTTON_OUTLINE, o->sending);
             }
             else {
               refuse = form_button(app, id("authorize-cancel"), "Cancel",
-                                   BUTTON_SECONDARY, o->sending);
+                                   BUTTON_OUTLINE, o->sending);
             }
 
             if (more) {
               onward = form_button(app, id("authorize-next"), "Continue",
-                                   BUTTON_BRAND, false);
+                                   BUTTON_PRIMARY, false);
             }
             else {
               yes = form_button(app, id("authorize-yes"),
                                 o->sending ? "Authorizing..."
                                 : missing  ? "You missed some fields"
                                            : "Authorize",
-                                BUTTON_BRAND, o->sending || missing);
+                                BUTTON_PRIMARY, o->sending || missing);
             }
           }
         }

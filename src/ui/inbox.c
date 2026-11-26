@@ -229,7 +229,7 @@ static void mention_row(App *app, const SessionMention *m, Snowflake *chosen) {
          font_weight(semibold), text_color(k->subtle));
 
     div(flex, gap(3), min_w(0)) {
-      avatar(app, author, guild_id, 32, false, k->surface_high);
+      avatar(app, author, guild_id, 32, false, k->popover);
 
       div(flex, flex_col, flex_1, min_w(0)) {
         div(flex, items_baseline, gap(2), min_w(0)) {
@@ -331,7 +331,7 @@ static void place_icon(App *app, const Channel *c) {
     cdn_channel_icon(url, c->id, c->icon, 64);
 
     div(flex, items_center, justify_center, size(8), flex_shrink_0,
-        rounded(full), bg(k->brand), text_color(CIVUE_WHITE)) {
+        rounded(full), bg(k->primary), text_color(k->on_primary)) {
       if (!*url || !image_fill(app, url, 16)) {
         icon(lucide, users, size(4));
       }
@@ -341,7 +341,7 @@ static void place_icon(App *app, const Channel *c) {
     const User *user =
       c->nrecipients ? store_user(store, c->recipients[0]) : nullptr;
 
-    avatar(app, user, 0, 32, false, k->surface_high);
+    avatar(app, user, 0, 32, false, k->popover);
   }
 }
 
@@ -512,8 +512,8 @@ static void bookmarks_empty(App *app) {
           // the menu the first message has open.
           if (i == 0) {
             div(absolute, right(4), top(px(16)), flex, flex_col, p(1),
-                rounded(md), bg(k->surface_high), border(1),
-                border_color(k->border), shadow(lg)) {
+                rounded(md), bg(k->popover), border(1), border_color(k->border),
+                shadow(lg)) {
               div(flex, items_center, gap(2), px(2), py(px(6)), rounded(sm),
                   bg(k->hover), text_color(k->strong)) {
                 icon(lucide, bookmark, size(4));
@@ -599,9 +599,9 @@ static void bookmarks(App *app, Snowflake *chosen) {
                    "Something went wrong while asking for them.");
 
         div(key(id("inbox-bookmarks-retry")), self_center, flex, items_center,
-            h(8), px(4), mb(8), rounded(lg), bg(k->brand),
-            hover(bg(k->brand_hover)), text_size(px(14)), line_height(px(18)),
-            font_weight(medium), text_color(CIVUE_WHITE), cursor_pointer) {
+            h(8), px(4), mb(8), rounded(lg), bg(k->primary),
+            hover(bg(k->primary_hover)), text_size(px(14)), line_height(px(18)),
+            font_weight(medium), text_color(k->on_primary), cursor_pointer) {
           if (button().activated) {
             session_fetch_bookmarks(session, true);
           }
@@ -636,7 +636,7 @@ void inbox(App *app, civue_rect anchor) {
 
   overlay() {
     div(key(id("inbox")), flex, flex_col, left(px(card.x0)), top(px(card.y0)),
-        w(px(INBOX_WIDTH)), h(px(height)), rounded(xl), bg(k->surface_high),
+        w(px(INBOX_WIDTH)), h(px(height)), rounded(xl), bg(k->popover),
         border(1), border_color(k->border_strong), shadow(lg),
         overflow_hidden) {
       div(flex, items_center, gap(1), flex_shrink_0, h(12), pl(4), pr(2),

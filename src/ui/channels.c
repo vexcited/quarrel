@@ -208,7 +208,7 @@ static void access_step(App *app, CreateChannel *c, Guild *g) {
           cursor_pointer) {
         bool flip = button().activated;
 
-        avatar(app, u, g->id, 24, false, k->surface);
+        avatar(app, u, g->id, 24, false, k->dialog);
         text(name, min_w(0), truncate, text_size(px(14)),
              text_color(k->strong));
 
@@ -283,42 +283,40 @@ static void create_dialog(App *app, ServerUi *ui) {
 
   overlay() {
     div(key(id("create-shade")), left(0), top(0), w(px(cui->size.x)),
-        h(px(cui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(cui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       close = button().activated && !busy;
 
-      div(key(id("create-dialog")), flex, flex_col, w(px(480)), rounded(xl),
-          bg(k->surface), border(1), border_color(k->border), shadow(lg),
-          text_color(k->text), overflow_hidden) {
+      div(key(id("create-dialog")), flex, flex_col, gap(4),
+          w(px(dialog_width())), p(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20))) {
         button();
 
-        div(flex, items_start, flex_shrink_0, pt(6), px(6), pb(2)) {
-          div(flex, flex_col, gap(1), flex_1, min_w(0)) {
-            text(c->picking    ? "Add members or roles"
-                 : c->category ? "Create Category"
-                               : "Create Channel",
-                 text_size(px(20)), line_height(px(24)), font_weight(semibold),
-                 text_color(k->strong));
-
+        div(flex, items_start, gap(2), flex_shrink_0) {
+          div(flex, flex_col, flex_1, min_w(0)) {
             if (c->picking) {
-              div(flex, items_center, gap(1), text_color(k->subtle)) {
+              dialog_header(k, "Add members or roles", nullptr);
+
+              div(flex, items_center, gap(1), mt(2), text_color(k->subtle)) {
                 glyph(name_icon, 16, k->subtle);
                 text(c->name ? c->name : "", truncate);
               }
             }
-            else if (parent != nullptr && !c->category) {
-              text(subtitle, truncate, text_color(k->subtle));
+            else {
+              dialog_header(k, create_label,
+                            parent != nullptr && !c->category ? subtitle
+                                                              : nullptr);
             }
           }
 
-          if (icon_button(app, id("create-close"), CIVUE_ICON(lucide, x), 28,
-                          20, nullptr) &&
+          if (icon_button(app, id("create-close"), CIVUE_ICON(lucide, x), 24,
+                          16, nullptr) &&
               !busy) {
             close = true;
           }
         }
 
-        div(flex, flex_col, gap(5), px(6), pt(4), pb(2)) {
+        div(flex, flex_col, gap(4)) {
           if (c->picking) {
             access_step(app, c, g);
           }
@@ -327,7 +325,7 @@ static void create_dialog(App *app, ServerUi *ui) {
               div(flex, flex_col) {
                 form_label(k, "Channel Type");
 
-                div(flex, flex_col, gap(4), pt(2), pb(1)) {
+                div(flex, flex_col, gap(3)) {
                   for (size_t i = 0; i < sizeof KINDS / sizeof *KINDS; i++) {
                     civue_icon glyph_icon = kind_icon(KINDS[i].type, false);
 
@@ -357,8 +355,8 @@ static void create_dialog(App *app, ServerUi *ui) {
                   c->category ? nullptr : " ", 100);
 
                 if (!c->category) {
-                  div(absolute, left(px(10)), top(px(10))) {
-                    glyph(name_icon, 20, k->subtle);
+                  div(absolute, left(px(12)), top(px(10))) {
+                    glyph(name_icon, 16, k->subtle);
                   }
                 }
 
@@ -371,7 +369,7 @@ static void create_dialog(App *app, ServerUi *ui) {
 
             if (private_offered) {
               div(flex, items_start, gap(2)) {
-                icon(lucide, lock, size(5), flex_shrink_0,
+                icon(lucide, lock, size(4), flex_shrink_0, mt(px(2)),
                      text_color(k->strong));
 
                 div(flex, flex_col, flex_1, min_w(0)) {
@@ -395,39 +393,39 @@ static void create_dialog(App *app, ServerUi *ui) {
 
           if (a->channel.status == ADMIN_FAILED) {
             div(flex, items_center, gap(2), p(3), rounded(lg),
-                bg(rgba(0xd22d3929)), text_color(k->critical_text)) {
-              icon(lucide, circle_alert, size(5), flex_shrink_0);
+                bg(civue_alpha(k->danger, .16f)),
+                text_color(k->critical_text)) {
+              icon(lucide, circle_alert, size(4), flex_shrink_0);
               text(a->channel.error ? a->channel.error
-                                    : "An error occurred, please try again.",
-                   text_size(px(14)), line_height(px(18)));
+                                    : "An error occurred, please try again.");
             }
           }
         }
 
-        div(flex, flex_wrap, items_center, justify_end, gap(2), flex_shrink_0,
-            px(6), pt(4), pb(4)) {
+        div(flex, flex_wrap, items_center, justify_end, gap(2),
+            flex_shrink_0) {
           if (c->picking) {
-            back = form_button(app, id("create-back"), "Back",
-                               BUTTON_SECONDARY, busy);
+            back = form_button(app, id("create-back"), "Back", BUTTON_OUTLINE,
+                               busy);
             div(flex_1) {}
             create = form_button(app, id("create-go"),
-                                 busy                             ? "Creating..."
+                                 busy                           ? "Creating..."
                                  : c->roles.len || c->users.len ? create_label
-                                                                  : "Skip",
-                                 BUTTON_BRAND, busy);
+                                                                : "Skip",
+                                 BUTTON_PRIMARY, busy);
           }
           else {
             close |= form_button(app, id("create-cancel"), "Cancel",
-                                 BUTTON_SECONDARY, busy);
+                                 BUTTON_OUTLINE, busy);
 
             if (c->private) {
               next |= form_button(app, id("create-next"), "Next",
-                                  BUTTON_BRAND, !named || busy);
+                                  BUTTON_PRIMARY, !named || busy);
             }
             else {
               create |= form_button(app, id("create-go"),
                                     busy ? "Creating..." : create_label,
-                                    BUTTON_BRAND, !named || busy);
+                                    BUTTON_PRIMARY, !named || busy);
             }
           }
         }
@@ -501,7 +499,7 @@ static bool menu_item(App *app, civue_id id, const char *label, bool danger) {
   div(key(id), flex, items_center, flex_shrink_0, h(8), px(2), rounded(md),
       text_size(px(14)), line_height(px(18)), font_weight(medium),
       text_color(danger ? k->critical_text : k->subtle),
-      hover(bg(danger ? rgba(0xd22d3914) : k->hover),
+      hover(bg(danger ? civue_alpha(k->danger, .08f) : k->hover),
             text_color(danger ? k->critical_text : k->strong)),
       cursor_pointer) {
     pressed = button().activated;
@@ -545,7 +543,7 @@ static void channel_menu(App *app, ServerUi *ui) {
 
   overlay() {
     div(key(id("channel-menu")), flex, flex_col, w(px(220)), left(px(left)),
-        top(px(top)), px(2), py(2), rounded(lg), bg(rgb(0x28282d)), border(1),
+        top(px(top)), px(2), py(2), rounded(lg), bg(k->popover), border(1),
         border_color(k->border), shadow(lg)) {
       card = here();
 
@@ -666,39 +664,33 @@ static void edit_dialog(App *app, ServerUi *ui) {
 
   overlay() {
     div(key(id("edit-shade")), left(0), top(0), w(px(cui->size.x)),
-        h(px(cui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        h(px(cui->size.y)), flex, items_center, justify_center, bg(k->scrim)) {
       close = button().activated && !busy;
 
-      div(key(id("edit-dialog")), flex, flex_col, w(px(440)), rounded(xl),
-          bg(k->surface), border(1), border_color(k->border), shadow(lg),
-          text_color(k->text), overflow_hidden) {
+      div(key(id("edit-dialog")), flex, flex_col, gap(4),
+          w(px(dialog_width())), p(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20))) {
         button();
 
-        div(flex, flex_col, gap(4), px(6), pt(6), pb(2)) {
-          text(category ? "Edit Category" : "Edit Channel", text_size(px(20)),
-               line_height(px(24)), font_weight(semibold),
-               text_color(k->strong));
+        dialog_header(k, category ? "Edit Category" : "Edit Channel", nullptr);
 
-          div(flex, flex_col) {
-            form_label(k, category ? "Category Name" : "Channel Name");
-            save = form_input(app, id("edit-name"), &ui->rename, "", nullptr,
-                              100)
-                     .submitted;
-          }
-
-          if (a->channel.status == ADMIN_FAILED && a->channel.error) {
-            text(a->channel.error, text_size(px(14)), line_height(px(18)),
-                 text_color(k->critical_text));
-          }
+        div(flex, flex_col) {
+          form_label(k, category ? "Category Name" : "Channel Name");
+          save = form_input(app, id("edit-name"), &ui->rename, "", nullptr, 100)
+                   .submitted;
         }
 
-        div(flex, justify_end, gap(2), flex_shrink_0, px(6), pt(4), pb(4)) {
+        if (a->channel.status == ADMIN_FAILED && a->channel.error) {
+          text(a->channel.error, text_color(k->critical_text));
+        }
+
+        div(flex, justify_end, gap(2), flex_shrink_0) {
           close |= form_button(app, id("edit-cancel"), "Cancel",
-                               BUTTON_SECONDARY, busy);
+                               BUTTON_OUTLINE, busy);
           save |= form_button(app, id("edit-save"),
                               busy ? "Saving..." : "Save Changes",
-                              BUTTON_GREEN, !named || busy);
+                              BUTTON_PRIMARY, !named || busy);
         }
       }
     }
@@ -1374,6 +1366,7 @@ static Landing landing_of(App *app, size_t s, size_t t) {
 }
 
 void channel_drag_end(App *app, Guild *g) {
+  const Look *k = &app->look;
   civue_ui *cui = civue_ui_current();
   Store *store = app->session->store;
   ServerUi *ui = app->server;
@@ -1430,7 +1423,7 @@ void channel_drag_end(App *app, Guild *g) {
       civue_rect bar = civue_rect_from(r.x0 + 8, line - 2, r.x1, line + 2);
 
       civue_shadow(cui, bar, 2, 3, civue_v2(0, 0), rgba(0x00000066));
-      fill(bar, rgb(FORM_GREEN), 2);
+      fill(bar, k->drop, 2);
     }
 
     // a ghost of the row under the pointer, as a browser drags one.
@@ -1442,11 +1435,11 @@ void channel_drag_end(App *app, Guild *g) {
     snprintf(name, sizeof name, "%s%s",
              bucket_of(dragged) == BUCKET_TEXT ? "# " : "",
              dragged->name ? dragged->name : "");
-    fill(ghost, rgba(0x2c2d32d0), 8);
-    civue_text_in(cui, name, civue_node_text_style(cui),
-                  civue_rect_from(ghost.x0 + 12, ghost.y0, ghost.x1 - 8,
-                                  ghost.y1),
-                  civue_alpha(app->look.strong, .8f), CIVUE_ALIGN_START);
+    fill(ghost, civue_alpha(k->surface_high, .82f), 8);
+    civue_text_in(
+      cui, name, civue_node_text_style(cui),
+      civue_rect_from(ghost.x0 + 12, ghost.y0, ghost.x1 - 8, ghost.y1),
+      civue_alpha(k->strong, .8f), CIVUE_ALIGN_START);
   }
 
   civue_set_cursor(cui, CIVUE_CURSOR_GRABBING);

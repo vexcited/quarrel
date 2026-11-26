@@ -443,7 +443,7 @@ static uint32_t inlay_find(void *, const char *text, uint32_t len, uint32_t at,
 
 // an emoji of unicode as messages draw them, in the system's own glyphs.
 static void unicode_glyph(civue_ui *ui, const char *utf8, size_t len,
-                          civue_rect r) {
+                          civue_rect r, civue_color color) {
   civue_text_style style = civue_style(20, 400, INLINE, 0);
 
   style.emoji = true;
@@ -453,7 +453,7 @@ static void unicode_glyph(civue_ui *ui, const char *utf8, size_t len,
 
   civue_draw_text(ui, block,
                   point(middle.x - block->width / 2, middle.y - INLINE / 2),
-                  CIVUE_WHITE);
+                  color);
 }
 
 static void inlay_paint(civue_ui *ui, void *, const char *text, uint32_t len,
@@ -483,7 +483,7 @@ static void inlay_paint(civue_ui *ui, void *, const char *text, uint32_t len,
   }
 
   if (text[0] != ':') {
-    unicode_glyph(ui, text, len, r);
+    unicode_glyph(ui, text, len, r, app->look.text);
     return;
   }
 
@@ -496,7 +496,8 @@ static void inlay_paint(civue_ui *ui, void *, const char *text, uint32_t len,
     emoji_image(app, cell.custom->emoji->id, cell.custom->emoji->animated, box);
   }
   else {
-    unicode_glyph(ui, cell.unicode->utf8, strlen(cell.unicode->utf8), r);
+    unicode_glyph(ui, cell.unicode->utf8, strlen(cell.unicode->utf8), r,
+                  app->look.text);
   }
 }
 
@@ -866,7 +867,7 @@ static void emoji_cell(App *app, struct EmojiPicker *p, civue_id id,
     if (cell->access != EMOJI_USABLE) {
       div(absolute, left(px((CELL - IMAGE) / 2)), top(px((CELL - IMAGE) / 2)),
           size(px(IMAGE)), flex, items_center, justify_center, rounded(px(2)),
-          bg(veiled ? civue_alpha(k->surface_high, .5f) : rgba(0x00000099))) {
+          bg(veiled ? civue_alpha(k->popover, .5f) : rgba(0x00000099))) {
         if (!veiled) {
           icon(lucide, lock, size(4), text_color(CIVUE_WHITE));
         }
@@ -905,7 +906,7 @@ static void section_title(App *app, struct EmojiPicker *p, const Section *s,
 
   div(key(id_at(id("emoji-title"), s->key)), absolute, left(0), top(px(y)),
       w(full), h(px(TITLE)), flex, items_center, gap(2), pl(2), pr(1),
-      bg(k->surface_high), text_color(k->subtle), hover(text_color(k->strong)),
+      bg(k->popover), text_color(k->subtle), hover(text_color(k->strong)),
       cursor_pointer) {
     if (button().activated) {
       ids_toggle(&p->folded, s->key);
@@ -1039,9 +1040,10 @@ static bool rail_entry(App *app, const Section *s, bool active, RailTip *tip) {
 
         guild_acronym(s->guild->name ? s->guild->name : "?", acronym,
                       sizeof acronym);
-        fill(here(), active ? k->brand : k->hover, radius);
+        fill(here(), active ? k->primary : k->hover, radius);
         text(acronym, text_size(px(strlen(acronym) > 2 ? 9 : 12)),
-             font_weight(medium), text_color(k->text), whitespace_nowrap);
+             font_weight(medium), text_color(active ? k->on_primary : k->text),
+             whitespace_nowrap);
       }
 
       if (state.response.hovered) {
@@ -1184,7 +1186,7 @@ static void inspector(App *app, struct EmojiPicker *p) {
                               ? snowflake_format(cell->custom->emoji->id, key)
                               : cell->unicode->name)) {
           icon(lucide, star, size(px(15)), flex_shrink_0,
-               text_color(rgb(0xf0b232)));
+               text_color(k->star));
         }
 
         text(name, min_w(0), truncate, text_size(px(16)), line_height(px(20)),
@@ -1311,7 +1313,7 @@ bool emoji_card(App *app, const Channel *c, EmojiUse use, bool fresh,
   overlay() {
     div(key(id("emoji-picker")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(width)), h(px(civue_rect_h(card))), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_hidden) {
       // a press on the card is not one on what is behind it.
       button();
@@ -1593,7 +1595,7 @@ void emoji_info_card(App *app, Channel *c) {
 
   overlay() {
     div(key(id), flex, flex_col, gap(3), left(px(left)), top(px(top)),
-        w(px(INFO_WIDTH)), p(4), rounded(xl), bg(k->surface_high), border(1),
+        w(px(INFO_WIDTH)), p(4), rounded(xl), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg)) {
       card = here();
       button();

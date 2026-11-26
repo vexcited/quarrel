@@ -271,7 +271,7 @@ void mention_badge(const Look *k, uint32_t count) {
   div(flex, items_center, justify_center, flex_shrink_0, h(4), min_w(4), px(1),
       rounded(full), bg(k->danger)) {
     text(label, text_size(px(12)), line_height(px(16)), font_weight(bold),
-         text_color(CIVUE_WHITE));
+         text_color(k->on_danger));
   }
 }
 
@@ -283,6 +283,29 @@ civue_rect overlay_room(void) {
   return (civue_rect){s.x0 + 8, s.y0 + 8, s.x1 - 8, s.y1 - 8};
 }
 
+// the triangle is laid as thin strips, civue draws no triangle.
+void tooltip_arrow(civue_rect box, civue_rect anchor, civue_tooltip_side side,
+                   civue_color color) {
+  double mid_x = (anchor.x0 + anchor.x1) / 2;
+  double mid_y = (anchor.y0 + anchor.y1) / 2;
+  double x = fmin(fmax(mid_x, box.x0 + 10), box.x1 - 10);
+  double y = fmin(fmax(mid_y, box.y0 + 8), box.y1 - 8);
+
+  for (int i = 0; i < 10; i++) {
+    double half = 5 - i * .5, step = i * .5;
+
+    if (side == CIVUE_TOOLTIP_ABOVE) {
+      fill(xywh(x - half, box.y1 + step, half * 2, .5), color, 0);
+    }
+    else if (side == CIVUE_TOOLTIP_BELOW) {
+      fill(xywh(x - half, box.y0 - step - .5, half * 2, .5), color, 0);
+    }
+    else {
+      fill(xywh(box.x0 - step - .5, y - half, .5, half * 2), color, 0);
+    }
+  }
+}
+
 void hint(App *app, civue_id id, const civue_response *resp, const char *label,
           civue_tooltip_side side) {
   if (!tooltip(id, resp)) {
@@ -292,15 +315,19 @@ void hint(App *app, civue_id id, const civue_response *resp, const char *label,
   const Look *k = &app->look;
   civue_id tip = id_in(id, "tip");
   civue_tooltip_place at = tooltip_at(resp->rect, last_size(tip), side, 8);
+  civue_rect box = at.rect;
 
+  // shadcn's: the text's color under the page's, 12 point, 12 by 6 of
+  // padding, and an arrow to what it names.
   overlay() {
-    div(key(tip), left(px(at.rect.x0)), top(px(at.rect.y0)), px(3), py(2),
-        rounded(lg), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg), whitespace_nowrap,
-        text_size(px(14)), line_height(px(18)), font_weight(semibold),
-        text_color(k->text)) {
+    div(key(tip), left(px(at.rect.x0)), top(px(at.rect.y0)), px(3),
+        py(px(6)), rounded(lg), bg(k->tooltip), whitespace_nowrap,
+        text_size(px(12)), line_height(px(16)), text_color(k->on_tooltip)) {
+      box = here();
       text(label);
     }
+
+    tooltip_arrow(box, resp->rect, at.side, k->tooltip);
   }
 }
 
@@ -330,7 +357,7 @@ bool icon_button(App *app, civue_id id, civue_icon icon, float size,
 
 civue_field_look field_look(const Look *k) {
   civue_field_box idle = {
-    .bg = rgba(0x0000001f),
+    .bg = k->field,
     .border = k->border_strong,
     .border_width = 1,
     .radius = 8,
@@ -338,15 +365,15 @@ civue_field_look field_look(const Look *k) {
   };
 
   civue_field_box editing = idle;
-  editing.border = k->brand;
+  editing.border = k->ring;
 
   return (civue_field_look){
     .pad = 12,
     .editing = editing,
     .idle = idle,
     .hovered = idle,
-    .placeholder = rgb(0x8f9097),
-    .selection = civue_alpha(k->brand, .45f),
+    .placeholder = k->muted,
+    .selection = k->selection,
   };
 }
 
@@ -507,21 +534,6 @@ bool menu_row(App *app, civue_id id, civue_icon icon, const char *label,
     }
 
     text(label, flex_1, min_w(0), truncate);
-  }
-
-  return pressed;
-}
-
-bool dialog_button(const Look *k, civue_id id, const char *label,
-                   bool primary) {
-  bool pressed = false;
-
-  div(key(id), flex, items_center, justify_center, flex_1, h(10), px(4),
-      rounded(lg), style(.bg = primary ? k->brand : k->surface_high),
-      hover(bg(primary ? k->brand_hover : k->hover)),
-      text_color(primary ? CIVUE_WHITE : k->strong), cursor_pointer) {
-    pressed = button().activated;
-    text(label, font_weight(medium));
   }
 
   return pressed;

@@ -39,7 +39,6 @@ constexpr float AHEAD = 220;
 constexpr float TRAY_STICKER = 48;
 constexpr float MESSAGE_STICKER = 160;
 constexpr float INFO_WIDTH = 288;
-constexpr uint32_t STAR_COLOR = 0xf0b232;
 
 // the sections that are no guild's, by what stands for their id.
 constexpr Snowflake KEY_FAVORITES = 1;
@@ -573,7 +572,7 @@ static void heading(App *app, const Section *s, float y, bool pinned) {
   div(key(id_at(id(pinned ? "sticker-pinned" : "sticker-heading"), s->key)),
       absolute, left(0), top(px(y)), right(px(pinned ? LIST_BAR : 0)),
       h(px(HEADING)), flex, items_center, gap(2), pl(px(LIST_PAD)), pr(2),
-      style(.bg = pinned ? k->surface_high : CIVUE_CLEAR), text_color(k->text),
+      style(.bg = pinned ? k->popover : CIVUE_CLEAR), text_color(k->text),
       hover(text_color(k->strong)), cursor_pointer) {
     if (button().activated) {
       ids_toggle(&app->sticker_folded, s->key);
@@ -913,13 +912,13 @@ static void sticker_menu(App *app, civue_rect *card) {
     }
 
     div(key(id("sticker-menu")), flex, flex_col, left(px(left)), top(px(top)),
-        w(px(width)), p(2), rounded(lg), bg(k->surface_high), border(1),
+        w(px(width)), p(2), rounded(lg), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg)) {
       *card = here();
       button();
       pressed = menu_row(app, id("sticker-menu-star"), CIVUE_ICON(lucide, star),
                          starred ? "Unfavorite Sticker" : "Favorite Sticker",
-                         starred ? rgb(STAR_COLOR) : k->text);
+                         starred ? k->star : k->text);
     }
   }
 
@@ -1134,7 +1133,7 @@ void sticker_picker(App *app, Channel *c) {
   overlay() {
     div(key(id("sticker-picker")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(width)), h(px(height)), pt(4), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
+        bg(k->popover), border(1), border_color(k->border_strong),
         shadow(lg), overflow_hidden) {
       card = here();
 
@@ -1285,15 +1284,19 @@ static void name_tip(App *app, civue_id id, const civue_response *resp,
   civue_tooltip_place at =
     tooltip_at(resp->rect, last_size(tip), CIVUE_TOOLTIP_ABOVE, 8);
 
+  civue_rect box = at.rect;
+
   overlay() {
     div(key(tip), left(px(at.rect.x0)), top(px(at.rect.y0)), flex, items_center,
-        gap(1), px(3), py(2), rounded(lg), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg), whitespace_nowrap,
-        text_size(px(14)), line_height(px(18)), font_weight(semibold),
-        text_color(k->text)) {
-      icon(lucide, sticker, size(4), flex_shrink_0);
+        gap(px(6)), px(3), py(px(6)), rounded(lg), bg(k->tooltip),
+        whitespace_nowrap, text_size(px(12)), line_height(px(16)),
+        text_color(k->on_tooltip)) {
+      box = here();
+      icon(lucide, sticker, size(px(14)), flex_shrink_0);
       text(name);
     }
+
+    tooltip_arrow(box, resp->rect, at.side, k->tooltip);
   }
 }
 
@@ -1499,7 +1502,7 @@ void sticker_info(App *app, Channel *c) {
 
   overlay() {
     div(key(card_id), flex, flex_col, left(px(left)), top(px(top)),
-        w(px(INFO_WIDTH)), rounded(lg), bg(k->surface_high), border(1),
+        w(px(INFO_WIDTH)), rounded(lg), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg), overflow_hidden) {
       card = here();
       button();

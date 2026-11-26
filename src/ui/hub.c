@@ -10,6 +10,7 @@
 
 #include "discord/cdn.h"
 #include "discord/templates.h"
+#include "forms.h"
 #include "widgets.h"
 
 // discord's sizes for the directory.
@@ -242,15 +243,16 @@ static void dashed(civue_rect r, civue_color color, float width) {
   }
 }
 
-// discord's banner: a radial gradient from blue at its left to clear,
-// over black, the whole at .7 over the page. its ellipse is far taller
-// than the banner, so it changes from left to right only.
+// discord's banner: a radial gradient from a shade of the primary color at
+// its left to clear, over black, the whole at .7 over the page. its ellipse
+// is far taller than the banner, so it changes from left to right only.
 void discovery_gradient(const Look *k, civue_rect r) {
   constexpr int STRIPS = 96;
+  civue_color deep = mix(k->primary, CIVUE_BLACK, .6f);
   civue_color stops[3] = {
-    rgb(0x2f72c1),
-    {37 / 255.f, 34 / 255.f, 154 / 255.f, .8f},
-    {25 / 255.f, 23 / 255.f, 92 / 255.f, 0},
+    mix(k->primary, CIVUE_BLACK, .4f),
+    civue_alpha(deep, .8f),
+    civue_alpha(deep, 0),
   };
   float w = (float)civue_rect_w(r);
 
@@ -288,64 +290,16 @@ static void entry_icon(App *app, const DirectoryEntry *e, float size) {
        text_color(k->text), whitespace_nowrap);
 }
 
-static bool primary_button(const Look *k, civue_id id, const char *label,
-                           bool enabled, civue_color color) {
-  bool pressed = false;
-
-  div(key(id), flex, items_center, justify_center, flex_shrink_0, h(10), px(4),
-      rounded(lg), font_weight(medium),
-      style(.bg = enabled ? color : k->hover,
-            .text_color = enabled ? CIVUE_WHITE : k->faint,
-            .has_text_color = true,
-            .cursor = enabled ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
-            .has_cursor = true),
-      hover(style(.bg = enabled ? mix(color, CIVUE_BLACK, .15f) : k->hover))) {
-    pressed = button().activated && enabled;
-    text(label);
-  }
-
-  return pressed;
-}
-
-static bool quiet_button(const Look *k, civue_id id, const char *label) {
-  bool pressed = false;
-
-  div(key(id), flex, items_center, justify_center, flex_shrink_0, h(10), px(4),
-      rounded(lg), font_weight(medium), text_color(k->text),
-      hover(bg(k->hover), text_color(k->strong)), cursor_pointer) {
-    pressed = button().activated;
-    text(label);
-  }
-
-  return pressed;
-}
-
 static bool link_text(const Look *k, civue_id id, const char *label) {
   bool pressed = false;
 
-  div(key(id), text_color(k->link), hover(text_color(k->brand_hover)),
+  div(key(id), text_color(k->link), hover(text_color(k->primary_hover)),
       cursor_pointer) {
     pressed = button().activated;
     text(label, whitespace_nowrap);
   }
 
   return pressed;
-}
-
-static void field_label(const Look *k, const char *label) {
-  text(label, mt(2), mb(1), text_size(px(12)), line_height(px(16)),
-       font_weight(semibold), text_color(k->subtle));
-}
-
-static civue_field_response line_field(App *app, civue_id id, char **value,
-                                       const char *placeholder) {
-  civue_field_response r = {};
-
-  div(key(id), flex_shrink_0, h(10), text_size(px(16)), line_height(px(20))) {
-    r = text_field(value, placeholder, field_look(&app->look));
-  }
-
-  return r;
 }
 
 // keeps `*value` within `most` bytes, cut where a character starts.
@@ -365,7 +319,6 @@ static void cap_text(char **value, size_t most) {
 
 static void description_field(App *app) {
   const Look *k = &app->look;
-  civue_ui *ui = civue_ui_current();
   char counter[24];
 
   cap_text(&app->entry_description, DESCRIPTION_MAX);
@@ -374,18 +327,15 @@ static void description_field(App *app) {
                                 ? strlen(app->entry_description)
                                 : 0));
 
-  div(flex, items_end, justify_between) {
-    field_label(k, "Server Description");
-    text(counter, mb(1), text_size(px(12)), line_height(px(16)),
-         text_color(k->faint));
-  }
+  div(flex, flex_col, flex_shrink_0) {
+    div(flex, items_end, justify_between) {
+      form_label(k, "Server Description");
+      text(counter, mb(2), text_size(px(12)), line_height(px(16)),
+           text_color(k->faint));
+    }
 
-  div(key(id("entry-description")), flex_shrink_0, h(px(96)),
-      text_size(px(16)), line_height(px(20))) {
-    civue_text_area(ui, id("entry-description-area"), here(),
-                    &app->entry_description,
-                    "What's your server about? What do people do there?",
-                    civue_style(16, 400, 20, 0), field_look(k));
+    form_area(app, id("entry-description-area"), &app->entry_description,
+              "What's your server about? What do people do there?", 4, 0);
   }
 }
 
@@ -396,50 +346,51 @@ static void category_select(App *app, Snowflake channel_id) {
                          ? category_label(channel_id, app->entry_category)
                          : "Select";
 
-  field_label(k, "Category");
+  div(flex, flex_col, flex_shrink_0) {
+    form_label(k, "Category");
 
-  div(key(id("category-select")), flex, items_center, gap(2), flex_shrink_0,
-      h(10), px(3), rounded(lg), bg(rgba(0x0000001f)), border(1),
-      border_color(app->category_open ? k->brand : k->border_strong),
-      cursor_pointer) {
-    if (button().activated) {
-      app->category_open = !app->category_open;
+    div(key(id("category-select")), flex, items_center, gap(2), flex_shrink_0,
+        h(9), px(3), rounded(lg), bg(k->field), border(1),
+        border_color(app->category_open ? k->ring : k->border_strong),
+        cursor_pointer) {
+      if (button().activated) {
+        app->category_open = !app->category_open;
+      }
+
+      text(picked, flex_1, min_w(0), truncate,
+           text_color(app->entry_category ? k->text : k->muted));
+
+      if (app->category_open) {
+        icon(lucide, chevron_up, size(4), flex_shrink_0,
+             text_color(k->subtle));
+      }
+      else {
+        icon(lucide, chevron_down, size(4), flex_shrink_0,
+             text_color(k->subtle));
+      }
     }
-
-    text(picked, flex_1, min_w(0), truncate,
-         text_color(app->entry_category ? k->text : rgb(0x8f9097)));
 
     if (app->category_open) {
-      icon(lucide, chevron_up, size(4), flex_shrink_0, text_color(k->faint));
-    }
-    else {
-      icon(lucide, chevron_down, size(4), flex_shrink_0, text_color(k->faint));
-    }
-  }
+      div(flex, flex_col, flex_shrink_0, mt(1), p(1), rounded(lg),
+          bg(k->popover), border(1), border_color(k->border)) {
+        for (size_t i = 0; i < NCATEGORIES; i++) {
+          DirectoryCategory category = CATEGORIES[i];
+          bool on = app->entry_category == category;
 
-  if (!app->category_open) {
-    return;
-  }
+          div(key(id_at(id("category-option"), category)), flex, items_center,
+              h(8), px(2), rounded(md), hover(bg(k->hover)), cursor_pointer) {
+            if (button().activated) {
+              app->entry_category = category;
+              app->category_open = false;
+            }
 
-  div(flex, flex_col, flex_shrink_0, mt(1), p(1), rounded(lg),
-      bg(k->surface_high), border(1), border_color(k->border_strong)) {
-    for (size_t i = 0; i < NCATEGORIES; i++) {
-      DirectoryCategory category = CATEGORIES[i];
-      bool on = app->entry_category == category;
+            text(category_label(channel_id, category), flex_1,
+                 text_color(on ? k->strong : k->text));
 
-      div(key(id_at(id("category-option"), category)), flex, items_center,
-          h(9), px(2), rounded(md), style(.bg = on ? k->selected : CIVUE_CLEAR),
-          hover(bg(on ? k->selected : k->hover)), cursor_pointer) {
-        if (button().activated) {
-          app->entry_category = category;
-          app->category_open = false;
-        }
-
-        text(category_label(channel_id, category), flex_1,
-             text_color(on ? k->strong : k->text));
-
-        if (on) {
-          icon(lucide, check, size(4), text_color(k->strong));
+            if (on) {
+              icon(lucide, check, size(4), text_color(k->strong));
+            }
+          }
         }
       }
     }
@@ -591,8 +542,8 @@ static void card_menu(App *app, const Channel *dir) {
   overlay() {
     div(key(id("directory-menu")), flex, flex_col, w(px(200)),
         left(px(fmaxf(left, (float)room.x0))), top(px(anchor.y1 + 4)), p(2),
-        rounded(xl), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg)) {
+        rounded(xl), bg(k->popover), border(1), border_color(k->border_strong),
+        shadow(lg)) {
       card = here();
 
       if (editable) {
@@ -664,9 +615,9 @@ static void card_join(App *app, const Channel *dir, const DirectoryEntry *e) {
   }
 
   div(key(id), flex, items_center, justify_center, flex_shrink_0, h(8), mt(4),
-      rounded(lg), bg(k->brand), hover(bg(k->brand_hover)),
-      active(bg(k->brand_active)), text_size(px(14)), font_weight(medium),
-      text_color(CIVUE_WHITE),
+      rounded(lg), bg(k->primary), hover(bg(k->primary_hover)),
+      active(bg(k->primary_active)), text_size(px(14)), font_weight(medium),
+      text_color(k->on_primary),
       style(.cursor = joining ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
             .has_cursor = true)) {
     if (button().activated && !joining) {
@@ -900,8 +851,8 @@ static void tab(App *app, int8_t which, const char *label) {
 
     if (on) {
       civue_rect r = here();
-      fill(xywh((float)r.x0, (float)r.y1, (float)civue_rect_w(r), 2), k->brand,
-           1);
+      fill(xywh((float)r.x0, (float)r.y1, (float)civue_rect_w(r), 2),
+           k->primary, 1);
     }
   }
 }
@@ -1193,34 +1144,32 @@ void directory_page(App *app, Channel *c) {
 /* ========================================================================== */
 
 // a dialog in the middle of the window over a dark backdrop that closes it
-// when pressed.
-#define hub_modal(name, width, closed)                                       \
+// when pressed, its parts 16 apart.
+#define hub_modal(name, closed)                                              \
   overlay()                                                                  \
   div(key(id(name "-backdrop")), left(0), top(0), w(px(ui->size.x)),         \
-      h(px(ui->size.y)), flex, items_center, justify_center,                 \
-      bg(rgba(0x000000b3)))                                                  \
+      h(px(ui->size.y)), flex, items_center, justify_center, bg(k->scrim))   \
   for (bool hub_once_ = ((closed) |= button().activated, true); hub_once_;   \
        hub_once_ = false)                                                    \
-  div(key(id(name)), flex, flex_col, w(px(width)),                           \
-      max_h(px(ui->size.y - 48)), p(6), rounded(xl), bg(k->surface),         \
-      border(1), border_color(k->border), shadow(lg), text_color(k->text),   \
-      text_size(px(14)), line_height(px(18)))                                \
+  div(key(id(name)), flex, flex_col, gap(4), w(px(dialog_width())),          \
+      max_h(px(ui->size.y - 48)), p(6), rounded(px(DIALOG_RADIUS)),          \
+      bg(k->dialog), border(1), border_color(k->border), shadow(lg),         \
+      text_color(k->text), text_size(px(14)), line_height(px(20)))           \
   for (bool hub_inner_ = (button(), true); hub_inner_; hub_inner_ = false)
-
-static void dialog_title(const Look *k, const char *title,
-                         const char *subtitle) {
-  text(title, text_center, text_size(px(20)), line_height(px(24)),
-       font_weight(semibold), text_color(k->strong));
-
-  if (subtitle) {
-    text(subtitle, text_center, mt(2), text_size(px(14)), line_height(px(18)),
-         text_color(k->subtle));
-  }
-}
 
 static void error_line(const Look *k, const char *error) {
   if (error) {
-    text(error, mt(2), text_color(k->critical_text));
+    text(error, text_color(k->critical_text));
+  }
+}
+
+// the round mark over a dialog's title, 64 across.
+static void dialog_mark(civue_icon mark, civue_color ground, civue_color ink) {
+  div(flex, flex_shrink_0) {
+    div(flex, items_center, justify_center, size(16), rounded(full),
+        bg(ground)) {
+      glyph(mark, 32, ink);
+    }
   }
 }
 
@@ -1257,8 +1206,9 @@ static void choose_tab(App *app, bool listed, const char *label) {
   bool on = app->add_listed == listed;
 
   div(key(id_at(id("add-tab"), listed)), flex, items_center, justify_center,
-      flex_1, h(8), rounded(md), font_weight(medium),
-      style(.bg = on ? k->selected : CIVUE_CLEAR),
+      flex_1, h(full), px(2), rounded(lg), border(1), font_weight(medium),
+      border_color(on ? k->border_strong : CIVUE_CLEAR),
+      style(.bg = on ? k->field : CIVUE_CLEAR),
       text_color(on ? k->strong : k->subtle), hover(text_color(k->strong)),
       cursor_pointer) {
     if (button().activated) {
@@ -1294,18 +1244,20 @@ static void choose_guild(App *app, const Channel *dir, const Guild *hub) {
   }
 
   snprintf(title, sizeof title, "Add a server to %s", guild_name_of(hub));
-  dialog_title(k, title,
-               "Your server will be discoverable by people in this Hub. You "
-               "can add a server if you have Admin permissions for that "
-               "server.");
+  dialog_header(k, title,
+                "Your server will be discoverable by people in this Hub. You "
+                "can add a server if you have Admin permissions for that "
+                "server.");
 
-  div(flex, gap(1), flex_shrink_0, mt(4), p(1), rounded(lg), bg(k->chat)) {
+  // shadcn's tabs: a muted list 36 tall with 3 of padding.
+  div(flex, items_center, flex_shrink_0, h(9), p(px(3)), rounded(lg),
+      bg(k->surface_high)) {
     choose_tab(app, false, "Servers You Can Add");
     choose_tab(app, true, "Servers You've Added");
   }
 
   div(key(id("add-guilds")), flex, flex_col, gap(1), flex_shrink_0,
-      h(px(240)), mt(3), overflow_y_scroll, scrollbars(&app->thin_bars)) {
+      h(px(240)), overflow_y_scroll, scrollbars(&app->thin_bars)) {
     for (size_t i = 0; i < n; i++) {
       Guild *g = guilds[i];
       bool listed = store_directory_entry(d, g->id) != nullptr;
@@ -1362,13 +1314,13 @@ static void choose_guild(App *app, const Channel *dir, const Guild *hub) {
     }
   }
 
-  div(flex, items_center, gap(3), flex_shrink_0, mt(4), pt(4), border_t(1),
+  div(flex, items_center, gap(3), flex_shrink_0, pt(4), border_t(1),
       border_color(k->border)) {
-    text("Want to start a new group?", flex_1, min_w(0),
-         font_weight(semibold), text_color(k->strong));
+    text("Want to start a new group?", flex_1, min_w(0), font_weight(medium),
+         text_color(k->strong));
 
-    if (primary_button(k, id("add-create"), "Create New Server", true,
-                       k->brand)) {
+    if (form_button(app, id("add-create"), "Create New Server",
+                    BUTTON_PRIMARY, false)) {
       app->add_step = ADD_TEMPLATES;
     }
   }
@@ -1396,13 +1348,13 @@ static void template_row(App *app, size_t index, const char *label) {
     }
 
     div(flex, items_center, justify_center, size(12), m(4), flex_shrink_0,
-        rounded(full), bg(k->brand), text_color(CIVUE_WHITE)) {
-      glyph(template_icon(index), 24, CIVUE_WHITE);
+        rounded(full), bg(k->primary), text_color(k->on_primary)) {
+      glyph(template_icon(index), 24, k->on_primary);
     }
 
-    text(label, flex_1, min_w(0), truncate, text_size(px(16)),
-         line_height(px(20)), font_weight(semibold), text_color(k->strong));
-    icon(lucide, chevron_right, size(5), mr(4), flex_shrink_0,
+    text(label, flex_1, min_w(0), truncate, font_weight(semibold),
+         text_color(k->strong));
+    icon(lucide, chevron_right, size(4), mr(4), flex_shrink_0,
          text_color(k->faint));
   }
 }
@@ -1413,23 +1365,24 @@ static void choose_template(App *app, const Guild *hub) {
 
   snprintf(title, sizeof title, "Help grow the Student Hub for %s",
            guild_name_of(hub));
-  dialog_title(k, title,
-               "You will still be able to invite people from outside the Hub "
-               "to your server.");
+  dialog_header(k, title,
+                "You will still be able to invite people from outside the Hub "
+                "to your server.");
 
   div(key(id("add-templates")), flex, flex_col, flex_shrink_0, h(px(330)),
-      mt(4), overflow_y_scroll, scrollbars(&app->thin_bars)) {
+      overflow_y_scroll, scrollbars(&app->thin_bars)) {
     template_row(app, 0, hub_templates[0].label);
-    text("Start from a template", mt(4), mb(2), text_size(px(14)),
-         font_weight(medium), text_color(k->subtle));
+    text("Start from a template", mt(4), mb(2), font_weight(medium),
+         text_color(k->subtle));
 
     for (size_t i = 1; i < hub_template_count; i++) {
       template_row(app, i, hub_templates[i].label);
     }
   }
 
-  div(flex, flex_shrink_0, mt(4)) {
-    if (quiet_button(k, id("add-templates-back"), "Back")) {
+  div(flex, flex_shrink_0) {
+    if (form_button(app, id("add-templates-back"), "Back", BUTTON_OUTLINE,
+                    false)) {
       app->add_step = ADD_CHOOSE;
     }
   }
@@ -1441,23 +1394,26 @@ static void customize(App *app) {
   bool next = false;
 
   cap_text(&app->new_server_name, SERVER_NAME_MAX);
-  dialog_title(k, "Customize Your Server",
-               "Give your new server a personality with a name. You can "
-               "always change it later.");
+  dialog_header(k, "Customize Your Server",
+                "Give your new server a personality with a name. You can "
+                "always change it later.");
 
-  div(flex, flex_col, flex_shrink_0, mt(4)) {
-    field_label(k, "Server Name");
-    next = line_field(app, id("add-server-name"), &app->new_server_name, "")
+  div(flex, flex_col, flex_shrink_0) {
+    form_label(k, "Server Name");
+    next = form_input(app, id("add-server-name"), &app->new_server_name, "",
+                      nullptr, 0)
              .submitted;
   }
 
-  div(flex, items_center, gap(2), flex_shrink_0, mt(6)) {
-    if (quiet_button(k, id("add-customize-back"), "Back")) {
+  // a step's foot: back at the left, on at the right.
+  div(flex, items_center, gap(2), flex_shrink_0) {
+    if (form_button(app, id("add-customize-back"), "Back", BUTTON_OUTLINE,
+                    false)) {
       app->add_step = ADD_TEMPLATES;
     }
 
     div(flex_1) {}
-    next |= primary_button(k, id("add-next"), "Next", named, k->brand);
+    next |= form_button(app, id("add-next"), "Next", BUTTON_PRIMARY, !named);
   }
 
   if (next && named) {
@@ -1471,27 +1427,28 @@ static void details(App *app, const Channel *dir) {
   bool ready = app->entry_description && *app->entry_description &&
                app->entry_category != 0 && !s->directory_saving;
 
-  dialog_title(k, "One last step!",
-               "Give your server a description and category to help people "
-               "find it.");
+  dialog_header(k, "One last step!",
+                "Give your server a description and category to help people "
+                "find it.");
 
-  div(flex, flex_col, flex_shrink_0, mt(4)) {
+  div(flex, flex_col, gap(4), flex_shrink_0) {
     description_field(app);
     category_select(app, dir->id);
   }
 
   error_line(k, s->directory_error);
 
-  div(flex, items_center, gap(2), flex_shrink_0, mt(6)) {
-    if (quiet_button(k, id("add-details-back"), "Back")) {
+  div(flex, items_center, gap(2), flex_shrink_0) {
+    if (form_button(app, id("add-details-back"), "Back", BUTTON_OUTLINE,
+                    false)) {
       app->add_step = app->add_new ? ADD_CUSTOMIZE : ADD_CHOOSE;
     }
 
     div(flex_1) {}
 
-    if (primary_button(k, id("add-server"),
-                       s->directory_saving ? "Adding..." : "Add Server", ready,
-                       k->brand)) {
+    if (form_button(app, id("add-server"),
+                    s->directory_saving ? "Adding..." : "Add Server",
+                    BUTTON_PRIMARY, !ready)) {
       if (app->add_new) {
         session_directory_create(s, dir->id, (size_t)app->add_template,
                                  app->new_server_name, app->entry_category,
@@ -1528,23 +1485,20 @@ static void done(App *app, const Guild *hub, bool *close) {
              guild_name_of(hub));
   }
 
-  div(flex, justify_center, flex_shrink_0, mb(4)) {
-    div(flex, items_center, justify_center, size(16), rounded(full),
-        bg(k->positive)) {
-      glyph(CIVUE_ICON(lucide, check), 36, CIVUE_WHITE);
-    }
-  }
+  dialog_mark(CIVUE_ICON(lucide, check), k->positive, k->on_positive);
+  dialog_header(k, "Success!", line);
 
-  dialog_title(k, "Success!", line);
-
-  div(flex, gap(2), flex_shrink_0, mt(6)) {
+  div(flex, justify_end, gap(2), flex_shrink_0) {
     if (!app->add_new) {
-      *close |= dialog_button(k, id("add-got-it"), "Got it!", true);
+      *close |= form_button(app, id("add-got-it"), "Got it!", BUTTON_PRIMARY,
+                            false);
     }
     else {
-      *close |= dialog_button(k, id("add-back-hub"), "Back to Hub", false);
+      *close |= form_button(app, id("add-back-hub"), "Back to Hub",
+                            BUTTON_OUTLINE, false);
 
-      if (dialog_button(k, id("add-go"), "Go to Server", true) &&
+      if (form_button(app, id("add-go"), "Go to Server", BUTTON_PRIMARY,
+                      false) &&
           store_guild(app->session->store, app->hub_entity)) {
         *close = true;
         app_select_guild(app, app->hub_entity);
@@ -1566,7 +1520,7 @@ static void add_dialog(App *app) {
     return;
   }
 
-  hub_modal("add-dialog", 460, close) {
+  hub_modal("add-dialog", close) {
     switch (app->add_step) {
       case ADD_CHOOSE:
         choose_guild(app, dir, hub);
@@ -1614,24 +1568,24 @@ static void edit_dialog(App *app) {
   snprintf(title, sizeof title, "Edit Settings for %s",
            e->name ? e->name : "this server");
 
-  hub_modal("edit-dialog", 460, close) {
-    dialog_title(k, title,
-                 "This server description will appear in the Student Hub.");
+  hub_modal("edit-dialog", close) {
+    dialog_header(k, title,
+                  "This server description will appear in the Student Hub.");
 
-    div(flex, flex_col, flex_shrink_0, mt(4)) {
+    div(flex, flex_col, gap(4), flex_shrink_0) {
       description_field(app);
       category_select(app, app->hub_channel);
     }
 
     error_line(k, s->directory_error);
 
-    div(flex, items_center, gap(2), flex_shrink_0, mt(6)) {
-      div(flex_1) {}
-      close |= quiet_button(k, id("edit-cancel"), "Cancel");
+    div(flex, justify_end, gap(2), flex_shrink_0) {
+      close |= form_button(app, id("edit-cancel"), "Cancel", BUTTON_OUTLINE,
+                           false);
 
-      if (primary_button(k, id("edit-save"),
-                         s->directory_saving ? "Saving..." : "Save", ready,
-                         k->brand)) {
+      if (form_button(app, id("edit-save"),
+                      s->directory_saving ? "Saving..." : "Save",
+                      BUTTON_PRIMARY, !ready)) {
         session_directory_edit(s, app->hub_channel, e->entity_id,
                                app->entry_category, app->entry_description);
       }
@@ -1655,16 +1609,14 @@ static bool confirm_dialog(App *app, const char *title, const char *line,
   civue_ui *ui = civue_ui_current();
   bool close = false, yes = false;
 
-  hub_modal("hub-confirm", 420, close) {
-    text(title, text_size(px(20)), line_height(px(24)), font_weight(semibold),
-         text_color(k->strong));
-    text(line, mt(2), text_size(px(16)), line_height(px(20)),
-         text_color(k->subtle));
+  hub_modal("hub-confirm", close) {
+    dialog_header(k, title, line);
 
-    div(flex, items_center, gap(2), flex_shrink_0, mt(6)) {
-      div(flex_1) {}
-      close |= quiet_button(k, id("hub-confirm-cancel"), "Cancel");
-      yes = primary_button(k, id("hub-confirm-yes"), confirm, true, k->danger);
+    div(flex, justify_end, gap(2), flex_shrink_0) {
+      close |= form_button(app, id("hub-confirm-cancel"), "Cancel",
+                           BUTTON_OUTLINE, false);
+      yes = form_button(app, id("hub-confirm-yes"), confirm, BUTTON_DANGER,
+                        false);
     }
   }
 
@@ -1729,24 +1681,24 @@ static void nick_dialog(App *app) {
   snprintf(title, sizeof title, "Welcome to the Student Hub for %s!",
            guild_name_of(g));
 
-  hub_modal("nick-dialog", 440, close) {
-    dialog_title(k, title, nullptr);
+  hub_modal("nick-dialog", close) {
+    dialog_header(k, title, nullptr);
 
-    div(flex, flex_col, flex_shrink_0, mt(4)) {
-      field_label(k, "Your Name");
-      save = line_field(app, id("nick-field"), &app->nick,
-                        "Student Hub Nickname")
+    div(flex, flex_col, flex_shrink_0) {
+      form_label(k, "Your Name");
+      save = form_input(app, id("nick-field"), &app->nick,
+                        "Student Hub Nickname", nullptr, 0)
                .submitted;
-      text("This will help your classmates recognize you in the Student Hub. "
-           "You can change this any time via the Hub Settings.",
-           mt(2), text_size(px(12)), line_height(px(16)),
-           text_color(k->muted));
+      form_note(k, "This will help your classmates recognize you in the "
+                   "Student Hub. You can change this any time via the Hub "
+                   "Settings.");
     }
 
-    div(flex, items_center, gap(2), flex_shrink_0, mt(6)) {
-      div(flex_1) {}
-      close |= quiet_button(k, id("nick-cancel"), "Cancel");
-      save |= primary_button(k, id("nick-save"), "Let's go!", true, k->brand);
+    div(flex, justify_end, gap(2), flex_shrink_0) {
+      close |= form_button(app, id("nick-cancel"), "Cancel", BUTTON_OUTLINE,
+                           false);
+      save |= form_button(app, id("nick-save"), "Let's go!", BUTTON_PRIMARY,
+                          false);
     }
   }
 
@@ -1765,15 +1717,15 @@ static void join_email(App *app) {
   bool ready = app->hub_email && strchr(app->hub_email, '@') && !s->hub.loading;
   bool submit = false;
 
-  dialog_title(k,
-               "Find study groups, clubs, and friends in the Student Hub for "
-               "your school!",
-               nullptr);
+  dialog_header(k,
+                "Find study groups, clubs, and friends in the Student Hub for "
+                "your school!",
+                nullptr);
 
-  div(flex, flex_col, flex_shrink_0, mt(4)) {
-    field_label(k, "Your Student Email");
-    submit = line_field(app, id("hub-email"), &app->hub_email,
-                        "name@school.edu")
+  div(flex, flex_col, flex_shrink_0) {
+    form_label(k, "Your Student Email");
+    submit = form_input(app, id("hub-email"), &app->hub_email,
+                        "name@school.edu", nullptr, 0)
                .submitted;
 
     div(mt(2)) {
@@ -1790,10 +1742,10 @@ static void join_email(App *app) {
 
   error_line(k, s->hub.error);
 
-  div(flex, flex_col, flex_shrink_0, mt(6)) {
-    submit |= primary_button(k, id("hub-join-submit"),
-                             s->hub.loading ? "Sending..." : "Join Hub", ready,
-                             k->brand);
+  div(flex, flex_col, flex_shrink_0) {
+    submit |= form_button(app, id("hub-join-submit"),
+                          s->hub.loading ? "Sending..." : "Join Hub",
+                          BUTTON_PRIMARY, !ready);
   }
 
   if (submit && ready) {
@@ -1826,9 +1778,9 @@ static void school_row(App *app, const SessionHubSchool *school) {
       }
     }
 
-    text(school->name, flex_1, min_w(0), ml(4), truncate, text_size(px(16)),
-         line_height(px(20)), font_weight(semibold), text_color(k->strong));
-    icon(lucide, chevron_right, size(5), flex_shrink_0, text_color(k->faint));
+    text(school->name, flex_1, min_w(0), ml(4), truncate,
+         font_weight(semibold), text_color(k->strong));
+    icon(lucide, chevron_right, size(4), flex_shrink_0, text_color(k->faint));
   }
 }
 
@@ -1837,14 +1789,12 @@ static void join_school(App *app) {
   Session *s = app->session;
   size_t shown = 0;
 
-  dialog_title(k, "Select your school", nullptr);
-
-  div(flex, flex_col, flex_shrink_0, mt(4)) {
-    line_field(app, id("hub-school-search"), &app->hub_search, "Search");
-  }
+  dialog_header(k, "Select your school", nullptr);
+  form_input(app, id("hub-school-search"), &app->hub_search, "Search", nullptr,
+             0);
 
   div(key(id("hub-schools")), flex, flex_col, flex_shrink_0, max_h(px(400)),
-      mt(3), overflow_y_scroll, scrollbars(&app->thin_bars)) {
+      overflow_y_scroll, scrollbars(&app->thin_bars)) {
     for (size_t i = 0; i < s->hub.nschools; i++) {
       const SessionHubSchool *school = &s->hub.schools[i];
 
@@ -1865,7 +1815,7 @@ static void join_school(App *app) {
 
   error_line(k, s->hub.error);
 
-  div(flex, items_center, justify_center, gap(1), flex_shrink_0, mt(4),
+  div(flex, items_center, justify_center, gap(1), flex_shrink_0,
       text_color(k->subtle)) {
     text("Can't find your school?");
 
@@ -1884,24 +1834,25 @@ static void join_code(App *app) {
 
   snprintf(line, sizeof line, "We sent a code to %s.",
            s->hub.email ? s->hub.email : "your email");
-  dialog_title(k, "Verify your email to join", line);
+  dialog_header(k, "Verify your email to join", line);
 
-  div(flex, flex_col, flex_shrink_0, mt(4)) {
-    field_label(k, "Enter Discord verification code");
-    submit = line_field(app, id("hub-code"), &app->hub_code, "").submitted;
+  div(flex, flex_col, flex_shrink_0) {
+    form_label(k, "Enter Discord verification code");
+    submit =
+      form_input(app, id("hub-code"), &app->hub_code, "", nullptr, 0).submitted;
   }
 
   error_line(k, s->hub.error);
 
-  div(flex, items_center, gap(2), flex_shrink_0, mt(6)) {
+  div(flex, items_center, gap(2), flex_shrink_0) {
     if (link_text(k, id("hub-resend"), "Resend code") && !s->hub.loading) {
       session_hub_lookup(s, s->hub.email, s->hub.guild_id);
     }
 
     div(flex_1) {}
-    submit |= primary_button(k, id("hub-code-submit"),
-                             s->hub.loading ? "Verifying..." : "Submit", ready,
-                             k->brand);
+    submit |= form_button(app, id("hub-code-submit"),
+                          s->hub.loading ? "Verifying..." : "Submit",
+                          BUTTON_PRIMARY, !ready);
   }
 
   if (submit && ready) {
@@ -1917,22 +1868,22 @@ static void join_waitlist(App *app) {
   bool submit = false;
 
   cap_text(&app->hub_school, 20);
-  dialog_title(k, "Join the waitlist",
-               "The Hub for your school isn't live yet. Enter your school's "
-               "name and we'll let you know when it is!");
+  dialog_header(k, "Join the waitlist",
+                "The Hub for your school isn't live yet. Enter your school's "
+                "name and we'll let you know when it is!");
 
-  div(flex, flex_col, flex_shrink_0, mt(4)) {
-    field_label(k, "School Name");
-    submit = line_field(app, id("hub-school-name"), &app->hub_school,
-                        "Full school name")
+  div(flex, flex_col, flex_shrink_0) {
+    form_label(k, "School Name");
+    submit = form_input(app, id("hub-school-name"), &app->hub_school,
+                        "Full school name", nullptr, 0)
                .submitted;
   }
 
   error_line(k, s->hub.error);
 
-  div(flex, flex_col, flex_shrink_0, mt(6)) {
-    submit |= primary_button(k, id("hub-waitlist-submit"), "Join Waitlist",
-                             ready, k->brand);
+  div(flex, flex_col, flex_shrink_0) {
+    submit |= form_button(app, id("hub-waitlist-submit"), "Join Waitlist",
+                          BUTTON_PRIMARY, !ready);
   }
 
   if (submit && ready) {
@@ -1943,18 +1894,11 @@ static void join_waitlist(App *app) {
 static void join_waiting(App *app) {
   const Look *k = &app->look;
 
-  div(flex, justify_center, flex_shrink_0, mb(4)) {
-    div(flex, items_center, justify_center, size(16), rounded(full),
-        bg(k->positive)) {
-      glyph(CIVUE_ICON(lucide, check), 36, CIVUE_WHITE);
-    }
-  }
+  dialog_header(k, "Thanks! You're on the waitlist.", nullptr);
 
-  dialog_title(k, "Thanks! You're on the waitlist.", nullptr);
-
-  div(flex, flex_col, flex_shrink_0, mt(6)) {
-    if (primary_button(k, id("hub-other-email"), "Try A Different Email", true,
-                       k->brand)) {
+  div(flex, flex_col, flex_shrink_0) {
+    if (form_button(app, id("hub-other-email"), "Try A Different Email",
+                    BUTTON_PRIMARY, false)) {
       forget(&app->hub_school);
       session_hub_reset(app->session);
     }
@@ -1987,12 +1931,13 @@ static void join_dialog(App *app) {
     return;
   }
 
-  hub_modal("join-dialog", 460, close) {
-    div(flex, justify_center, flex_shrink_0, mb(4)) {
-      div(flex, items_center, justify_center, size(16), rounded(full),
-          bg(k->brand)) {
-        glyph(CIVUE_ICON(lucide, graduation_cap), 36, CIVUE_WHITE);
-      }
+  hub_modal("join-dialog", close) {
+    if (s->hub.step == HUB_JOIN_WAITING || s->hub.step == HUB_JOIN_JOINED) {
+      dialog_mark(CIVUE_ICON(lucide, check), k->positive, k->on_positive);
+    }
+    else {
+      dialog_mark(CIVUE_ICON(lucide, graduation_cap), k->primary,
+                  k->on_primary);
     }
 
     switch (s->hub.step) {
@@ -2017,8 +1962,10 @@ static void join_dialog(App *app) {
     // back to the step before, as the dialog keeps them.
     if (s->hub.step == HUB_JOIN_SCHOOL || s->hub.step == HUB_JOIN_CODE ||
         s->hub.step == HUB_JOIN_WAITLIST) {
-      div(flex, flex_shrink_0, mt(2)) {
-        if (quiet_button(k, id("hub-join-back"), "Back") && !s->hub.loading) {
+      div(flex, flex_shrink_0) {
+        if (form_button(app, id("hub-join-back"), "Back", BUTTON_OUTLINE,
+                        false) &&
+            !s->hub.loading) {
           bool several = s->hub.nschools > 1 &&
                          s->hub.step != HUB_JOIN_SCHOOL;
 

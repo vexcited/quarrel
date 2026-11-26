@@ -407,9 +407,9 @@ static void reaction_button(App *app, const Channel *forum,
 
   div(key(id_at(id("post-reaction"), post->id)), flex, items_center, gap(1),
       flex_shrink_0, h(px(20)), px(px(6)), rounded(md),
-      bg(me ? civue_alpha(k->brand, .24f) : k->hover), border(1),
-      border_color(me ? k->brand : CIVUE_CLEAR),
-      hover(border_color(me ? k->brand : k->border_strong)), cursor_pointer) {
+      bg(me ? civue_alpha(k->primary, .24f) : k->hover), border(1),
+      border_color(me ? k->primary : CIVUE_CLEAR),
+      hover(border_color(me ? k->primary : k->border_strong)), cursor_pointer) {
     if (button().activated) {
       session_react(app->session, post->id, m->id, emoji_id, name, !me);
     }
@@ -445,16 +445,16 @@ static bool post_unread(App *app, const Channel *post) {
 
 static void pin_badge(const Look *k) {
   div(flex, items_center, justify_center, size(px(22)), flex_shrink_0,
-      rounded(full), bg(k->brand), text_color(CIVUE_WHITE)) {
+      rounded(full), bg(k->primary), text_color(k->on_primary)) {
     icon(lucide, pin, size(px(14)));
   }
 }
 
 static void new_badge(const Look *k) {
   div(flex, items_center, flex_shrink_0, h(px(16)), px(px(4)), rounded(sm),
-      bg(k->brand)) {
+      bg(k->primary)) {
     text("NEW", text_size(px(10)), line_height(px(12)), font_weight(bold),
-         text_color(CIVUE_WHITE));
+         text_color(k->on_primary));
   }
 }
 
@@ -697,7 +697,7 @@ static bool choice(App *app, civue_id key_id, const char *label, bool on) {
     text(label, flex_1, min_w(0), truncate);
 
     if (on) {
-      icon(lucide, check, size(4), text_color(k->brand));
+      icon(lucide, check, size(4), text_color(k->primary));
     }
   }
 
@@ -717,8 +717,8 @@ static void view_menu(App *app, const Channel *forum, civue_rect anchor) {
   overlay() {
     div(key(id("forum-view-card")), flex, flex_col, w(px(180)),
         left(px(card_left(anchor, 180))), top(px(anchor.y1 + 6)), p(2),
-        rounded(xl), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg)) {
+        rounded(xl), bg(k->popover), border(1), border_color(k->border_strong),
+        shadow(lg)) {
       card = here();
 
       menu_title(k, "Sort by");
@@ -780,9 +780,9 @@ static void filter_tag(App *app, const ForumTag *tag) {
 
   div(key(id_at(id("filter-tag"), tag->id)), flex, items_center, gap(1),
       flex_shrink_0, h(8), px(3), rounded(full), border(1),
-      border_color(on ? k->brand : k->border),
-      style(.bg = on ? civue_alpha(k->brand, .15f) : k->hover),
-      hover(border_color(on ? k->brand : k->border_strong)), cursor_pointer) {
+      border_color(on ? k->primary : k->border),
+      style(.bg = on ? civue_alpha(k->primary, .15f) : k->hover),
+      hover(border_color(on ? k->primary : k->border_strong)), cursor_pointer) {
     if (button().activated) {
       ids_toggle(&app->forum_tags, tag->id);
     }
@@ -810,8 +810,7 @@ static void tags_menu(App *app, const Channel *forum, civue_rect anchor) {
   overlay() {
     div(key(id("forum-tags-card")), flex, flex_col, gap(4), w(px(336)),
         left(px(left)), top(px(anchor.y1 + 6)), p(4), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg)) {
+        bg(k->popover), border(1), border_color(k->border_strong), shadow(lg)) {
       card = here();
 
       text("Select Tags", text_size(px(16)), line_height(px(20)),
@@ -878,8 +877,8 @@ static void filter_bar(App *app, const Channel *forum) {
 
       div(key(id("forum-tags")), flex, items_center, gap(1), flex_shrink_0,
           h(8), ml(2), px(3), rounded(full), border(1),
-          border_color(lit ? k->brand : k->border),
-          style(.bg = lit ? civue_alpha(k->brand, .15f) : CIVUE_CLEAR),
+          border_color(lit ? k->primary : k->border),
+          style(.bg = lit ? civue_alpha(k->primary, .15f) : CIVUE_CLEAR),
           hover(bg(k->hover)), text_size(px(14)), line_height(px(18)),
           font_weight(semibold), text_color(k->text), cursor_pointer) {
         all = here();
@@ -976,11 +975,11 @@ static void field_button(App *app, civue_id key_id, civue_icon glyph_icon,
   const Look *k = &app->look;
 
   div(key(key_id), flex, items_center, gap(2), flex_shrink_0, h(8), px(3),
-      rounded(lg), bg(k->brand), hover(bg(k->brand_hover)),
-      active(bg(k->brand_active)), text_size(px(14)), line_height(px(18)),
-      font_weight(semibold), text_color(CIVUE_WHITE), cursor_pointer) {
+      rounded(lg), bg(k->primary), hover(bg(k->primary_hover)),
+      active(bg(k->primary_active)), text_size(px(14)), line_height(px(18)),
+      font_weight(semibold), text_color(k->on_primary), cursor_pointer) {
     *pressed |= button().activated;
-    glyph(glyph_icon, 16, CIVUE_WHITE);
+    glyph(glyph_icon, 16, k->on_primary);
     text(label, whitespace_nowrap);
   }
 }
@@ -1006,10 +1005,9 @@ static void compose_tags(App *app, const Channel *forum) {
 
       div(key(id_at(id("compose-tag"), tag->id)), flex, items_center, gap(1),
           flex_shrink_0, h(6), px(2), rounded(full), border(1),
-          border_color(on ? k->brand : k->border),
-          style(.bg = on ? civue_alpha(k->brand, .15f) : k->hover,
-                .cursor = allowed ? CIVUE_CURSOR_POINTER
-                                  : CIVUE_CURSOR_DEFAULT,
+          border_color(on ? k->primary : k->border),
+          style(.bg = on ? civue_alpha(k->primary, .15f) : k->hover,
+                .cursor = allowed ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
                 .has_cursor = true),
           hover(border_color(allowed ? k->border_strong : k->border))) {
         if (button().activated && allowed) {
@@ -1102,7 +1100,7 @@ static void header_card(App *app, const Channel *forum) {
           .idle = {.text = k->strong},
           .hovered = {.text = k->strong},
           .placeholder = k->faint,
-          .selection = civue_alpha(k->brand, .45f),
+          .selection = k->selection,
         };
         char **value = writing ? &app->post_title : &app->forum_search;
         civue_field_response field = text_field(value, placeholder, look);
@@ -1301,9 +1299,9 @@ static void empty_state(App *app, const Channel *forum) {
 
     if (allowed && !app->post_open) {
       div(key(id("empty-post")), mt(2), flex, items_center, h(9), px(4),
-          rounded(lg), bg(k->brand), hover(bg(k->brand_hover)),
+          rounded(lg), bg(k->primary), hover(bg(k->primary_hover)),
           text_size(px(14)), line_height(px(18)), font_weight(semibold),
-          text_color(CIVUE_WHITE), cursor_pointer) {
+          text_color(k->on_primary), cursor_pointer) {
         if (button().activated) {
           start_post(app, forum);
         }
@@ -1463,10 +1461,9 @@ void post_menu(App *app, Channel *post, civue_rect anchor) {
   civue_rect card = {};
 
   overlay() {
-    div(key(id("post-menu-card")), flex, flex_col, w(px(260)),
-        left(px(left)), top(px(anchor.y1 + 6)), p(2), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg)) {
+    div(key(id("post-menu-card")), flex, flex_col, w(px(260)), left(px(left)),
+        top(px(anchor.y1 + 6)), p(2), rounded(xl), bg(k->popover), border(1),
+        border_color(k->border_strong), shadow(lg)) {
       card = here();
 
       if (forum->ntags && (owner || moderator)) {

@@ -45,10 +45,10 @@ static void follow_button(App *app, const Channel *c) {
   div(key(id("follow-post")), flex, items_center, gap(1), flex_shrink_0, h(8),
       px(3), rounded(lg), border(1),
       border_color(joined ? k->border_strong : CIVUE_CLEAR),
-      style(.bg = joined ? CIVUE_CLEAR : k->brand),
-      hover(bg(joined ? k->hover : k->brand_hover)), text_size(px(14)),
+      style(.bg = joined ? CIVUE_CLEAR : k->primary),
+      hover(bg(joined ? k->hover : k->primary_hover)), text_size(px(14)),
       line_height(px(18)), font_weight(semibold),
-      text_color(joined ? k->text : CIVUE_WHITE), cursor_pointer) {
+      text_color(joined ? k->text : k->on_primary), cursor_pointer) {
     if (button().activated) {
       session_follow(app->session, c->id, !joined);
     }

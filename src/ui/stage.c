@@ -51,10 +51,10 @@ static void tile(App *app, const Channel *c, const VoiceState *v, civue_rect at,
         glyph(CIVUE_ICON(lucide, phone_outgoing), 14, k->faint);
       }
       else if (v->deafened) {
-        glyph(CIVUE_ICON(lucide, headphone_off), 14, k->danger);
+        glyph(CIVUE_ICON(lucide, headphone_off), 14, k->critical_text);
       }
       else if (v->muted) {
-        glyph(CIVUE_ICON(lucide, mic_off), 14, k->danger);
+        glyph(CIVUE_ICON(lucide, mic_off), 14, k->critical_text);
       }
 
       text(store_display_name(store, c->guild_id, v->user_id), min_w(0),
@@ -238,9 +238,9 @@ static bool radio_row(App *app, civue_id id, const char *name,
 
     div(flex, items_center, justify_center, size(5), flex_shrink_0,
         rounded(full), border(2),
-        border_color(on ? k->brand : k->border_strong)) {
+        border_color(on ? k->primary : k->border_strong)) {
       if (on) {
-        div(size(px(10)), rounded(full), bg(k->brand)) {}
+        div(size(px(10)), rounded(full), bg(k->primary)) {}
       }
     }
   }
@@ -275,7 +275,7 @@ static civue_rect side_list(App *app, civue_rect card) {
 
   overlay() {
     div(key(id("device-list")), flex, flex_col, left(px(left)), top(px(top)),
-        w(px(SIDE_WIDTH)), p(2), rounded(xl), bg(k->surface_high), border(1),
+        w(px(SIDE_WIDTH)), p(2), rounded(xl), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg), text_size(px(14)),
         line_height(px(18))) {
       list = here();
@@ -319,8 +319,8 @@ float volume_slider(App *app, civue_id id, float value, float most,
 
     fill(civue_rect_from(track.x0, mid - 2, track.x1, mid + 2),
          k->border_strong, 2);
-    fill(civue_rect_from(track.x0, mid - 2, x, mid + 2), k->brand, 2);
-    fill(civue_rect_from(x - 8, mid - 8, x + 8, mid + 8), CIVUE_WHITE, 8);
+    fill(civue_rect_from(track.x0, mid - 2, x, mid + 2), k->primary, 2);
+    fill(civue_rect_from(x - 8, mid - 8, x + 8, mid + 8), k->strong, 8);
   }
 
   return value;
@@ -389,7 +389,7 @@ static void sound_menu(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("sound-menu")), flex, flex_col, left(px(anchor.x0)),
         bottom(px(ui->size.y - anchor.y0 + 8)), w(px(MENU_WIDTH)), p(2),
-        rounded(xl), bg(k->surface_high), border(1),
+        rounded(xl), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg), text_size(px(14)),
         line_height(px(18))) {
       card = here();
@@ -417,9 +417,9 @@ static void sound_menu(App *app, civue_rect anchor) {
 
         div(flex, items_center, justify_center, size(5), flex_shrink_0,
             rounded(md), border(2),
-            border_color(s->voice_deaf ? k->brand : k->border_strong),
-            style(.bg = s->voice_deaf ? k->brand : CIVUE_CLEAR),
-            text_color(CIVUE_WHITE)) {
+            border_color(s->voice_deaf ? k->primary : k->border_strong),
+            style(.bg = s->voice_deaf ? k->primary : CIVUE_CLEAR),
+            text_color(k->on_primary)) {
           if (s->voice_deaf) {
             icon(lucide, check, size(px(14)));
           }
@@ -455,7 +455,7 @@ static void camera_menu(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("camera-menu")), flex, flex_col, left(px(anchor.x0)),
         bottom(px(ui->size.y - anchor.y0 + 8)), w(px(MENU_WIDTH)), p(2),
-        rounded(xl), bg(k->surface_high), border(1),
+        rounded(xl), bg(k->popover), border(1),
         border_color(k->border_strong), shadow(lg), text_size(px(14)),
         line_height(px(18))) {
       card = here();
@@ -534,8 +534,8 @@ static void controls(App *app, const Channel *c) {
     if (!here_now) {
       if (store_can(store, c, PERM_CONNECT)) {
         div(key(id("stage-join")), flex, items_center, gap(2), h(10), px(4),
-            rounded(xl), bg(k->brand), hover(bg(k->brand_hover)),
-            active(bg(k->brand_active)), text_color(CIVUE_WHITE),
+            rounded(xl), bg(k->primary), hover(bg(k->primary_hover)),
+            active(bg(k->primary_active)), text_color(k->on_primary),
             cursor_pointer) {
           if (button().activated) {
             voice_join(app, c->id);
@@ -551,8 +551,9 @@ static void controls(App *app, const Channel *c) {
 
         if (call && call_rings(store, call)) {
           div(key(id("stage-decline")), flex, items_center, gap(2), h(10),
-              px(4), rounded(xl), bg(k->danger), hover(bg(k->dnd)),
-              text_color(CIVUE_WHITE), cursor_pointer) {
+              px(4), rounded(xl), bg(k->danger), hover(bg(k->danger_hover)),
+              active(bg(k->danger_active)), text_color(k->on_danger),
+              cursor_pointer) {
             if (button().activated) {
               session_call_decline(s, c->id);
             }
@@ -572,7 +573,7 @@ static void controls(App *app, const Channel *c) {
         muted ? CIVUE_ICON(lucide, mic_off) : CIVUE_ICON(lucide, mic);
 
       if (bar_pair(app, id("stage-sound"), microphone,
-                   muted ? k->danger : k->strong, muted ? "Unmute" : "Mute",
+                   muted ? k->critical_text : k->strong, muted ? "Unmute" : "Mute",
                    POPOVER_VOICE_SOUND, &sound)) {
         session_voice_mute(s, !muted);
       }
@@ -584,14 +585,15 @@ static void controls(App *app, const Channel *c) {
 
       div(key(id("stage-leave")), flex, items_center, justify_center, w(16),
           h(12), flex_shrink_0, rounded(xl), bg(k->danger),
-          hover(bg(k->dnd)), cursor_pointer) {
+          hover(bg(k->danger_hover)), active(bg(k->danger_active)),
+          cursor_pointer) {
         civue_button_state state = button();
 
         if (state.activated) {
           session_voice_leave(s);
         }
 
-        glyph(CIVUE_ICON(lucide, phone_off), 20, CIVUE_WHITE);
+        glyph(CIVUE_ICON(lucide, phone_off), 20, k->on_danger);
         hint(app, id("stage-leave"), &state.response, "Disconnect",
              CIVUE_TOOLTIP_ABOVE);
       }

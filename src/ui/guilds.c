@@ -62,11 +62,12 @@ void guild_icon(App *app, const Guild *guild, float size, bool lit) {
   char acronym[32];
   guild_acronym(guild->name ? guild->name : "?", acronym, sizeof acronym);
 
-  fill(here(), lit ? k->brand : k->hover, size * .3f);
+  fill(here(), lit ? k->primary : k->hover, size * .3f);
 
   if (size >= ICON_SIZE) {
     text(acronym, text_size(px(strlen(acronym) > 2 ? 9 : 12)),
-         font_weight(medium), text_color(k->text), whitespace_nowrap);
+         font_weight(medium), text_color(lit ? k->on_primary : k->text),
+         whitespace_nowrap);
   }
 }
 
@@ -208,7 +209,7 @@ static void folder_name(const GuildFolder *folder, char *out, size_t cap) {
 static void folder_row(App *app, const GuildFolder *folder, bool *open) {
   const Look *k = &app->look;
   Store *store = app->session->store;
-  civue_color tint = folder->has_color ? rgb(folder->color) : k->brand;
+  civue_color tint = folder->has_color ? rgb(folder->color) : k->primary;
   Unread all = {};
   char name[160];
 
@@ -285,7 +286,7 @@ static void scroll_arrow(App *app, civue_id list, float at, float most,
   bool over = false;
 
   div(key(arrow), absolute, left(0), right(0), h(px(ARROW_HEIGHT)), flex,
-      items_center, justify_center, bg(k->surface_high),
+      items_center, justify_center, bg(k->popover),
       style(.inset[0] = up ? civue_px(HEADER) : (civue_length){},
             .inset[2] = up ? (civue_length){} : civue_px(FOOTER))) {
     // an arrow that shows up under a pointer at rest scrolls nothing, as
@@ -459,8 +460,8 @@ void guild_switcher(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("guild-card")), flex, flex_col, left(px(card.x0)),
         top(px(card.y0)), w(px(width)), h(px(height)), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg), overflow_hidden) {
+        bg(k->popover), border(1), border_color(k->border_strong), shadow(lg),
+        overflow_hidden) {
       div(flex, flex_col, flex_shrink_0, p(px(CARD_PAD)), border_b(1),
           border_color(k->border)) {
         home = home_row(app);
@@ -588,8 +589,8 @@ void guild_menu(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("guild-menu-card")), flex, flex_col, w(px(240)),
         left(px(card_left(anchor, 240))), top(px(anchor.y1 + 6)), p(2),
-        rounded(xl), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg)) {
+        rounded(xl), bg(k->popover), border(1), border_color(k->border_strong),
+        shadow(lg)) {
       card = here();
 
       invite = menu_row(app, id("menu-invite"), CIVUE_ICON(lucide, user_plus),
@@ -711,9 +712,8 @@ void invite_card(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("invite-card")), flex, flex_col, gap(2), w(px(320)),
         left(px(card_left(anchor, 320))), top(px(anchor.y1 + 6)), p(4),
-        rounded(xl), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg), text_size(px(14)),
-        line_height(px(18))) {
+        rounded(xl), bg(k->popover), border(1), border_color(k->border_strong),
+        shadow(lg), text_size(px(14)), line_height(px(18))) {
       card = here();
 
       text(title, text_size(px(16)), line_height(px(22)),
@@ -730,8 +730,8 @@ void invite_card(App *app, civue_rect anchor) {
           text(link, flex_1, min_w(0), truncate, text_color(k->text));
 
           div(key(id("invite-copy")), flex, items_center, h(8), px(3),
-              flex_shrink_0, rounded(md), bg(k->brand),
-              hover(bg(k->brand_hover)), text_color(CIVUE_WHITE),
+              flex_shrink_0, rounded(md), bg(k->primary),
+              hover(bg(k->primary_hover)), text_color(k->on_primary),
               font_weight(medium), cursor_pointer) {
             copy = button().activated;
             text(app->invite_copied ? "Copied" : "Copy");
@@ -808,8 +808,8 @@ void new_guild(App *app, civue_rect anchor) {
   overlay() {
     div(key(id("new-guild-card")), flex, flex_col, gap(3), w(px(300)),
         left(px(card_left(anchor, 300))), top(px(anchor.y0)), p(4), rounded(xl),
-        bg(k->surface_high), border(1), border_color(k->border_strong),
-        shadow(lg), text_size(px(14)), line_height(px(18))) {
+        bg(k->popover), border(1), border_color(k->border_strong), shadow(lg),
+        text_size(px(14)), line_height(px(18))) {
       card = here();
 
       text("Create a server", text_size(px(16)), line_height(px(22)),
@@ -828,8 +828,8 @@ void new_guild(App *app, civue_rect anchor) {
 
       div(key(id("new-guild-create")), flex, items_center, justify_center, h(9),
           rounded(lg), font_weight(medium),
-          style(.bg = ready ? k->brand : k->hover,
-                .text_color = ready ? CIVUE_WHITE : k->faint,
+          style(.bg = ready ? k->primary : k->hover,
+                .text_color = ready ? k->on_primary : k->faint,
                 .has_text_color = true,
                 .cursor = ready ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
                 .has_cursor = true)) {

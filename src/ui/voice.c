@@ -5,6 +5,7 @@
 #include <civue/dsl.h>
 
 #include "alerts.h"
+#include "forms.h"
 #include "voice/devices.h"
 #include "voice/voice.h"
 #include "widgets.h"
@@ -98,7 +99,7 @@ static const char *status_line(App *app, civue_color *color) {
   *color = k->idle;
 
   if (s->voice_error) {
-    *color = k->danger;
+    *color = k->critical_text;
     return s->voice_error;
   }
 
@@ -113,7 +114,7 @@ static const char *status_line(App *app, civue_color *color) {
     case VOICE_RESUMING:
       return "Reconnecting...";
     case VOICE_FAILED:
-      *color = k->danger;
+      *color = k->critical_text;
       return voice_error(s->voice);
     default:
       return "Connecting...";
@@ -187,18 +188,18 @@ void voice_panel(App *app) {
                                        : CIVUE_ICON(lucide, headphones);
 
       if (panel_button(app, id("voice-mute"), microphone,
-                       muted ? "Unmute" : "Mute", muted, k->danger)) {
+                       muted ? "Unmute" : "Mute", muted, k->critical_text)) {
         session_voice_mute(s, !muted);
       }
 
       if (panel_button(app, id("voice-deafen"), sound,
                        s->voice_deaf ? "Undeafen" : "Deafen", s->voice_deaf,
-                       k->danger)) {
+                       k->critical_text)) {
         session_voice_deafen(s, !s->voice_deaf);
       }
 
       if (panel_button(app, id("voice-leave"), CIVUE_ICON(lucide, phone_off),
-                       "Disconnect", true, k->danger)) {
+                       "Disconnect", true, k->critical_text)) {
         session_voice_leave(s);
       }
     }
@@ -245,22 +246,23 @@ void voice_switch_dialog(App *app) {
   overlay() {
     div(key(id("voice-switch-backdrop")), left(0), top(0), w(px(ui->size.x)),
         h(px(ui->size.y)), flex, items_center, justify_center,
-        bg(rgba(0x000000b3))) {
+        bg(k->scrim)) {
       close = button().activated;
 
-      div(key(id("voice-switch")), flex, flex_col, gap(2), w(px(400)), p(6),
-          rounded(xl), bg(k->surface), border(1), border_color(k->border),
-          shadow(lg), text_color(k->text)) {
+      div(key(id("voice-switch")), flex, flex_col, gap(4),
+          w(px(dialog_width())), p(6), rounded(px(DIALOG_RADIUS)),
+          bg(k->dialog), border(1), border_color(k->border), shadow(lg),
+          text_color(k->text), text_size(px(14)), line_height(px(20))) {
         // a press on the dialog is not one on what is behind it.
         button();
 
-        text("Switch voice channel?", text_size(px(20)), line_height(px(24)),
-             font_weight(semibold), text_color(k->strong));
-        text(line, text_color(k->subtle));
+        dialog_header(k, "Switch voice channel?", line);
 
-        div(flex, gap(2), flex_shrink_0, mt(4)) {
-          close |= dialog_button(k, id("voice-switch-cancel"), "Cancel", false);
-          join = dialog_button(k, id("voice-switch-join"), "Switch", true);
+        div(flex, justify_end, gap(2), flex_shrink_0) {
+          close |= form_button(app, id("voice-switch-cancel"), "Cancel",
+                               BUTTON_OUTLINE, false);
+          join = form_button(app, id("voice-switch-join"), "Switch",
+                             BUTTON_PRIMARY, false);
         }
       }
     }
@@ -309,15 +311,15 @@ static void rung_of(Session *s, Snowflake shown, Rung *rung, size_t *count) {
   }
 }
 
-// a round button of a card, true when pressed.
+// a round button of a card, its icon in `ink`, true when pressed.
 static bool card_button(civue_id id, civue_icon icon, civue_color color,
-                        civue_color lit) {
+                        civue_color lit, civue_color ink) {
   bool pressed = false;
 
   div(key(id), flex, items_center, justify_center, size(12), flex_shrink_0,
       rounded(full), style(.bg = color), hover(bg(lit)), cursor_pointer) {
     pressed = button().activated;
-    glyph(icon, 22, CIVUE_WHITE);
+    glyph(icon, 22, ink);
   }
 
   return pressed;
@@ -355,8 +357,8 @@ static void call_card(App *app, const Rung *rung) {
     }
     else {
       div(flex, items_center, justify_center, size(px(CARD_AVATAR)),
-          flex_shrink_0, rounded(full), bg(k->brand)) {
-        glyph(CIVUE_ICON(lucide, users), 36, CIVUE_WHITE);
+          flex_shrink_0, rounded(full), bg(k->primary)) {
+        glyph(CIVUE_ICON(lucide, users), 36, k->on_primary);
       }
     }
 
@@ -372,9 +374,11 @@ static void call_card(App *app, const Rung *rung) {
 
     div(flex, items_center, gap(4), mt(5)) {
       decline = card_button(id_at(id("call-decline"), at),
-                            CIVUE_ICON(lucide, phone_off), k->danger, k->dnd);
+                            CIVUE_ICON(lucide, phone_off), k->danger,
+                            k->danger_hover, k->on_danger);
       answer = card_button(id_at(id("call-answer"), at),
-                           CIVUE_ICON(lucide, phone), k->positive, k->online);
+                           CIVUE_ICON(lucide, phone), k->positive,
+                           k->positive_hover, k->on_positive);
     }
   }
 

@@ -225,8 +225,10 @@ static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
 }
 
 int main() {
-  App app = {.look = look_dark(), .stick = true, .directory_tab = -1};
+  App app = {.theme = theme_saved(), .stick = true, .directory_tab = -1};
   char *width = platform_pref_get(SIDEBAR_KEY);
+
+  app.look = look_of(app.theme);
 
   app.sidebar_width = width ? (float)atof(width) : SIDEBAR_WIDTH;
   free(width);
