@@ -239,26 +239,6 @@ static void frame_of(const civue_video_info *v, civue_rect r, float radius) {
   civue_image(civue_ui_current(), v->texture, r, uv, 1, radius, false);
 }
 
-static bool revealed(App *app, civue_id id) {
-  for (uint32_t i = 0; i < app->revealed.len; i++) {
-    if (app->revealed.v[i] == id) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-static void reveal(App *app, civue_id id) {
-  if (app->revealed.len == app->revealed.cap) {
-    app->revealed.cap = app->revealed.cap ? app->revealed.cap * 2 : 16;
-    app->revealed.v =
-      realloc(app->revealed.v, app->revealed.cap * sizeof *app->revealed.v);
-  }
-
-  app->revealed.v[app->revealed.len++] = id;
-}
-
 // the pointer is over `r`, where it is not clipped away.
 static bool over(civue_rect r) {
   civue_ui *ui = civue_ui_current();
@@ -704,11 +684,11 @@ void media_tile(App *app, civue_id id, Snowflake message_id,
       cursor_pointer) {
     civue_rect r = here();
 
-    if (item->spoiler && !revealed(app, id)) {
+    if (item->spoiler && !app_revealed(app, id)) {
       spoiler_cover(app, item, r, radius);
 
       if (button().activated) {
-        reveal(app, id);
+        app_reveal(app, id);
       }
 
       continue;
@@ -742,6 +722,84 @@ void media_tile(App *app, civue_id id, Snowflake message_id,
         }
 
         break;
+      }
+    }
+  }
+}
+
+civue_vec2 media_fit(uint32_t width, uint32_t height, float max_width,
+                     float max_height) {
+  double w = width ? width : max_width;
+  double h = height ? height : max_height;
+  double scale = fmin(1, fmin(max_width / w, max_height / h));
+
+  return point(fmax(round(w * scale), 16), fmax(round(h * scale), 16));
+}
+
+constexpr float MOSAIC_WIDTH = 550;
+constexpr float MOSAIC_MAX_HEIGHT = 350;
+constexpr float MOSAIC_RADIUS = 8;
+
+// a row of a mosaic: tiles of `size` side by side.
+static void mosaic_row(App *app, Snowflake message_id, const MediaItem *items,
+                       const civue_id *ids, size_t n, size_t from,
+                       size_t across, civue_vec2 size) {
+  div(flex, gap(1), flex_shrink_0) {
+    for (size_t i = from; i < from + across && i < n; i++) {
+      media_tile(app, ids[i], message_id, items, n, i, size, 2);
+    }
+  }
+}
+
+void media_mosaic(App *app, civue_id box, Snowflake message_id,
+                  const MediaItem *items, const civue_id *ids, size_t n) {
+  float room = (float)last_size(box).x;
+  float wide = room > 0 ? fminf(room, MOSAIC_WIDTH) : MOSAIC_WIDTH;
+  float half = roundf((wide - 4) / 2), third = roundf((wide - 8) / 3);
+
+  div(key(box), flex, flex_col, gap(1), mt(1), w(full), max_w(px(wide)),
+      rounded(px(MOSAIC_RADIUS)), overflow_hidden) {
+    if (n == 1) {
+      civue_vec2 size =
+        media_fit(items[0].width, items[0].height, wide, MOSAIC_MAX_HEIGHT);
+
+      media_tile(app, ids[0], message_id, items, 1, 0, size, MOSAIC_RADIUS);
+    }
+    else if (n == 2) {
+      mosaic_row(app, message_id, items, ids, n, 0, 2,
+                 point(half, fminf(half, 280)));
+    }
+    else if (n == 3) {
+      float left = roundf(2 * (wide - 4) / 3);
+
+      div(flex, gap(1)) {
+        media_tile(app, ids[0], message_id, items, n, 0, point(left, 350), 2);
+
+        div(flex, flex_col, gap(1)) {
+          for (size_t i = 1; i < 3; i++) {
+            media_tile(app, ids[i], message_id, items, n, i,
+                       point(wide - 4 - left, 173), 2);
+          }
+        }
+      }
+    }
+    else if (n == 4) {
+      mosaic_row(app, message_id, items, ids, n, 0, 2, point(half, 173));
+      mosaic_row(app, message_id, items, ids, n, 2, 2, point(half, 173));
+    }
+    else {
+      size_t lead = n % 3;
+
+      if (lead == 1) {
+        mosaic_row(app, message_id, items, ids, n, 0, 1, point(wide, 280));
+      }
+      else if (lead == 2) {
+        mosaic_row(app, message_id, items, ids, n, 0, 2,
+                   point(half, fminf(half, 280)));
+      }
+
+      for (size_t i = lead; i < n; i += 3) {
+        mosaic_row(app, message_id, items, ids, n, i, 3, point(third, third));
       }
     }
   }

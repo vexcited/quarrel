@@ -16,6 +16,8 @@ constexpr float SIDEBAR_MAX = 440;
 constexpr float MEMBER_LIST_WIDTH = 264;
 constexpr float TOP_BAR_HEIGHT = 38;
 constexpr float HEADER_HEIGHT = 48;
+// where what a message says starts, its avatar before it.
+constexpr float MESSAGE_GUTTER = 72;
 // a list takes its scroll once it was laid out, a frame after it opened.
 constexpr uint8_t GUILDS_SETTLE = 3;
 
@@ -342,6 +344,10 @@ Guild *app_guild(App *app);
 [[gnu::pure]] bool ids_has(const Ids *ids, Snowflake id);
 // adds `id`, or removes it when it is there.
 void ids_toggle(Ids *ids, Snowflake id);
+
+// whether a spoiler was pressed, and presses one.
+[[gnu::pure]] bool app_revealed(const App *app, civue_id spoiler);
+void app_reveal(App *app, civue_id spoiler);
 
 static inline void app_toggle(App *app, Popover popover) {
   app->popover = app->popover == popover ? POPOVER_NONE : popover;

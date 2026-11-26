@@ -13,10 +13,7 @@
 #include "media.h"
 #include "widgets.h"
 
-constexpr float GUTTER = 72;
-constexpr float MEDIA_MAX_HEIGHT = 350;
-constexpr float MEDIA_RADIUS = 8;
-constexpr float MOSAIC_WIDTH = 550;
+constexpr float GUTTER = MESSAGE_GUTTER;
 constexpr int64_t GROUP_GAP_MS = 7 * 60 * 1000;
 
 // what the keys of messages hang from, so that one shown twice, as in the
@@ -30,15 +27,6 @@ static civue_id message_key(const Message *m) {
 
 static bool starts_with(const char *s, const char *prefix) {
   return s && !strncmp(s, prefix, strlen(prefix));
-}
-
-static civue_vec2 fit_media(uint32_t width, uint32_t height, float max_width,
-                            float max_height) {
-  double w = width ? width : max_width;
-  double h = height ? height : max_height;
-  double scale = fmin(1, fmin(max_width / w, max_height / h));
-
-  return point(fmax(round(w * scale), 16), fmax(round(h * scale), 16));
 }
 
 // one picture of an embed, `size` points, opened in the viewer when pressed.
@@ -139,76 +127,7 @@ static bool attachment_media(const Attachment *a, MediaItem *out) {
   return true;
 }
 
-// a row of a mosaic: tiles of `size` side by side.
-static void mosaic_row(App *app, Snowflake message_id, const MediaItem *items,
-                       const civue_id *ids, size_t n, size_t from,
-                       size_t across, civue_vec2 size) {
-  div(flex, gap(1), flex_shrink_0) {
-    for (size_t i = from; i < from + across && i < n; i++) {
-      media_tile(app, ids[i], message_id, items, n, i, size, 2);
-    }
-  }
-}
 
-// the media of a message as discord's mosaic lays them out for a width of
-// `wide`, at most 550: alone at its own shape, two side by side, three as
-// one beside two, four in a square, and more under a row of one or two in
-// rows of three squares.
-static void mosaic(App *app, const Message *m, const MediaItem *items,
-                   const civue_id *ids, size_t n) {
-  Snowflake message_id = m->id ? m->id : m->nonce;
-  civue_id box = id_at(message_key(m), 0x80);
-  float room = (float)last_size(box).x;
-  float wide = room > 0 ? fminf(room, MOSAIC_WIDTH) : MOSAIC_WIDTH;
-  float half = roundf((wide - 4) / 2), third = roundf((wide - 8) / 3);
-
-  div(key(box), flex, flex_col, gap(1), mt(1), w(full), max_w(px(wide)),
-      rounded(px(MEDIA_RADIUS)), overflow_hidden) {
-    if (n == 1) {
-      civue_vec2 size = fit_media(items[0].width, items[0].height, wide,
-                                  MEDIA_MAX_HEIGHT);
-
-      media_tile(app, ids[0], message_id, items, 1, 0, size, MEDIA_RADIUS);
-    }
-    else if (n == 2) {
-      mosaic_row(app, message_id, items, ids, n, 0, 2,
-                 point(half, fminf(half, 280)));
-    }
-    else if (n == 3) {
-      float left = roundf(2 * (wide - 4) / 3);
-
-      div(flex, gap(1)) {
-        media_tile(app, ids[0], message_id, items, n, 0, point(left, 350), 2);
-
-        div(flex, flex_col, gap(1)) {
-          for (size_t i = 1; i < 3; i++) {
-            media_tile(app, ids[i], message_id, items, n, i,
-                       point(wide - 4 - left, 173), 2);
-          }
-        }
-      }
-    }
-    else if (n == 4) {
-      mosaic_row(app, message_id, items, ids, n, 0, 2, point(half, 173));
-      mosaic_row(app, message_id, items, ids, n, 2, 2, point(half, 173));
-    }
-    else {
-      size_t lead = n % 3;
-
-      if (lead == 1) {
-        mosaic_row(app, message_id, items, ids, n, 0, 1, point(wide, 280));
-      }
-      else if (lead == 2) {
-        mosaic_row(app, message_id, items, ids, n, 0, 2,
-                   point(half, fminf(half, 280)));
-      }
-
-      for (size_t i = lead; i < n; i += 3) {
-        mosaic_row(app, message_id, items, ids, n, i, 3, point(third, third));
-      }
-    }
-  }
-}
 
 static void attachments(App *app, const Message *m) {
   MediaItem items[10];
@@ -223,7 +142,8 @@ static void attachments(App *app, const Message *m) {
   }
 
   if (n) {
-    mosaic(app, m, items, ids, n);
+    media_mosaic(app, id_at(message_key(m), 0x80), m->id ? m->id : m->nonce,
+                 items, ids, n);
   }
 
   // past the tenth, media shows as files.
@@ -354,7 +274,7 @@ static civue_vec2 embed_media_max(const EmbedView *v) {
 static civue_vec2 embed_video_size(const EmbedView *v) {
   civue_vec2 max = embed_media_max(v);
   const EmbedMedia *of = v->video ? v->video : v->thumbnail;
-  civue_vec2 size = fit_media(of->width, of->height, max.x, max.y);
+  civue_vec2 size = media_fit(of->width, of->height, max.x, max.y);
 
   return point(fmax(size.x, 150), fmax(size.y, 144));
 }
@@ -473,7 +393,7 @@ static bool embed_media(App *app, civue_id id, const EmbedView *v) {
   }
   else if (v->image) {
     embed_picture(app, id, v->message_id, v->image,
-                  fit_media(v->image->width, v->image->height, max.x, max.y));
+                  media_fit(v->image->width, v->image->height, max.x, max.y));
   }
   else {
     return false;
@@ -554,7 +474,7 @@ static float embed_width(const EmbedView *v, bool thumbnail) {
   else if (v->image) {
     civue_vec2 max = embed_media_max(v);
 
-    media_width = fit_media(v->image->width, v->image->height, max.x, max.y).x;
+    media_width = media_fit(v->image->width, v->image->height, max.x, max.y).x;
   }
 
   // a card around media stays close to it.
@@ -755,7 +675,7 @@ static void embed(App *app, civue_id id, const EmbedView *v,
         if (thumbnail) {
           div(ml(4), mt(2), flex_shrink_0) {
             embed_picture(app, id_at(id, 6), v->message_id, v->thumbnail,
-                          fit_media(v->thumbnail->width, v->thumbnail->height,
+                          media_fit(v->thumbnail->width, v->thumbnail->height,
                                     EMBED_THUMBNAIL, EMBED_THUMBNAIL));
           }
         }

@@ -88,26 +88,6 @@ static void end_block(Flow *f) {
   f->x = f->indent;
 }
 
-static bool revealed(const App *app, civue_id spoiler) {
-  for (uint32_t i = 0; i < app->revealed.len; i++) {
-    if (app->revealed.v[i] == spoiler) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-static void reveal(App *app, civue_id spoiler) {
-  if (app->revealed.len == app->revealed.cap) {
-    app->revealed.cap = app->revealed.cap ? app->revealed.cap * 2 : 16;
-    app->revealed.v =
-      realloc(app->revealed.v, app->revealed.cap * sizeof *app->revealed.v);
-  }
-
-  app->revealed.v[app->revealed.len++] = spoiler;
-}
-
 // what a piece does under the pointer: a spoiler shows, a link opens, a
 // channel mention goes to its channel and a user's opens their profile.
 // true while it is hovered.
@@ -125,7 +105,7 @@ static bool interact_piece(Flow *f, const Run *r, civue_rect at) {
 
   if (r->hidden) {
     if (resp.clicked) {
-      reveal(f->app, r->spoiler);
+      app_reveal(f->app, r->spoiler);
       civue_request_repaint(f->ui);
     }
 
@@ -533,7 +513,7 @@ static void one_inline(Flow *f, const MdNode *node, Run r) {
     case MD_SPOILER:
       r.spoiler = id_at(f->key, 0x800000 + f->spoilers++);
 
-      if (revealed(f->app, r.spoiler)) {
+      if (app_revealed(f->app, r.spoiler)) {
         r.pill = true;
         r.ground = k->pressed;
       }

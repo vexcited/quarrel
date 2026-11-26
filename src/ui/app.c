@@ -66,6 +66,26 @@ void ids_toggle(Ids *ids, Snowflake id) {
   ids->v[ids->len++] = id;
 }
 
+bool app_revealed(const App *app, civue_id spoiler) {
+  for (uint32_t i = 0; i < app->revealed.len; i++) {
+    if (app->revealed.v[i] == spoiler) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void app_reveal(App *app, civue_id spoiler) {
+  if (app->revealed.len == app->revealed.cap) {
+    app->revealed.cap = app->revealed.cap ? app->revealed.cap * 2 : 16;
+    app->revealed.v =
+      realloc(app->revealed.v, app->revealed.cap * sizeof *app->revealed.v);
+  }
+
+  app->revealed.v[app->revealed.len++] = spoiler;
+}
+
 void app_reset(App *app) {
   app->account_id = app->session->account_id;
   app->popover = POPOVER_NONE;
