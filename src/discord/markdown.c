@@ -915,6 +915,8 @@ static bool angle(Md *md, MdNode *parent, size_t base, const char *s,
   return false;
 }
 
+#define SHRUG "¯\\_(ツ)_/¯"
+
 static void parse_inline(Md *md, MdNode *parent, const char *s, size_t len) {
   size_t base = md->pending_len;
 
@@ -930,6 +932,14 @@ static void parse_inline(Md *md, MdNode *parent, const char *s, size_t len) {
 
   while (i < len) {
     char c = s[i];
+
+    // Discord has an emoticon rule that keeps the shrug whole, backslash included.
+    if ((unsigned char)c == 0xc2 && len - i >= sizeof(SHRUG) - 1 &&
+        memcmp(s + i, SHRUG, sizeof(SHRUG) - 1) == 0) {
+      push(md, s + i, sizeof(SHRUG) - 1);
+      i += sizeof(SHRUG) - 1;
+      continue;
+    }
 
     if (c == '\\' && i + 1 < len && is_punct(s[i + 1])) {
       push(md, s + i + 1, 1);
