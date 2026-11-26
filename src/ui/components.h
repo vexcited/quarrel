@@ -44,6 +44,9 @@ void voice_panel(App *app);
 void voice_join(App *app, Snowflake channel_id);
 // asks whether to leave the call for `app->voice_switch`, while it is set.
 void voice_switch_dialog(App *app);
+// the calls that ring any account, each with who calls and a button to
+// decline and one to answer, over whatever the window shows.
+void call_cards(App *app);
 // the call of a voice channel in place of its chat: who is in it, and the
 // microphone, the camera and the way out under them.
 void voice_stage(App *app, Channel *c);
@@ -93,6 +96,10 @@ void message_list(App *app, Channel *channel);
 // node `width` points wide.
 void message_preview(App *app, const Channel *c, const Message *m,
                      float width);
+// what a message that is a line of its own says after its author's name,
+// `other` being who it is about. `out` or words of its own.
+const char *message_system_text(const Message *m, char *out, size_t cap,
+                                const char *other);
 void composer(App *app, Channel *channel);
 // a button of the composer's row in a node known by `id`, lit while what
 // it opens is `open`. `label` hints at it unless null, `at` takes its place

@@ -191,6 +191,7 @@ static void on_thread_members(Store *s, const cima_json *d) {
   CIMA_EACH(member, json_items(json_get(d, "added_members"))) {
     if (snowflake_of(json_get(member, "user_id")) == s->self_id) {
       store_set_thread_joined(s, id, true);
+      store_put_thread_member(s, id, member);
     }
   }
 
@@ -286,6 +287,7 @@ void events_dispatch(Store *s, const char *type, const cima_json *d) {
   }
   else if (IS("THREAD_MEMBER_UPDATE")) {
     store_set_thread_joined(s, snowflake_of(json_get(d, "id")), true);
+    store_put_thread_member(s, snowflake_of(json_get(d, "id")), d);
   }
   else if (IS("THREAD_MEMBERS_UPDATE")) {
     on_thread_members(s, d);

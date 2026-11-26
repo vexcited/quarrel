@@ -151,6 +151,7 @@ set(QUARREL_CORE_SOURCES
 set(QUARREL_DARWIN_SOURCES
   src/platform/darwin/audio.m
   src/platform/darwin/camera.m
+  src/platform/darwin/notify.m
   src/platform/darwin/pending.m
   src/platform/darwin/qr.m
   src/platform/darwin/storage.m
@@ -163,6 +164,7 @@ set(QUARREL_LINUX_SOURCES
   src/platform/linux/camera.c
   src/platform/linux/loop.c
   src/platform/linux/memory.c
+  src/platform/linux/notify.c
   src/platform/linux/pipe.c
   src/platform/linux/qr.c
   src/platform/linux/storage.c
@@ -179,7 +181,8 @@ if(APPLE)
     "-framework CoreGraphics" "-framework CoreFoundation" "-framework CoreImage"
     "-framework AudioToolbox" "-framework AVFoundation"
     "-framework CoreAudio" "-framework CoreMedia" "-framework CoreVideo"
-    "-framework Metal" "-framework AppKit" "-framework Network" z)
+    "-framework Metal" "-framework AppKit" "-framework Network"
+    "-framework UserNotifications" z)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   find_package(PkgConfig REQUIRED)
   find_package(CURL REQUIRED)
@@ -230,6 +233,7 @@ FetchContent_MakeAvailable(hcaptcha-civue)
 add_executable(quarrel
   src/main.c
   src/ui/accounts.c
+  src/ui/alerts.c
   src/ui/channels.c
   src/ui/forms.c
   src/ui/inbox.c

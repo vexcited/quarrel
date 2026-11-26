@@ -237,6 +237,7 @@ static void settings_button(App *app) {
     if (state.activated) {
       app->popover = POPOVER_NONE;
       app->settings_open = true;
+      app->settings_page = SETTINGS_VOICE;
       app->settings_part = 0;
       app->settings_select = -1;
       devices_list(app);

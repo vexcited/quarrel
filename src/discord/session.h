@@ -170,6 +170,10 @@ typedef struct {
   // called on the main thread after the state or the store changed.
   // civue_window_wake fits as it is.
   void (*on_change)(void);
+  // called on the main thread with a message that just came through the
+  // gateway and that store_notifies wants told. the message is the
+  // store's, good for the call. may be null.
+  void (*on_message)(Session *s, const Message *m);
   // never reads or writes the token in the keychain.
   bool no_keychain;
 } SessionOptions;

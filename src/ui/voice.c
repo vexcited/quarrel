@@ -4,11 +4,18 @@
 
 #include <civue/dsl.h>
 
+#include "alerts.h"
 #include "voice/devices.h"
 #include "voice/voice.h"
 #include "widgets.h"
 
 constexpr float MEMBER_AVATAR = 20;
+constexpr float CARD_WIDTH = 232;
+// with the line that names another account.
+constexpr float CARD_HEIGHT = 270;
+constexpr float CARD_GAP = 12;
+constexpr float CARD_AVATAR = 80;
+constexpr size_t CARDS_MOST = 4;
 
 static bool speaks(const Session *s, const Channel *c, Snowflake user_id) {
   return s->voice && s->voice_channel_id == c->id &&
@@ -269,5 +276,159 @@ void voice_switch_dialog(App *app) {
 
   if (join || close) {
     app->voice_switch = 0;
+  }
+}
+
+/* ========================================================================== */
+/* the calls that ring. learned from the web client: each has a card over     */
+/* whatever the window shows, with who calls and a button to turn the call    */
+/* down and one to join it, for as long as it rings.                          */
+/* ========================================================================== */
+
+typedef struct {
+  Session *s;
+  const PrivateCall *call;
+} Rung;
+
+// `shown` is the private channel the window is on, whose call shows over
+// its messages with the same buttons: it has no card.
+static void rung_of(Session *s, Snowflake shown, Rung *rung, size_t *count) {
+  const Store *store = s->store;
+
+  if (s->state != SESSION_READY) {
+    return;
+  }
+
+  for (size_t i = 0; i < store->ncalls && *count < CARDS_MOST; i++) {
+    const PrivateCall *call = &store->calls[i];
+
+    if (call_rings(store, call) && call->channel_id != shown &&
+        store_channel(store, call->channel_id)) {
+      rung[(*count)++] = (Rung){s, call};
+    }
+  }
+}
+
+// a round button of a card, true when pressed.
+static bool card_button(civue_id id, civue_icon icon, civue_color color,
+                        civue_color lit) {
+  bool pressed = false;
+
+  div(key(id), flex, items_center, justify_center, size(12), flex_shrink_0,
+      rounded(full), style(.bg = color), hover(bg(lit)), cursor_pointer) {
+    pressed = button().activated;
+    glyph(icon, 22, CIVUE_WHITE);
+  }
+
+  return pressed;
+}
+
+static void call_card(App *app, const Rung *rung) {
+  const Look *k = &app->look;
+  Session *s = rung->s;
+  Store *store = s->store;
+  Snowflake channel_id = rung->call->channel_id;
+  const Channel *c = store_channel(store, channel_id);
+  const User *user = c->type == CHANNEL_DM && c->nrecipients
+                       ? store_user(store, c->recipients[0])
+                       : nullptr;
+  civue_id at = id_at(id_at(id("call-card"), s->account_id), channel_id);
+  char name[128], account[160] = "";
+  bool decline = false, answer = false;
+
+  store_channel_name(store, c, name, sizeof name);
+
+  // the call of an account that is not the one shown says whose it is.
+  if (s != app->session) {
+    snprintf(account, sizeof account, "for %s",
+             store_user_name(store_user(store, store->self_id)));
+  }
+
+  div(key(at), flex, flex_col, items_center, w(px(CARD_WIDTH)), px(4), py(6),
+      rounded(xl), bg(k->surface), border(1), border_color(k->border_strong),
+      shadow(lg), text_color(k->text)) {
+    // a press on the card is not one on what is behind it.
+    button();
+
+    if (user) {
+      avatar(app, user, 0, CARD_AVATAR, false, k->surface);
+    }
+    else {
+      div(flex, items_center, justify_center, size(px(CARD_AVATAR)),
+          flex_shrink_0, rounded(full), bg(k->brand)) {
+        glyph(CIVUE_ICON(lucide, users), 36, CIVUE_WHITE);
+      }
+    }
+
+    text(name, mt(4), max_w(full), truncate, text_size(px(18)),
+         line_height(px(22)), font_weight(semibold), text_color(k->strong));
+    text("Incoming Call", text_size(px(14)), line_height(px(18)),
+         text_color(k->subtle));
+
+    if (*account) {
+      text(account, max_w(full), truncate, text_size(px(12)),
+           line_height(px(16)), text_color(k->faint));
+    }
+
+    div(flex, items_center, gap(4), mt(5)) {
+      decline = card_button(id_at(id("call-decline"), at),
+                            CIVUE_ICON(lucide, phone_off), k->danger, k->dnd);
+      answer = card_button(id_at(id("call-answer"), at),
+                           CIVUE_ICON(lucide, phone), k->positive, k->online);
+    }
+  }
+
+  if (decline) {
+    session_call_decline(s, channel_id);
+  }
+  else if (answer) {
+    alerts_open(s->account_id, channel_id, true);
+  }
+}
+
+void call_cards(App *app) {
+  civue_ui *ui = civue_ui_current();
+  const Roster *roster = app->roster;
+  Rung rung[CARDS_MOST];
+  size_t count = 0;
+  bool listed = false;
+  // behind the settings the channel shows nothing of its call.
+  const Channel *on = app->settings_open ? nullptr : app_channel(app);
+  Snowflake shown = on ? on->id : 0;
+
+  for (size_t i = 0; i < roster->naccounts; i++) {
+    Session *s = roster->accounts[i].session;
+
+    if (s) {
+      listed = listed || s == app->session;
+      rung_of(s, s == app->session ? shown : 0, rung, &count);
+    }
+  }
+
+  // a session played from a file is no account's.
+  if (!listed) {
+    rung_of(app->session, shown, rung, &count);
+  }
+
+  if (!count) {
+    return;
+  }
+
+  float width = (float)count * CARD_WIDTH + (float)(count - 1) * CARD_GAP;
+  // under where a private channel shows its own call, whose buttons stay
+  // in reach, and whole in a small window.
+  float top = ui->size.y * 0.46f < 300 ? 300 : ui->size.y * 0.46f;
+
+  if (top > ui->size.y - CARD_HEIGHT - 16) {
+    top = ui->size.y - CARD_HEIGHT - 16;
+  }
+
+  overlay() {
+    div(key(id("call-cards")), flex, items_start, gap(px(CARD_GAP)),
+        left(px((ui->size.x - width) / 2)), top(px(top))) {
+      for (size_t i = 0; i < count; i++) {
+        call_card(app, &rung[i]);
+      }
+    }
   }
 }

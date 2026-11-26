@@ -5,6 +5,8 @@
 
 #include <civue/dsl.h>
 
+#include "alerts.h"
+#include "cues.h"
 #include "voice/camera.h"
 #include "voice/devices.h"
 #include "voice/mictest.h"
@@ -39,6 +41,10 @@ typedef enum : uint8_t {
 } Part;
 
 static const char *const PART_NAMES[PARTS] = {"Voice", "Camera", "Advanced"};
+static const char *const PAGE_NAMES[] = {
+  [SETTINGS_VOICE] = "Voice & Video",
+  [SETTINGS_NOTIFICATIONS] = "Notifications",
+};
 
 /* ========================================================================== */
 /* the sidebar.                                                               */
@@ -121,10 +127,33 @@ static int sidebar(App *app, bool *leave) {
         pr(3)) {
       div(flex, flex_col, gap(1), flex_shrink_0, pb(1), border_b(1),
           border_color(k->border)) {
+        bool voice = app->settings_page == SETTINGS_VOICE;
+
         section_label(k, "Experience");
-        nav_item(app, id("settings-voice"), CIVUE_ICON(lucide, mic),
-                 "Voice & Video", true, k->subtle);
-        part = subnav(app);
+
+        if (nav_item(app, id("settings-voice"), CIVUE_ICON(lucide, mic),
+                     PAGE_NAMES[SETTINGS_VOICE], voice, k->subtle) &&
+            !voice) {
+          app->settings_page = SETTINGS_VOICE;
+          part = PART_VOICE;
+        }
+
+        if (voice) {
+          int pressed = subnav(app);
+
+          part = pressed >= 0 ? pressed : part;
+        }
+
+        if (nav_item(app, id("settings-notifications"),
+                     CIVUE_ICON(lucide, bell),
+                     PAGE_NAMES[SETTINGS_NOTIFICATIONS], !voice, k->subtle) &&
+            voice) {
+          // what the page left was testing stops with it.
+          app->settings_page = SETTINGS_NOTIFICATIONS;
+          app->settings_select = -1;
+          mictest_stop();
+          camera_stop();
+        }
       }
 
       div(flex, flex_col, gap(1), flex_shrink_0) {
@@ -495,28 +524,82 @@ static void input_profile(App *app) {
   }
 }
 
-static void switch_row(App *app, VoiceOption option, const char *name,
-                       const char *about) {
+// a switch beside what it turns on and off, said in a line of its own
+// when `about` is given. true when it was pressed.
+static bool switch_box(App *app, civue_id id, const char *name,
+                       const char *about, bool on) {
   const Look *k = &app->look;
-  bool on = devices_option(option);
+  bool pressed = false;
 
   div(flex, items_center, gap(4), flex_shrink_0) {
     div(flex, flex_col, gap(1), flex_1, min_w(0)) {
       text(name, font_weight(medium), text_color(k->strong));
-      text(about, text_size(px(14)), line_height(px(18)),
-           text_color(k->subtle));
+
+      if (about != nullptr) {
+        text(about, text_size(px(14)), line_height(px(18)),
+             text_color(k->subtle));
+      }
     }
 
-    div(key(id_at(id("settings-switch"), option)), relative, w(10), h(6),
-        flex_shrink_0, rounded(full),
+    div(key(id), relative, w(10), h(6), flex_shrink_0, rounded(full),
         style(.bg = on ? k->brand : k->border_strong), cursor_pointer) {
-      if (button().activated) {
-        devices_set_option(option, !on);
-      }
+      pressed = button().activated;
 
       div(absolute, top(px(3)), left(px(on ? 19 : 3)), size(px(18)),
           rounded(full), bg(CIVUE_WHITE)) {}
     }
+  }
+
+  return pressed;
+}
+
+static void switch_row(App *app, VoiceOption option, const char *name,
+                       const char *about) {
+  bool on = devices_option(option);
+
+  if (switch_box(app, id_at(id("settings-switch"), option), name, about, on)) {
+    devices_set_option(option, !on);
+  }
+}
+
+// what the settings call a sound.
+static const char *sound_label(Sound sound) {
+  switch (sound) {
+    case SOUND_MESSAGE1:
+      return "Message";
+    case SOUND_DEAFEN:
+      return "Deafen";
+    case SOUND_UNDEAFEN:
+      return "Undeafen";
+    case SOUND_MUTE:
+      return "Mute";
+    case SOUND_UNMUTE:
+      return "Unmute";
+    case SOUND_DISCONNECT:
+      return "Voice Disconnected";
+    case SOUND_USER_JOIN:
+      return "User Join";
+    case SOUND_USER_LEAVE:
+      return "User Leave";
+    case SOUND_USER_MOVED:
+      return "User Moved";
+    case SOUND_STREAM_STARTED:
+      return "Stream Started";
+    case SOUND_CALL_RINGING:
+      return "Incoming Ring";
+    case SOUND_CALL_CALLING:
+      return "Outgoing Ring";
+    default:
+      return "Sound";
+  }
+}
+
+static void sound_row(App *app, Sound sound) {
+  bool on = sounds_enabled(sound);
+
+  if (switch_box(app, id_at(id("settings-sound"), sound), sound_label(sound),
+                 nullptr, on)) {
+    sounds_set_enabled(sound, !on);
   }
 }
 
@@ -695,6 +778,48 @@ static void camera_preview(App *app, float wide) {
   }
 }
 
+// what the user is told of while they look elsewhere. which messages are
+// worth it stays with their notification settings on discord.
+static void notifications_page(App *app, bool narrow) {
+  const Look *k = &app->look;
+
+  div(flex, justify_center, flex_shrink_0, px(4),
+      style(.padding[0] = civue_px(narrow ? 80 : 64),
+            .padding[2] = civue_px(narrow ? 80 : 64))) {
+    div(flex, flex_col, gap(6), flex_1, min_w(0), max_w(px(PAGE_MAX))) {
+      text("Notifications", flex_shrink_0, text_size(px(24)),
+           line_height(px(30)), font_weight(semibold), text_color(k->strong));
+      if (switch_box(app, id("settings-notify"),
+                     "Enable Desktop Notifications",
+                     "Shows a notification of your system for the messages "
+                     "your notification settings want you told of, from "
+                     "every account logged in.",
+                     alerts_enabled())) {
+        alerts_set_enabled(!alerts_enabled());
+      }
+
+      div(flex_shrink_0, h(px(1)), my(3), bg(k->border)) {}
+
+      div(flex, flex_col, gap(1), flex_shrink_0) {
+        text("Sounds", font_weight(semibold), text_size(px(20)),
+             line_height(px(24)), text_color(k->strong));
+        text("Discord's own, at the volume of your speaker and through "
+             "the output of your system.",
+             text_size(px(14)), line_height(px(18)), text_color(k->subtle));
+      }
+
+      sound_row(app, SOUND_MESSAGE1);
+
+      for (size_t i = 0; i < CUE_SOUNDS_COUNT; i++) {
+        sound_row(app, CUE_SOUNDS[i]);
+      }
+
+      sound_row(app, SOUND_CALL_RINGING);
+      sound_row(app, SOUND_CALL_CALLING);
+    }
+  }
+}
+
 // the page, and where each of its parts starts down it.
 static void page(App *app, bool narrow, bool stacked, float tops[PARTS]) {
   const Look *k = &app->look;
@@ -784,6 +909,7 @@ void settings_dialog(App *app) {
   bool close = false, leave = false;
   float tops[PARTS] = {};
   int part = -1;
+  uint8_t shown = app->settings_page;
 
   overlay() {
     div(key(id("settings-backdrop")), left(0), top(0), w(px(width)),
@@ -807,7 +933,7 @@ void settings_dialog(App *app) {
         div(flex, flex_col, flex_1, min_w(0), h(full), bg(k->chat)) {
           div(flex, items_center, flex_shrink_0, h(12), pl(4), pr(2),
               border_b(1), border_color(k->border)) {
-            text("Voice & Video", flex_1, min_w(0), truncate,
+            text(PAGE_NAMES[app->settings_page], flex_1, min_w(0), truncate,
                  font_weight(medium), text_color(k->strong));
 
             if (icon_button(app, id("settings-close"), CIVUE_ICON(lucide, x),
@@ -818,7 +944,12 @@ void settings_dialog(App *app) {
 
           div(key(body), flex, flex_col, flex_1, min_h(0), overflow_y_scroll,
               scrollbars(&app->bars)) {
-            page(app, full, width <= STACK_UNDER, tops);
+            if (app->settings_page == SETTINGS_NOTIFICATIONS) {
+              notifications_page(app, full);
+            }
+            else {
+              page(app, full, width <= STACK_UNDER, tops);
+            }
           }
         }
       }
@@ -830,6 +961,9 @@ void settings_dialog(App *app) {
   if (part >= 0) {
     app->settings_part = (uint8_t)part;
     civue_set_scroll_y(ui, body, tops[part]);
+  }
+  else if (app->settings_page != shown) {
+    civue_set_scroll_y(ui, body, 0);
   }
 
   if (civue_key_pressed(ui, CIVUE_KEY_ESCAPE)) {

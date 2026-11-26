@@ -2962,6 +2962,21 @@ static void fill_overwrites(Channel *c, const cima_json *overwrites) {
   }
 }
 
+// what a thread's member object says of the current user's membership.
+static void put_thread_member(Channel *c, const cima_json *member) {
+  const cima_json *flags = json_get(member, "flags");
+
+  if (flags != nullptr) {
+    c->thread_flags = (uint32_t)snowflake_of(flags);
+  }
+
+  put_bool(&c->muted, member, "muted");
+
+  if (json_get(member, "mute_config") != nullptr) {
+    c->mute_until = mute_end(member);
+  }
+}
+
 Channel *store_put_channel(Store *s, const cima_json *channel,
                            Snowflake guild_id) {
   Snowflake id = snowflake_of(json_get(channel, "id"));
@@ -3096,11 +3111,7 @@ Channel *store_put_channel(Store *s, const cima_json *channel,
     c->thread_joined = true;
     c->thread_joined_at =
       iso8601_parse_ms(json_get_or(membership, "join_timestamp", nullptr));
-    put_bool(&c->muted, membership, "muted");
-
-    if (json_get(membership, "mute_config") != nullptr) {
-      c->mute_until = mute_end(membership);
-    }
+    put_thread_member(c, membership);
   }
 
   if (json_get(channel, "is_message_request") != nullptr ||
@@ -3263,10 +3274,21 @@ void store_sync_threads(Store *s, const cima_json *sync) {
       c->thread_joined = true;
       c->thread_joined_at =
         iso8601_parse_ms(json_get_or(member, "join_timestamp", nullptr));
+      put_thread_member(c, member);
     }
   }
 
   touch_layout(s, g);
+}
+
+void store_put_thread_member(Store *s, Snowflake channel_id,
+                             const cima_json *member) {
+  Channel *c = store_channel(s, channel_id);
+
+  if (c != nullptr && json_type(member) == CIMA_JSON_OBJECT) {
+    put_thread_member(c, member);
+    store_touch_channel(s, c);
+  }
 }
 
 void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined) {
@@ -3278,6 +3300,11 @@ void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined) {
   }
 
   c->thread_joined = joined;
+
+  if (!joined) {
+    c->thread_flags = 0;
+  }
+
   // the event's own time is seconds away at most.
   c->thread_joined_at = joined ? now_ms(s) : 0;
 
@@ -3924,6 +3951,138 @@ static bool shows_unreads(const Store *s, const Channel *c) {
   }
 
   return notify_level(s, c) == NOTIFY_ALL_MESSAGES;
+}
+
+/* ========================================================================== */
+/* notifications. learned from the web client's NotificationStore and what    */
+/* it asks of UserGuildSettingsStore and JoinedThreadsStore.                  */
+/* ========================================================================== */
+
+constexpr uint64_t USER_FLAG_SPAMMER = 1ull << 20;
+
+// discord's own test of a mute looks at the guild, the channel and what
+// holds it, a category or a thread's channel, and no further up.
+static bool notify_muted(const Store *s, const Channel *c) {
+  int64_t now = now_ms(s);
+  const Channel *parent = store_channel(s, c->parent_id);
+  const Guild *g = store_guild(s, c->guild_id);
+
+  return mute_active(c->muted, c->mute_until, now) ||
+         (parent != nullptr &&
+          mute_active(parent->muted, parent->mute_until, now)) ||
+         (g != nullptr && mute_active(g->muted, g->mute_until, now));
+}
+
+// a guild whose channels are picked one by one tells nothing of the ones
+// left out.
+static bool notify_left_out(const Store *s, const Channel *c) {
+  const Guild *g = store_guild(s, c->guild_id);
+
+  if (g == nullptr ||
+      (g->settings_flags & GUILD_SETTINGS_OPT_IN_CHANNELS_ON) == 0) {
+    return false;
+  }
+
+  const Channel *parent = store_channel(s, c->parent_id);
+
+  return (c->override_flags & OVERRIDE_OPT_IN_ENABLED) == 0 &&
+         (parent == nullptr ||
+          (parent->override_flags & OVERRIDE_OPT_IN_ENABLED) == 0);
+}
+
+// what a thread tells of: its own setting once the user made one, else
+// its channel's. nothing before it is joined.
+static NotifyLevel thread_level(const Store *s, const Channel *c) {
+  if (!c->thread_joined) {
+    return NOTIFY_NOTHING;
+  }
+
+  if ((c->thread_flags & THREAD_NOTIFY_ALL_MESSAGES) != 0) {
+    return NOTIFY_ALL_MESSAGES;
+  }
+
+  if ((c->thread_flags & THREAD_NOTIFY_ONLY_MENTIONS) != 0) {
+    return NOTIFY_ONLY_MENTIONS;
+  }
+
+  if ((c->thread_flags & THREAD_NOTIFY_NOTHING) != 0) {
+    return NOTIFY_NOTHING;
+  }
+
+  const Channel *parent = store_channel(s, c->parent_id);
+
+  if (parent == nullptr || notify_muted(s, parent)) {
+    return NOTIFY_NOTHING;
+  }
+
+  NotifyLevel level = notify_level(s, parent);
+
+  return level == NOTIFY_NOTHING || level == NOTIFY_ONLY_MENTIONS
+           ? level
+           : NOTIFY_ALL_MESSAGES;
+}
+
+bool store_notifies(Store *s, const Message *m) {
+  const Channel *c = m != nullptr ? store_channel(s, m->channel_id) : nullptr;
+
+  if (c == nullptr || m->state != MESSAGE_SENT ||
+      (m->flags & MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS) != 0) {
+    return false;
+  }
+
+  // the first message of a thread is told as one of the thread's channel.
+  if (m->type == MESSAGE_THREAD_STARTER_MESSAGE) {
+    c = store_channel(s, c->parent_id);
+  }
+
+  const User *author = store_user(s, m->author_id);
+  const Relationship *r = store_relationship(s, m->author_id);
+
+  if (c == nullptr || author == nullptr || c->request ||
+      (c->type == CHANNEL_GROUP_DM && m->type == MESSAGE_RECIPIENT_REMOVE) ||
+      (author->public_flags & USER_FLAG_SPAMMER) != 0 ||
+      (r != nullptr && (r->type == RELATIONSHIP_BLOCKED || r->ignored)) ||
+      s->self_status == STATUS_DND) {
+    return false;
+  }
+
+  // the end of a poll is told to who made it, in their own name.
+  if (m->author_id == s->self_id && m->type != MESSAGE_POLL_RESULT) {
+    return false;
+  }
+
+  bool muted = notify_muted(s, c);
+  NotifyLevel level = notify_level(s, c);
+  bool left_out = notify_left_out(s, c);
+  const Guild *g = store_guild(s, c->guild_id);
+
+  if (muted || level == NOTIFY_NOTHING || left_out) {
+    return false;
+  }
+
+  if (channel_is_thread(c)) {
+    switch (thread_level(s, c)) {
+      case NOTIFY_ALL_MESSAGES:
+        return true;
+      case NOTIFY_ONLY_MENTIONS:
+        // a thread listens to no one's choice of silencing @everyone.
+        return mentions_self(s, m, g, false);
+      default:
+        return false;
+    }
+  }
+
+  // the chat of a voice channel tells of every message to who is in its
+  // call only.
+  const VoiceState *voice = store_voice_state(s, s->self_id);
+  bool there =
+    !channel_is_voice(c) || (voice != nullptr && voice->channel_id == c->id);
+
+  if (level == NOTIFY_ALL_MESSAGES && there) {
+    return true;
+  }
+
+  return mentions_self(s, m, g, true);
 }
 
 // when the channel was read up to, in unix milliseconds. one never

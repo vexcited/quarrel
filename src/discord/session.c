@@ -1043,11 +1043,29 @@ static void on_settings_update(Session *s, const cima_json *settings) {
   changed(s);
 }
 
+// a message the gateway just brought, told to the ui when the account's
+// settings want it told.
+static void on_message(Session *s, const cima_json *d) {
+  const Channel *c =
+    store_channel(s->store, snowflake_of(json_get(d, "channel_id")));
+  const Message *m =
+    c != nullptr ? store_message(c, snowflake_of(json_get(d, "id"))) : nullptr;
+
+  if (s->options.on_message != nullptr && m != nullptr &&
+      store_notifies(s->store, m)) {
+    s->options.on_message(s, m);
+  }
+}
+
 static void on_dispatch(void *ctx, const char *type, const cima_json *data) {
   Session *s = ctx;
 
   events_dispatch(s->store, type, data);
   watch_status(s);
+
+  if (strcmp(type, "MESSAGE_CREATE") == 0) {
+    on_message(s, data);
+  }
 
   if (strcmp(type, "USER_SETTINGS_PROTO_UPDATE") == 0) {
     on_settings_update(s, json_get(data, "settings"));
@@ -1761,6 +1779,7 @@ static void session_free(Session *s) {
   }
 
   s->options.on_change = nullptr;
+  s->options.on_message = nullptr;
 
   qr_stop(s);
   voice_reset(s);
@@ -2034,6 +2053,7 @@ void roster_free(Roster *r) {
   }
 
   r->options.on_change = nullptr;
+  r->options.on_message = nullptr;
   platform_network_watch(nullptr, nullptr);
 
   if (account_of(r, r->current) == nullptr) {

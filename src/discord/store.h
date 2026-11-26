@@ -233,6 +233,12 @@ constexpr uint32_t OVERRIDE_UNREADS_ONLY_MENTIONS = 1u << 9;
 constexpr uint32_t OVERRIDE_UNREADS_ALL_MESSAGES = 1u << 10;
 constexpr uint32_t OVERRIDE_OPT_IN_ENABLED = 1u << 12;
 
+// the flags of the current user's membership of a thread, which say what
+// of it they are told.
+constexpr uint32_t THREAD_NOTIFY_ALL_MESSAGES = 1u << 1;
+constexpr uint32_t THREAD_NOTIFY_ONLY_MENTIONS = 1u << 2;
+constexpr uint32_t THREAD_NOTIFY_NOTHING = 1u << 3;
+
 // a channel listed in the guild's resources rather than with the others.
 constexpr uint32_t CHANNEL_FLAG_RESOURCE = 1u << 7;
 
@@ -507,6 +513,8 @@ struct Channel {
   bool thread_archived, thread_locked;
   // the current user is a member of the thread.
   bool thread_joined;
+  // THREAD_NOTIFY_ flags of that membership.
+  uint32_t thread_flags;
   // unix milliseconds the current user joined the thread at and the thread
   // was archived at, 0 when unknown.
   int64_t thread_joined_at, thread_archived_at;
@@ -1056,6 +1064,11 @@ Unread store_channel_unread(Store *s, const Channel *c);
 Unread store_guild_unread(Store *s, Guild *g);
 // every dm and group dm.
 Unread store_private_unread(Store *s);
+// whether a message that just came is worth telling the user of, after the
+// rules of discord's client: who wrote it, the user's status, and what
+// their settings ask of its channel, its category, its guild or its thread.
+// whether its channel is the one looked at is the ui's to weigh.
+bool store_notifies(Store *s, const Message *m);
 // the last message acknowledged in the channel, 0 when unknown. the unread
 // divider goes after it.
 [[gnu::pure]] Snowflake store_last_acked(const Store *s, Snowflake channel_id);
@@ -1130,6 +1143,10 @@ void store_recipient_remove(Store *s, Snowflake channel_id, Snowflake user_id);
 void store_sync_threads(Store *s, const cima_json *sync);
 // whether the current user is a member of a thread.
 void store_set_thread_joined(Store *s, Snowflake channel_id, bool joined);
+// the current user's membership of a thread as THREAD_MEMBER_UPDATE and the
+// lists of threads send it: its flags and its mute.
+void store_put_thread_member(Store *s, Snowflake channel_id,
+                             const cima_json *member);
 // the first message of a post, null when it was deleted.
 void store_put_starter(Store *s, Channel *post, const cima_json *message);
 // FORUM_UNREADS, the new messages of posts of a forum.

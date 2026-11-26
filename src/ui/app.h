@@ -102,6 +102,12 @@ typedef enum : uint8_t {
   ADD_DONE,
 } AddStep;
 
+// the pages of the settings.
+typedef enum : uint8_t {
+  SETTINGS_VOICE,
+  SETTINGS_NOTIFICATIONS,
+} SettingsPage;
+
 typedef enum : uint8_t {
   INBOX_UNREADS,
   INBOX_MENTIONS,
@@ -257,6 +263,8 @@ typedef struct {
   // the settings: the part of their page the sidebar points at, the kind
   // whose list of devices is open under its box, -1 for none, and that box.
   bool settings_open;
+  // the page shown, a SettingsPage.
+  uint8_t settings_page;
   uint8_t settings_part;
   int8_t settings_select;
   civue_rect settings_select_rect;

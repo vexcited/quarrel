@@ -834,8 +834,8 @@ static void reply_line(App *app, const Message *m, Snowflake guild_id) {
   }
 }
 
-static const char *system_text(const Message *m, char *out, size_t cap,
-                               const char *other) {
+const char *message_system_text(const Message *m, char *out, size_t cap,
+                                const char *other) {
   switch (m->type) {
     case MESSAGE_RECIPIENT_ADD:
       snprintf(out, cap, "added %s to the group.", other);
@@ -907,7 +907,7 @@ static void system_message(App *app, const Channel *c, const Message *m) {
            text_color(author.color ? rgb(author.color) : k->strong));
     }
 
-    text(system_text(m, line, sizeof line, other), min_w(0));
+    text(message_system_text(m, line, sizeof line, other), min_w(0));
     text(stamp, text_size(px(12)), text_color(k->faint), ml(1),
          whitespace_nowrap);
   }

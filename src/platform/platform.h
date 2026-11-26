@@ -122,4 +122,43 @@ void platform_post(void (*fn)(void *ctx), void *ctx);
 void platform_run(void);
 void platform_stop(void);
 
+/* ========================================================================== */
+/* notifications, the system's own.                                           */
+/* ========================================================================== */
+
+typedef struct {
+  // what the app knows it by, never 0 and never used twice.
+  uint64_t id;
+  // utf-8 as it reads, nothing in them is markup.
+  const char *title, *body;
+  // the path of a png shown with it, like who wrote, null for none.
+  const char *image;
+  // a call the user is rung for: it stays until taken back, and has a
+  // button to answer and one to decline where the system shows buttons.
+  bool call;
+} PlatformNotification;
+
+typedef enum : uint8_t {
+  // the notification itself. the system brings the window forward.
+  PLATFORM_NOTIFY_OPENED,
+  // the buttons of a call. answering brings the window forward, declining
+  // does not.
+  PLATFORM_NOTIFY_ANSWERED,
+  PLATFORM_NOTIFY_DECLINED,
+} PlatformNotifyAction;
+
+// shows a notification, without the system's own sound. the first one may
+// have the system ask the user whether the app may.
+void platform_notify(const PlatformNotification *n);
+// takes one back, shown or not yet. unknown ones are fine.
+void platform_notify_close(uint64_t id);
+// `activated` runs on the main thread with the id of a notification the
+// user pressed, which the system took away, and what of it they pressed.
+// one watcher, the last given.
+void platform_notify_watch(void (*activated)(void *ctx, uint64_t id,
+                                             PlatformNotifyAction action),
+                           void *ctx);
+// takes back every notification still shown, as the app quits.
+void platform_notify_clear(void);
+
 #endif

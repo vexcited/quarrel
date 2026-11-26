@@ -4,6 +4,7 @@
 #include <civue/dsl.h>
 
 #include "http.h"
+#include "ui/alerts.h"
 #include "ui/components.h"
 #include "ui/cues.h"
 #include "ui/media.h"
@@ -144,6 +145,8 @@ static void frame(void *ctx, civue_ui *ui) {
     app_reset(app);
   }
 
+  alerts_frame(app);
+
   app->covers_buttons = false;
 
   switch (session->state) {
@@ -157,6 +160,7 @@ static void frame(void *ctx, civue_ui *ui) {
       channel_dialogs(app);
       settings_dialog(app);
       voice_switch_dialog(app);
+      call_cards(app);
       hub_dialogs(app);
       media_viewer(app);
       notice_toast(app);
@@ -184,8 +188,11 @@ static civue_color background(void *ctx) {
   return app->look.frame;
 }
 
+// a session changed: the window draws it, what was read since needs no
+// notification anymore, and what changed of a call has its sound.
 static void on_change(void) {
   civue_window_wake();
+  alerts_sweep();
   cues_follow();
 }
 
@@ -196,7 +203,9 @@ static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
   app->images = images_new();
   app->roster = roster_new(&(SessionOptions){
     .on_change = on_change,
+    .on_message = alerts_message,
   });
+  alerts_start(app);
   cues_start(app);
   app->session = app->roster->current;
   roster_start(app->roster);
@@ -242,6 +251,7 @@ int main() {
   media_free(&app);
   gif_players_free(&app);
   server_ui_free(&app);
+  alerts_free();
   roster_free(app.roster);
   civue_images_free(app.images);
   http_shutdown();
