@@ -1,5 +1,7 @@
 #include "components.h"
 
+#include <math.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +15,8 @@
 
 constexpr float LINE = 22;
 constexpr float MAX_LINES = 12;
+constexpr float ROW = 56;
+constexpr double TYPING_BEAT = 1.2;
 
 static civue_id composer_id() {
   return id("composer");
@@ -66,10 +70,11 @@ static bool blank(const char *s) {
 
 static void submit(App *app, Channel *c) {
   Session *session = app->session;
+  const char *written = app->draft ? app->draft : "";
 
   if (app->editing) {
-    if (!blank(app->draft)) {
-      session_edit(session, c->id, app->editing, app->draft);
+    if (!blank(written)) {
+      session_edit(session, c->id, app->editing, written);
     }
 
     stop_editing(app);
@@ -78,18 +83,18 @@ static void submit(App *app, Channel *c) {
 
   Upload *files[1];
   bool attached = uploads_of(session, c->id, 0, files, 1) != 0;
+  const char *said = blank(written) ? "" : written;
 
-  if (blank(app->draft) && !attached) {
+  if (!*said && !attached) {
     return;
   }
 
-  if (upload_message_too_long(app, app->draft)) {
+  if (upload_message_too_long(app, said)) {
     app->long_message = true;
     return;
   }
 
-  session_send(session, c->id, blank(app->draft) ? "" : app->draft,
-               app->reply_to, app->reply_ping);
+  session_send(session, c->id, said, app->reply_to, app->reply_ping);
   app->reply_to = 0;
   app->stick = true;
   set_draft(app, "");
@@ -178,6 +183,41 @@ static void catch_typing(App *app) {
   app->focus_composer = true;
 }
 
+civue_button_state composer_button(App *app, civue_id id, civue_icon icon,
+                                   bool open, const char *label,
+                                   civue_rect *at) {
+  const Look *k = &app->look;
+  civue_button_state state = {};
+
+  div(key(id), flex, items_center, justify_center, flex_shrink_0, size(8),
+      rounded(lg), style(.bg = open ? k->selected : CIVUE_CLEAR),
+      text_color(open ? k->strong : k->subtle),
+      hover(bg(k->hover), text_color(k->strong)), active(bg(k->pressed)),
+      cursor_pointer) {
+    state = button();
+
+    if (at) {
+      *at = here();
+    }
+
+    icon_of(icon, size(5));
+
+    if (label && !open) {
+      hint(app, id, &state.response, label, CIVUE_TOOLTIP_ABOVE);
+    }
+  }
+
+  return state;
+}
+
+// what the gutter of a row holds, under the avatars of the messages.
+static void gutter_icon(civue_icon icon, civue_color color) {
+  div(flex, items_center, justify_center, flex_shrink_0,
+      w(px(MESSAGE_GUTTER))) {
+    icon_of(icon, size(4), text_color(color));
+  }
+}
+
 static void context_bar(App *app, Channel *c) {
   const Look *k = &app->look;
   Store *store = app->session->store;
@@ -191,21 +231,26 @@ static void context_bar(App *app, Channel *c) {
     return;
   }
 
-  div(flex, items_center, gap(2), h(9), px(4), rounded_t(lg), bg(k->panel),
-      text_size(px(14)), line_height(px(18)), text_color(k->subtle)) {
+  div(flex, items_center, flex_shrink_0, h(9), pr(5), border_b(1),
+      border_color(k->border), text_size(px(14)), line_height(px(18)),
+      text_color(k->subtle)) {
     if (app->editing) {
-      text("Editing message", flex_1, font_weight(medium));
-      text("escape to cancel, enter to save", text_color(k->faint));
+      gutter_icon(CIVUE_ICON(lucide, pencil), k->faint);
+      text("Editing message", flex_1, min_w(0), truncate, font_weight(medium));
+      text("escape to cancel, enter to save", flex_shrink_0, mx(2),
+           text_color(k->faint));
     }
     else {
       Author author = store_author(store, to);
 
-      text("Replying to");
+      gutter_icon(CIVUE_ICON(lucide, reply), k->faint);
+      text("Replying to", flex_shrink_0, mr(1));
       text(author.name, flex_1, min_w(0), truncate, font_weight(semibold),
            text_color(author.color ? rgb(author.color) : k->strong));
 
-      div(key(id("reply-ping")), flex, items_center, gap(1), px(2),
-          font_weight(bold), cursor_pointer,
+      div(key(id("reply-ping")), flex, items_center, gap(1), flex_shrink_0,
+          h(6), mx(1), px(2), rounded(md), font_weight(bold),
+          hover(bg(k->hover)), cursor_pointer,
           text_color(app->reply_ping ? k->link : k->faint)) {
         if (button().activated) {
           app->reply_ping = !app->reply_ping;
@@ -228,60 +273,119 @@ static void context_bar(App *app, Channel *c) {
   }
 }
 
-// discord's: the letters in a box with round corners.
-static void gif_button(App *app, civue_rect box) {
+// who typed last in the channel, kept to show them out once they stopped.
+typedef struct {
+  Snowflake channel;
+  Snowflake users[3];
+  size_t count;
+} Typers;
+
+static void typer(const Look *k, const Store *store, const Channel *c,
+                  Snowflake user, bool comma) {
+  char name[160];
+
+  snprintf(name, sizeof name, "%s%s",
+           store_display_name(store, c->guild_id, user), comma ? "," : "");
+  text(name, min_w(0), max_w(px(200)), truncate, font_weight(semibold),
+       text_color(k->text));
+}
+
+// who types, on a tab over the composer's edge. it takes the room the list
+// leaves under its last message, so nothing moves when it comes and goes.
+static void typing_tab(App *app, const Channel *c) {
   const Look *k = &app->look;
-  civue_id id = id("composer-gif");
-  bool open = app->popover == POPOVER_GIFS;
+  civue_ui *ui = civue_ui_current();
+  const Store *store = app->session->store;
+  civue_id id = id("typing-tab");
+  Typers *last = civue_memory(ui, id, sizeof *last, nullptr);
+  Snowflake users[countof(last->users)] = {};
+  size_t count = store_typing(store, c, users, countof(users));
 
-  div(key(id), flex, items_center, justify_center, flex_shrink_0, self_start,
-      w(px(28)), h(px(24)), cursor_pointer) {
-    civue_button_state state = button();
-    civue_color color =
-      open || state.response.hovered ? k->strong : k->subtle;
+  if (last->channel != c->id) {
+    *last = (Typers){.channel = c->id};
+  }
 
-    app->gif_button = here();
+  if (count) {
+    memcpy(last->users, users, sizeof users);
+    last->count = count;
+  }
 
-    if (state.activated) {
-      gif_picker_toggle(app, box);
+  float shown =
+    civue_animate_from(ui, id_in(id, "shown"), 0, count ? 1 : 0, .16f);
+
+  if (shown <= 0 || !last->count) {
+    return;
+  }
+
+  // one point lower than the edge, to hide the border it sits on.
+  div(absolute, left(4), right(4), top(px(-MESSAGE_FOOT)),
+      h(px(MESSAGE_FOOT + 1)), flex, items_start, overflow_hidden) {
+    div(flex, items_center, gap(1), flex_shrink_0, max_w(full),
+        h(px(MESSAGE_FOOT + 1)), mt(px((1 - shown) * (MESSAGE_FOOT + 1))),
+        pl(px(10)), pr(3), rounded_t(lg), bg(k->input), border_t(1),
+        border_x(1), border_color(k->border), text_size(px(13)),
+        line_height(px(16)), text_color(k->subtle)) {
+      div(flex, items_center, gap(px(3)), flex_shrink_0, mr(1)) {
+        for (int i = 0; i < 3; i++) {
+          double wave = sin(ui->now * 2 * M_PI / TYPING_BEAT - i * .9);
+
+          div(size(px(5)), rounded(full),
+              bg(civue_alpha(k->text, .3f + .35f * (float)(1 + wave)))) {}
+        }
+      }
+
+      if (last->count > countof(last->users)) {
+        text("Several people are typing", truncate);
+      }
+      else {
+        for (size_t i = 0; i < last->count; i++) {
+          if (i > 0 && i + 1 == last->count) {
+            text("and", flex_shrink_0);
+          }
+
+          typer(k, store, c, last->users[i], i + 2 < last->count);
+        }
+
+        text(last->count > 1 ? "are typing" : "is typing", flex_shrink_0);
+      }
     }
+  }
 
-    div(flex, items_center, justify_center, h(px(17)), px(px(3)),
-        rounded(px(4)), border(2), border_color(color)) {
-      text("GIF", text_size(px(10)), line_height(px(12)), font_weight(bold),
-           text_color(color));
-    }
-
-    if (!open) {
-      hint(app, id, &state.response, "Send a GIF", CIVUE_TOOLTIP_ABOVE);
-    }
+  // the dots only breathe in a window that is looked at.
+  if (count && ui->window_focused) {
+    civue_request_repaint_after(ui, 1.0 / 30);
   }
 }
 
-void composer(App *app, Channel *c) {
+// a channel that takes no message says why where it would be written.
+static void closed_row(const Look *k, civue_icon icon, const char *why) {
+  div(flex, items_center, flex_shrink_0, min_h(px(ROW)), pr(4),
+      text_color(k->faint)) {
+    gutter_icon(icon, k->faint);
+    text(why, flex_1, min_w(0));
+  }
+}
+
+static void gif_button(App *app, civue_rect box) {
+  if (composer_button(app, id("composer-gif"), CIVUE_ICON(lucide, image_play),
+                      app->popover == POPOVER_GIFS, "Send a GIF",
+                      &app->gif_button)
+        .activated) {
+    gif_picker_toggle(app, box);
+  }
+}
+
+static void writing(App *app, Channel *c) {
   const Look *k = &app->look;
   civue_ui *ui = civue_ui_current();
-  Store *store = app->session->store;
   civue_id id = composer_id();
   civue_text_style style = civue_style(16, 400, LINE, 0);
   char name[128], placeholder[160];
-  bool allowed = store_can(store, c, PERM_SEND_MESSAGES) || !c->guild_id;
-  bool barred = app->editing || app->reply_to;
 
-  store_channel_name(store, c, name, sizeof name);
+  store_channel_name(app->session->store, c, name, sizeof name);
   snprintf(placeholder, sizeof placeholder,
            channel_is_private(c) ? "Message %s%s" : "Message #%s%s",
            c->type == CHANNEL_DM ? "@" : "", name);
-
-  if (!allowed) {
-    div(flex, items_center, flex_shrink_0, min_h(px(56)), mx(2), px(4),
-        rounded(lg), bg(k->input), border(1), border_color(k->border)) {
-      text("You do not have permission to send messages in this channel.",
-           text_color(k->faint));
-    }
-
-    return;
-  }
 
   catch_typing(app);
 
@@ -299,57 +403,84 @@ void composer(App *app, Channel *c) {
   float lines = LINE;
 
   if (width > 0 && *draft) {
-    lines = civue_layout(ui, draft, style, width)->height;
-
-    if (draft[strlen(draft) - 1] == '\n') {
-      lines += LINE;
-    }
+    lines = civue_text_area_height(ui, draft, style, width, nullptr);
   }
 
   lines = fminf(fmaxf(lines, LINE), LINE * MAX_LINES);
 
-  div(flex, flex_col, flex_shrink_0, mx(2)) {
-    context_bar(app, c);
+  // what opens over the composer keeps clear of the edges of the chat.
+  civue_rect box = here();
 
-    div(flex, flex_col, bg(k->input), border(1), border_color(k->border),
-        style(.radius = {civue_px(barred ? 0 : 8), civue_px(barred ? 0 : 8),
-                         civue_px(8), civue_px(8)})) {
-      civue_rect box = here();
+  box.x0 += 8;
+  box.x1 -= 8;
 
-      if (!app->editing) {
-        upload_tray(app, c);
+  context_bar(app, c);
+
+  if (!app->editing) {
+    upload_tray(app, c);
+  }
+
+  // the plus under the avatars of the messages, the words under theirs.
+  div(flex, items_center, min_h(px(ROW)), pr(4), py(3)) {
+    div(flex, items_center, justify_center, flex_shrink_0, self_start,
+        w(px(MESSAGE_GUTTER)), h(8)) {
+      // an edit takes no file.
+      if (!app->editing && attachable(app, c)) {
+        upload_button(app, c);
       }
-
-      div(flex, items_center, gap(3), min_h(px(54)), px(4), py(3)) {
-        if (attachable(app, c) && !app->editing) {
-          upload_button(app, c);
-        }
-        else {
-          icon(lucide, circle_plus, size(5), flex_shrink_0, self_start, mt(1),
-               text_color(k->faint));
-        }
-
-        div(key(id), flex_1, min_w(0), h(px(lines + 8))) {
-          civue_field_look look = {
-            .editing = {.text = k->text},
-            .idle = {.text = k->text},
-            .hovered = {.text = k->text},
-            .placeholder = k->faint,
-            .selection = civue_alpha(k->brand, .45f),
-          };
-          civue_field_response field = civue_text_area(
-            ui, id, here(), &app->draft, placeholder, style, look);
-
-          if (field.changed && !blank(app->draft) && !app->editing) {
-            session_typing(app->session, c->id);
-          }
-        }
-
-        if (!app->editing) {
-          gif_button(app, box);
-        }
+      else if (!app->editing) {
+        icon(lucide, plus, size(5), text_color(k->faint));
       }
     }
+
+    div(key(id), flex_1, min_w(0), h(px(lines + 8))) {
+      civue_field_look look = {
+        .editing = {.text = k->text},
+        .idle = {.text = k->text},
+        .hovered = {.text = k->text},
+        .placeholder = k->faint,
+        .selection = civue_alpha(k->brand, .45f),
+      };
+      civue_field_response field = civue_text_area(
+        ui, id, here(), &app->draft, placeholder, style, look);
+
+      if (field.changed && !blank(app->draft) && !app->editing) {
+        session_typing(app->session, c->id);
+      }
+    }
+
+    // an edit takes no gif.
+    if (!app->editing) {
+      div(flex, items_center, flex_shrink_0, self_start, ml(2)) {
+        gif_button(app, box);
+      }
+    }
+  }
+}
+
+void composer(App *app, Channel *c) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  bool allowed =
+    store_can(app->session->store, c, PERM_SEND_MESSAGES) || !c->guild_id;
+
+  // the foot of the chat, as flush with it as its header.
+  div(relative, flex, flex_col, flex_shrink_0, bg(k->input), border_t(1),
+      border_color(k->border)) {
+    typing_tab(app, c);
+
+    if (!allowed) {
+      closed_row(
+        k, CIVUE_ICON(lucide, lock),
+        "You do not have permission to send messages in this channel.");
+    }
+    else {
+      writing(app, c);
+    }
+  }
+
+  if (!allowed) {
+    return;
   }
 
   if (attachable(app, c) && !app->editing) {
@@ -359,7 +490,7 @@ void composer(App *app, Channel *c) {
   upload_dialogs(app, c);
 
   // a field just focused selects its text, the caret goes after it instead.
-  if (app->focus_composer && civue_field_caret_to_end(ui, id)) {
+  if (app->focus_composer && civue_field_caret_to_end(ui, composer_id())) {
     app->focus_composer = false;
   }
 }

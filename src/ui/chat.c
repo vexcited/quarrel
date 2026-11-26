@@ -1,7 +1,5 @@
 #include "components.h"
 
-#include <stdcountof.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -159,38 +157,6 @@ static void chat_header(App *app, Channel *c) {
   }
 }
 
-static void typing_line(App *app, const Channel *c) {
-  const Look *k = &app->look;
-  Store *store = app->session->store;
-  Snowflake users[3];
-  size_t count = store_typing(store, c, users, countof(users));
-  char line[320] = "";
-
-  if (count == 1) {
-    snprintf(line, sizeof line, "%s is typing...",
-             store_display_name(store, c->guild_id, users[0]));
-  }
-  else if (count == 2) {
-    snprintf(line, sizeof line, "%s and %s are typing...",
-             store_display_name(store, c->guild_id, users[0]),
-             store_display_name(store, c->guild_id, users[1]));
-  }
-  else if (count == 3) {
-    snprintf(line, sizeof line, "%s, %s and %s are typing...",
-             store_display_name(store, c->guild_id, users[0]),
-             store_display_name(store, c->guild_id, users[1]),
-             store_display_name(store, c->guild_id, users[2]));
-  }
-  else if (count > 3) {
-    snprintf(line, sizeof line, "Several people are typing...");
-  }
-
-  div(flex, items_center, flex_shrink_0, h(6), px(4)) {
-    text(line, min_w(0), truncate, text_size(px(14)), line_height(px(18)),
-         font_weight(medium), text_color(k->text));
-  }
-}
-
 void chat(App *app, Channel *c) {
   bool call = channel_is_voice(c) && !app->voice_chat;
   bool members = has_member_list(c) && !app->members_hidden;
@@ -206,7 +172,6 @@ void chat(App *app, Channel *c) {
         div(flex, flex_col, flex_1, min_w(0), h(full)) {
           message_list(app, c);
           composer(app, c);
-          typing_line(app, c);
           message_popovers(app, c);
           gif_picker(app, c);
         }

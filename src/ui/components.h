@@ -94,6 +94,12 @@ void message_list(App *app, Channel *channel);
 void message_preview(App *app, const Channel *c, const Message *m,
                      float width);
 void composer(App *app, Channel *channel);
+// a button of the composer's row in a node known by `id`, lit while what
+// it opens is `open`. `label` hints at it unless null, `at` takes its place
+// unless null.
+civue_button_state composer_button(App *app, civue_id id, civue_icon icon,
+                                   bool open, const char *label,
+                                   civue_rect *at);
 // the gifs to send to the channel over the composer, while the app shows
 // POPOVER_GIFS. lets go of their players once it does not.
 void gif_picker(App *app, Channel *channel);

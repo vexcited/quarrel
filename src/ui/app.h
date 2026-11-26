@@ -18,6 +18,9 @@ constexpr float TOP_BAR_HEIGHT = 38;
 constexpr float HEADER_HEIGHT = 48;
 // where what a message says starts, its avatar before it.
 constexpr float MESSAGE_GUTTER = 72;
+// the room a list of messages leaves under its last one, where the composer
+// says who types.
+constexpr float MESSAGE_FOOT = 24;
 // a list takes its scroll once it was laid out, a frame after it opened.
 constexpr uint8_t GUILDS_SETTLE = 3;
 

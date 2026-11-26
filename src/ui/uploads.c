@@ -252,30 +252,23 @@ void upload_button(App *app, Channel *c) {
   bool pick = false, as_file = false;
   bool has_text = app->draft && *app->draft && !app->editing;
 
-  div(key(id("upload-plus")), flex, items_center, justify_center, size(6),
-      flex_shrink_0, self_start, mt(px(2)), rounded(full),
-      text_color(app->upload_menu ? k->strong : k->subtle),
-      hover(text_color(k->strong)), cursor_pointer) {
-    civue_button_state b = button();
+  civue_button_state b =
+    composer_button(app, id("upload-plus"), CIVUE_ICON(lucide, plus),
+                    app->upload_menu, nullptr, &anchor);
 
-    anchor = here();
-
-    // a double click goes straight to the files.
-    if (b.response.double_clicked) {
-      app->upload_menu = false;
-      pick = true;
-    }
-    else if (b.activated) {
-      app->upload_menu = !app->upload_menu;
-    }
-
-    icon(lucide, circle_plus, size(5));
+  // a double click goes straight to the files.
+  if (b.response.double_clicked) {
+    app->upload_menu = false;
+    pick = true;
+  }
+  else if (b.activated) {
+    app->upload_menu = !app->upload_menu;
   }
 
   if (app->upload_menu) {
     overlay() {
-      div(key(id("upload-menu")), flex, flex_col, left(px(anchor.x0 - 8)),
-          bottom(px(ui->size.y - anchor.y0 + 12)), w(px(220)), p(2),
+      div(key(id("upload-menu")), flex, flex_col, left(px(anchor.x0 - 4)),
+          bottom(px(ui->size.y - anchor.y0 + 20)), w(px(264)), p(2),
           rounded(lg), bg(k->surface_high), border(1),
           border_color(k->border_strong), shadow(lg)) {
         card = here();

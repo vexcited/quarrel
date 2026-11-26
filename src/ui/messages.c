@@ -1365,7 +1365,8 @@ void message_list(App *app, Channel *c) {
   app->hover_next = 0;
 
   div(key(list), flex_1, min_h(0), overflow_y_scroll, scrollbars(&app->bars)) {
-    div(key(inner), flex, flex_col, justify_end, min_h(full), pb(6)) {
+    div(key(inner), flex, flex_col, justify_end, min_h(full),
+        pb(px(MESSAGE_FOOT))) {
       if (c->loading) {
         text("Loading messages...", px(4), py(3), text_color(k->muted));
       }
