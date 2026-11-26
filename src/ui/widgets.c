@@ -77,6 +77,47 @@ bool sticker_fill(App *app, Snowflake sticker_id, uint8_t format, bool animated,
   return true;
 }
 
+bool emoji_image(App *app, Snowflake emoji_id, bool animated, civue_rect r) {
+  civue_ui *ui = civue_ui_current();
+  uint32_t pixels =
+    (uint32_t)(fmax(civue_rect_w(r), civue_rect_h(r)) * ui->scale);
+  char url[CDN_URL_MAX];
+  civue_image_info image;
+
+  if (pixels == 0) {
+    return false;
+  }
+
+  // one url for both, so the still of an emoji that moves is its first
+  // frame without another fetch. its frames are asked at the size the cdn
+  // serves: civue keeps only the first of the ones it would have to shrink
+  // under 64 pixels.
+  if (animated) {
+    cdn_emoji_animated(url, emoji_id, pixels);
+    image = ui->window_focused
+              ? civue_images_get_animated(app->images, ui, url,
+                                          cdn_size(pixels))
+              : civue_images_get(app->images, ui, url, pixels);
+  }
+  else {
+    cdn_emoji(url, emoji_id, pixels);
+    image = civue_images_get(app->images, ui, url, pixels);
+  }
+
+  if (image.state != CIVUE_IMAGE_READY || !image.width || !image.height) {
+    return false;
+  }
+
+  // whole in its square, as the client's object-fit: contain.
+  double w = civue_rect_w(r), h = civue_rect_h(r);
+  double shape = (double)image.width / (double)image.height;
+  double iw = shape >= 1 ? w : h * shape, ih = shape >= 1 ? w / shape : h;
+  civue_rect at = xywh(r.x0 + (w - iw) / 2, r.y0 + (h - ih) / 2, iw, ih);
+
+  civue_image(ui, image.texture, at, (float[4]){0, 0, 1, 1}, 1, 0, false);
+  return true;
+}
+
 void emoji_node(App *app, Snowflake emoji_id, const char *name, float size) {
   const UnicodeEmoji *emoji = emoji_id ? nullptr : emoji_by_utf8(name);
   char url[CDN_URL_MAX] = "";

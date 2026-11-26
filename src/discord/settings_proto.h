@@ -39,6 +39,17 @@ typedef struct {
 // the emojis reacted with of a FrecencyUserSettings protobuf in base64.
 // from malloc with its keys, null when it has none.
 FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count);
+// the same for the emojis written in messages.
+FrecencyUse *settings_proto_emoji_uses(const char *base64, size_t *count);
+// the emojis starred, in the order they were, each by a key as above. from
+// malloc with its strings, null when there is none.
+char **settings_proto_favorite_emojis(const char *base64, size_t *count);
+// a FrecencyUserSettings holding only how much each emoji was written in
+// messages at `now_ms`, the hundred used last as the client keeps, in
+// base64 from malloc. it replaces all of them once saved.
+char *settings_proto_with_emoji_uses(const FrecencyUse *uses, size_t count,
+                                     int64_t now_ms);
+
 // how much a sticker was used.
 typedef struct {
   Snowflake id;

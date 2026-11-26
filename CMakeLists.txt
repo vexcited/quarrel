@@ -130,6 +130,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/emoji_table.c
   src/discord/etf.c
   src/discord/events.c
+  src/discord/expressions.c
   src/discord/fakestickers.c
   src/discord/gateway.c
   src/discord/gifs.c
@@ -244,6 +245,7 @@ add_executable(quarrel
   src/ui/chat.c
   src/ui/composer.c
   src/ui/cues.c
+  src/ui/emojis.c
   src/ui/forum.c
   src/ui/friends.c
   src/ui/gifs.c

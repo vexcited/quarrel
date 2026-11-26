@@ -6,7 +6,7 @@
 
 #include <civue/dsl.h>
 
-#include "discord/cdn.h"
+#include "discord/expressions.h"
 #include "discord/markdown.h"
 
 // how the text of a run is drawn.
@@ -373,22 +373,30 @@ static void custom_emoji(Flow *f, const Run *r, const MdNode *node) {
   }
 
   if (f->paint && !r->hidden) {
-    char url[CDN_URL_MAX];
-    uint32_t pixels = (uint32_t)(side * f->ui->scale);
-
-    cdn_emoji(url, node->id, pixels);
-
-    civue_image_info image =
-      civue_images_get(f->app->images, f->ui, url, pixels);
     civue_rect at = xywh(f->origin.x + f->x,
                          f->origin.y + f->y + (f->line - side) / 2, side, side);
+    civue_id id = id_at(f->key, 0x400000 + f->pieces);
+    civue_response resp = civue_interact(f->ui, id, at, CIVUE_SENSE_CLICK);
+    char name[80];
 
-    if (image.state == CIVUE_IMAGE_READY) {
-      civue_image(f->ui, image.texture, at, (float[4]){0, 0, 1, 1}, 1, 0,
-                  false);
-    }
-    else {
+    if (!emoji_image(f->app, node->id, node->animated, at)) {
       fill(civue_rect_inflate(at, -2, -2), f->app->look.hover, 4);
+    }
+
+    if (resp.hovered) {
+      civue_set_cursor(f->ui, CIVUE_CURSOR_POINTER);
+    }
+
+    // its name over it, and where it comes from once pressed.
+    snprintf(name, sizeof name, ":%s:", node->text ? node->text : "");
+
+    if (f->app->popover != POPOVER_EMOJI_CARD) {
+      hint(f->app, id, &resp, name, CIVUE_TOOLTIP_ABOVE);
+    }
+
+    if (resp.clicked) {
+      emoji_card_open(f->app, node->id, node->text, node->animated, node->fake,
+                      at);
     }
   }
 
@@ -743,6 +751,49 @@ static float flow(App *app, civue_id key, const MdDoc *doc,
   return fmaxf(f.y, f.line);
 }
 
+// FakeNitro's transformAst: a message that is one link to the picture of an
+// emoji shows the emoji, under the name its guild gives it when the user is
+// in it, then the one the url carries.
+static MdDoc *parse(App *app, const char *source, size_t len,
+                    const MdOptions *options, const MarkupOptions *o) {
+  MdDoc *doc = md_parse(source, len, options);
+  MdNode *block = doc->root ? doc->root->first : nullptr;
+  bool alone = block && !block->next && block->kind == MD_PARAGRAPH;
+  MdNode *link = alone ? block->first : nullptr;
+  const char *name = nullptr;
+  size_t name_len = 0;
+  Snowflake id = 0;
+  bool animated = false;
+
+  if (!o->fake_emojis || !link || link->next || link->kind != MD_LINK ||
+      !link->text ||
+      !fake_emoji_url(link->text, &id, &animated, &name, &name_len)) {
+    return doc;
+  }
+
+  Store *store = app->session->store;
+  const Guild *owner = guild_emoji_owner(store, id);
+  const Emoji *known = owner ? store_emoji(owner, id) : nullptr;
+
+  if (known && known->name) {
+    name = known->name;
+    name_len = strlen(name);
+  }
+  else if (!name || !name_len) {
+    name = "FakeNitroEmoji";
+    name_len = strlen(name);
+  }
+
+  link->kind = MD_CUSTOM_EMOJI;
+  link->id = id;
+  link->animated = animated;
+  link->fake = true;
+  link->first = link->last = nullptr;
+  link->text = cilo_strndup((cilo_allocator *)&doc->arena, name, name_len);
+  link->len = (uint32_t)name_len;
+  return doc;
+}
+
 void markup(App *app, civue_id key, const char *source,
             const MarkupOptions *o) {
   civue_ui *ui = civue_ui_current();
@@ -771,7 +822,7 @@ void markup(App *app, civue_id key, const char *source,
   MdDoc *doc = nullptr;
 
   if (kept->w != width || kept->hash != hash) {
-    doc = md_parse(source, len, &options);
+    doc = parse(app, source, len, &options, o);
     kept->h = flow(app, key, doc, o, width, false, point(0, 0));
     kept->w = width;
     kept->hash = hash;
@@ -784,7 +835,7 @@ void markup(App *app, civue_id key, const char *source,
     // what the clip hides is not walked again.
     if (!civue_rect_empty(at) && !civue_rect_empty(seen)) {
       if (!doc) {
-        doc = md_parse(source, len, &options);
+        doc = parse(app, source, len, &options, o);
       }
 
       flow(app, key, doc, o, width, true, point(at.x0, at.y0));

@@ -250,6 +250,8 @@ int main() {
 
   media_free(&app);
   gif_players_free(&app);
+  emoji_picker_free(&app);
+  free(app.card_emoji_name);
   server_ui_free(&app);
   alerts_free();
   roster_free(app.roster);

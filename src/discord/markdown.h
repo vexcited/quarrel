@@ -70,6 +70,9 @@ struct MdNode {
   MdKind kind;
   uint8_t level;
   bool ordered, animated;
+  // a custom emoji that is a link to its picture in the message, shown as
+  // the emoji as Vencord's FakeNitro does. the ui tells, never the parser.
+  bool fake;
   // one of t, T, d, D, f, F, s, S and R.
   char style;
   uint32_t start;
@@ -105,6 +108,10 @@ typedef struct {
 [[gnu::returns_nonnull]] MdDoc *md_parse(const char *text, size_t len,
                                          const MdOptions *options);
 void md_free(MdDoc *doc);
+
+// how many bytes at the start of `s` are one emoji of unicode, a whole
+// sequence like a flag or a family, 0 when it starts with none.
+[[gnu::pure]] size_t md_emoji_length(const char *s, size_t len);
 
 // the text of a tree without any markup, for a notification or a one line
 // preview: mentions read as <@id>, custom emoji as :name:. from malloc.

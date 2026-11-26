@@ -141,13 +141,51 @@ void sticker_in_message(App *app, civue_id id, const Message *m, size_t index,
 void sticker_info(App *app, Channel *c);
 // adds `text` at the end of what the composer holds, a space between.
 void composer_append(App *app, const char *text);
+// puts `text` where the composer's caret is, at its end when it has none.
+void composer_insert(App *app, const char *text);
 
-// an emoji to react with: one of a guild by its id and name, or one of
-// unicode, `name` its utf-8 and `id` 0.
+// an emoji picked: one of a guild by its id and name, or one of unicode,
+// `name` its utf-8 and `id` 0.
 typedef struct {
   Snowflake id;
   const char *name;
+  bool animated;
 } ReactionPick;
+
+// what an emoji is picked for, which decides the ones used the most.
+typedef enum : uint8_t {
+  EMOJI_FOR_CHAT,
+  EMOJI_FOR_REACTION,
+} EmojiUse;
+
+// the client's picker without its tabs.
+constexpr float EMOJI_CARD_WIDTH = 498;
+constexpr float EMOJI_CARD_HEIGHT = 440;
+
+// the emojis of the user's guilds and of unicode as a card over `card`,
+// with a search, the guilds on its side and what is pointed at under them.
+// true when one was picked, `keep` when the card is to stay for another.
+// `fresh` on the first frame it is open for something, to start anew.
+bool emoji_card(App *app, const Channel *c, EmojiUse use, bool fresh,
+                civue_rect card, ReactionPick *out, bool *keep);
+// the picker over the composer, while the app shows POPOVER_EMOJIS.
+void emoji_picker(App *app, Channel *channel);
+// opens it over `anchor`, the composer, or closes it.
+void emoji_picker_toggle(App *app, civue_rect anchor);
+void emoji_picker_free(App *app);
+// what a key of the user's settings is where `c` is, when the user may use
+// it there: the first name of an emoji of unicode or the id of a guild's.
+bool emoji_pick_by_key(App *app, const Channel *c, const char *key,
+                       ReactionPick *out);
+// what the composer shows in place of the emojis its text names.
+const civue_field_inlays *composer_inlays(App *app, Channel *c);
+// an emoji of a message was pressed: its card opens by `at`. `fake` for
+// one that is a link to its picture, as FakeNitro sends them.
+void emoji_card_open(App *app, Snowflake id, const char *name, bool animated,
+                     bool fake, civue_rect at);
+// the card of the emoji of a message, while the app shows
+// POPOVER_EMOJI_CARD.
+void emoji_info_card(App *app, Channel *channel);
 
 // the emojis the user reacts with the most that the channel can use, the
 // most used first. none until discord said which.

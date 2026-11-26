@@ -156,6 +156,19 @@ char *cdn_emoji(char out[static CDN_URL_MAX], Snowflake emoji_id,
   return sized(out, (size_t)len, size);
 }
 
+char *cdn_emoji_animated(char out[static CDN_URL_MAX], Snowflake emoji_id,
+                         uint32_t size) {
+  if (emoji_id == 0) {
+    return empty(out);
+  }
+
+  // the client asks the webp for its frames rather than for a gif.
+  snprintf(out, CDN_URL_MAX,
+           CDN_BASE "/emojis/%" PRIu64 ".webp?size=%u&animated=true", emoji_id,
+           cdn_size(size ? size : 48));
+  return out;
+}
+
 char *cdn_tag_badge(char out[static CDN_URL_MAX], Snowflake guild_id,
                     const char *hash, uint32_t size) {
   if (guild_id == 0 || !hash_ok(hash)) {

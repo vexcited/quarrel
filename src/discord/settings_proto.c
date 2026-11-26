@@ -442,7 +442,10 @@ char *settings_proto_to_json(const char *base64) {
 }
 
 // from the same classes:
-//   FrecencyUserSettings  emoji_reaction_frecency 13, an EmojiFrecency
+//   FrecencyUserSettings  favorite_emojis 5, a FavoriteEmojis,
+//                         emoji_frecency 6 and emoji_reaction_frecency 13,
+//                         each an EmojiFrecency
+//   FavoriteEmojis        emojis 1 repeated string
 //   EmojiFrecency         emojis 1, a map from a string to a FrecencyItem
 //   FrecencyItem          total_uses 1, recent_uses 2 repeated uint64
 static void read_use(Reader r, FrecencyUse *use) {
@@ -501,7 +504,9 @@ static bool read_entry(Reader r, FrecencyUse *use) {
   return use->key != nullptr && *use->key != '\0';
 }
 
-FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count) {
+// the uses the EmojiFrecency in the field `number` holds.
+static FrecencyUse *uses_of(const char *base64, uint32_t number,
+                            size_t *count) {
   size_t len = 0, cap = 0;
   uint8_t *bytes = base64_decode(base64, &len);
   FrecencyUse *uses = nullptr;
@@ -516,7 +521,7 @@ FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count) {
   Field f;
 
   while (next_field(&r, &f)) {
-    if (f.number != 13 || f.wire != WIRE_BYTES) {
+    if (f.number != number || f.wire != WIRE_BYTES) {
       continue;
     }
 
@@ -554,6 +559,63 @@ FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count) {
 
   free(bytes);
   return uses;
+}
+
+FrecencyUse *settings_proto_reaction_uses(const char *base64, size_t *count) {
+  return uses_of(base64, 13, count);
+}
+
+FrecencyUse *settings_proto_emoji_uses(const char *base64, size_t *count) {
+  return uses_of(base64, 6, count);
+}
+
+char **settings_proto_favorite_emojis(const char *base64, size_t *count) {
+  size_t len = 0, cap = 0;
+  uint8_t *bytes = base64_decode(base64, &len);
+  char **keys = nullptr;
+
+  *count = 0;
+
+  if (bytes == nullptr) {
+    return nullptr;
+  }
+
+  Reader r = {.at = bytes, .end = bytes + len};
+  Field f;
+
+  while (next_field(&r, &f)) {
+    if (f.number != 5 || f.wire != WIRE_BYTES) {
+      continue;
+    }
+
+    Reader list = f.bytes;
+    Field item;
+
+    while (next_field(&list, &item)) {
+      if (item.number != 1 || item.wire != WIRE_BYTES ||
+          item.bytes.at == item.bytes.end) {
+        continue;
+      }
+
+      if (*count == cap) {
+        cap = cap ? cap * 2 : 16;
+
+        char **grown = realloc(keys, cap * sizeof *keys);
+
+        if (grown == nullptr) {
+          break;
+        }
+
+        keys = grown;
+      }
+
+      keys[(*count)++] = str_dup_n((const char *)item.bytes.at,
+                                   (size_t)(item.bytes.end - item.bytes.at));
+    }
+  }
+
+  free(bytes);
+  return keys;
 }
 
 // from the same classes:
@@ -998,6 +1060,77 @@ char *settings_proto_with_favorite_gifs(const FavoriteGifs *favorites) {
   free(list.data);
   free(entry.data);
   free(value.data);
+  free(whole.data);
+  return text;
+}
+
+static int by_last_emoji_use(const void *a, const void *b) {
+  const FrecencyUse *x = *(const FrecencyUse *const *)a;
+  const FrecencyUse *y = *(const FrecencyUse *const *)b;
+  int64_t xl = x->nrecent_uses ? x->recent_uses[x->nrecent_uses - 1] : 0;
+  int64_t yl = y->nrecent_uses ? y->recent_uses[y->nrecent_uses - 1] : 0;
+
+  return xl < yl ? 1 : xl > yl ? -1 : 0;
+}
+
+// the client saves this many, the ones used last.
+constexpr size_t EMOJI_USES_MAX = 100;
+
+char *settings_proto_with_emoji_uses(const FrecencyUse *uses, size_t count,
+                                     int64_t now_ms) {
+  const FrecencyUse **sorted = calloc(count ? count : 1, sizeof *sorted);
+  Bytes map = {}, entry = {}, item = {}, recent = {}, whole = {};
+
+  if (sorted == nullptr) {
+    cilo_oom(count * sizeof *sorted);
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    sorted[i] = &uses[i];
+  }
+
+  qsort(sorted, count, sizeof *sorted, by_last_emoji_use);
+
+  for (size_t i = 0; i < count && i < EMOJI_USES_MAX; i++) {
+    const FrecencyUse *use = sorted[i];
+    uint64_t score = 0, kept = 0;
+
+    entry.len = item.len = recent.len = 0;
+
+    for (size_t j = 0; j < use->nrecent_uses; j++) {
+      if (use->recent_uses[j] > 0) {
+        score += frecency_weight((now_ms - use->recent_uses[j]) / 86400000);
+        put_varint(&recent, (uint64_t)use->recent_uses[j]);
+        kept++;
+      }
+    }
+
+    // what the client forgets as it computes.
+    if (score == 0) {
+      continue;
+    }
+
+    uint64_t frecency = (use->total_uses * score + kept - 1) / kept;
+
+    put_number(&item, 1, use->total_uses);
+    put_message(&item, 2, &recent);
+    put_number(&item, 3, frecency > INT32_MAX ? INT32_MAX : frecency);
+    put_number(&item, 4, score);
+
+    put_string(&entry, 1, use->key);
+    put_message(&entry, 2, &item);
+    put_message(&map, 1, &entry);
+  }
+
+  put_message(&whole, 6, &map);
+
+  char *text = base64_encode(whole.data, whole.len);
+
+  free(sorted);
+  free(map.data);
+  free(entry.data);
+  free(item.data);
+  free(recent.data);
   free(whole.data);
   return text;
 }

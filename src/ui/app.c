@@ -124,6 +124,7 @@ void app_reset(App *app) {
   app->fake_ask = false;
   app->upload_title[0] = 0;
   drop(&app->gif_search);
+  drop(&app->card_emoji_name);
   drop(&app->gif_title);
   drop(&app->sticker_search);
   app->sticker_folded.len = 0;

@@ -9,6 +9,7 @@
 #include <civue/dsl.h>
 
 #include "discord/cdn.h"
+#include "discord/expressions.h"
 #include "discord/fakestickers.h"
 #include "discord/markdown.h"
 #include "media.h"
@@ -707,10 +708,26 @@ static void embeds(App *app, const Message *m, Snowflake guild_id) {
     return;
   }
 
+  // FakeNitro's shouldIgnoreEmbed: the emoji is shown in the words already.
+  bool fake = fake_emoji_message(m->content);
+
 embeds:
   for (size_t i = 0; i < m->nembeds; i++) {
     const Embed *e = &m->embeds[i];
     EmbedView v = embed_view(e);
+    const char *pictured = e->url             ? e->url
+                           : e->image.url     ? e->image.url
+                                              : e->thumbnail.url;
+    const char *name = nullptr;
+    size_t name_len = 0;
+    Snowflake emoji_id = 0;
+    bool animated = false;
+
+    if (fake && pictured && type_is(e, "image") &&
+        fake_emoji_url(pictured, &emoji_id, &animated, &name, &name_len)) {
+      continue;
+    }
+
     // the same for the sticker a message links to.
     if (fake_sticker_embed(app->session->store, m, e)) {
       continue;
@@ -814,7 +831,14 @@ static void reactions(App *app, const Message *m) {
                         r->name, !r->me);
         }
 
-        emoji_node(app, r->emoji_id, r->name, 16);
+        if (r->emoji_id && r->animated) {
+          div(size(4), flex_shrink_0) {
+            emoji_image(app, r->emoji_id, true, here());
+          }
+        }
+        else {
+          emoji_node(app, r->emoji_id, r->name, 16);
+        }
 
         text(count, text_size(px(14)), line_height(px(18)),
              font_weight(semibold),
@@ -1157,6 +1181,7 @@ static void message_body(App *app, const Channel *c, const Message *m,
              .guild_id = c->guild_id,
              .color = ink,
              .edited = m->edited_at != 0,
+             .fake_emojis = true,
              .hint = width - GUTTER - 48,
            });
   }

@@ -10,7 +10,10 @@
 
 #include "discord/admin.h"
 #include "discord/api.h"
+#include "discord/emoji.h"
+#include "discord/expressions.h"
 #include "discord/gateway.h"
+#include "discord/markdown.h"
 #include "discord/remote_auth.h"
 #include "discord/settings_proto.h"
 #include "discord/uploads.h"
@@ -1176,11 +1179,55 @@ static void clear_mentions(Session *s) {
   s->mentions_loaded = false;
 }
 
+static void clear_emoji_sources(Session *s) {
+  for (size_t i = 0; i < s->nemoji_sources; i++) {
+    free(s->emoji_sources[i].guild_name);
+    free(s->emoji_sources[i].guild_icon);
+  }
+
+  free(s->emoji_sources);
+  s->emoji_sources = nullptr;
+  s->nemoji_sources = 0;
+}
+
+static void clear_emoji_ranks(Session *s) {
+  for (size_t i = 0; i < s->nfrecent_emojis; i++) {
+    free(s->frecent_emojis[i].key);
+  }
+
+  free(s->frecent_emojis);
+  s->frecent_emojis = nullptr;
+  s->nfrecent_emojis = 0;
+}
+
+static void clear_emojis(Session *s) {
+  clear_emoji_ranks(s);
+
+  for (size_t i = 0; i < s->nemoji_uses; i++) {
+    free(s->emoji_uses[i].key);
+  }
+
+  for (size_t i = 0; i < s->nfavorite_emojis; i++) {
+    free(s->favorite_emojis[i]);
+  }
+
+  free(s->emoji_uses);
+  free(s->favorite_emojis);
+  s->emoji_uses = nullptr;
+  s->favorite_emojis = nullptr;
+  s->nemoji_uses = s->nfavorite_emojis = 0;
+}
+
 static void clear_frecency(Session *s) {
   for (size_t i = 0; i < s->nfrecent_reactions; i++) {
     free(s->frecent_reactions[i]);
   }
 
+  clear_emojis(s);
+  clear_emoji_sources(s);
+  platform_timer_cancel(s->emoji_timer);
+  s->emoji_timer = nullptr;
+  s->emoji_uses_known = false;
   free(s->frecent_reactions);
   s->frecent_reactions = nullptr;
   s->nfrecent_reactions = 0;
@@ -2221,6 +2268,8 @@ Snowflake session_send(Session *s, Snowflake channel_id, const char *content,
                                reply_ping);
 }
 
+static void track_emojis(Session *s, const char *content);
+
 Snowflake session_send_stickers(Session *s, Snowflake channel_id,
                                 const char *content,
                                 const Snowflake *sticker_ids, size_t nstickers,
@@ -2255,6 +2304,7 @@ Snowflake session_send_stickers(Session *s, Snowflake channel_id,
     transmit(s, c, pending, reply_ping);
   }
 
+  track_emojis(s, content);
   changed(s);
   return nonce;
 }
@@ -3221,6 +3271,286 @@ void session_set_favorite_sticker(Session *s, Snowflake id, bool favorite) {
   changed(s);
 }
 
+static int by_emoji_frecency(const void *a, const void *b) {
+  const FrecentEmoji *x = a, *y = b;
+
+  return (x->frecency < y->frecency) - (x->frecency > y->frecency);
+}
+
+// ranks the emojis written in messages again from their uses.
+static void rank_emojis(Session *s) {
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+
+  clear_emoji_ranks(s);
+  s->frecent_emojis = calloc(s->nemoji_uses + 1, sizeof *s->frecent_emojis);
+
+  if (s->frecent_emojis == nullptr) {
+    cilo_oom(s->nemoji_uses * sizeof *s->frecent_emojis);
+  }
+
+  for (size_t i = 0; i < s->nemoji_uses; i++) {
+    const FrecencyUse *use = &s->emoji_uses[i];
+    uint32_t score = 0;
+
+    for (size_t j = 0; j < use->nrecent_uses; j++) {
+      if (use->recent_uses[j] > 0) {
+        score += frecency_weight((now - use->recent_uses[j]) / 86400000);
+      }
+    }
+
+    // the client forgets what scores nothing.
+    if (score == 0) {
+      continue;
+    }
+
+    uint64_t total = (uint64_t)use->total_uses * score;
+
+    s->frecent_emojis[s->nfrecent_emojis++] = (FrecentEmoji){
+      .key = str_dup(use->key),
+      .score = score,
+      .frecency = (total + use->nrecent_uses - 1) / use->nrecent_uses,
+    };
+  }
+
+  // stable, so the ones used as much stay in the order they came.
+  for (size_t i = 1; i < s->nfrecent_emojis; i++) {
+    FrecentEmoji moved = s->frecent_emojis[i];
+    size_t at = i;
+
+    for (; at > 0 && by_emoji_frecency(&s->frecent_emojis[at - 1], &moved) > 0;
+         at--) {
+      s->frecent_emojis[at] = s->frecent_emojis[at - 1];
+    }
+
+    s->frecent_emojis[at] = moved;
+  }
+}
+
+// the client saves what it counts by itself this long after.
+constexpr double EMOJI_SAVE_DELAY = 30;
+
+static void track_emoji(Session *s, const char *key) {
+  int64_t now = (int64_t)(store_now(s->store) * 1000);
+  FrecencyUse *use = nullptr;
+
+  for (size_t i = 0; i < s->nemoji_uses && use == nullptr; i++) {
+    use = strcmp(s->emoji_uses[i].key, key) == 0 ? &s->emoji_uses[i] : nullptr;
+  }
+
+  if (use == nullptr) {
+    s->emoji_uses =
+      realloc(s->emoji_uses, (s->nemoji_uses + 1) * sizeof *s->emoji_uses);
+
+    if (s->emoji_uses == nullptr) {
+      cilo_oom((s->nemoji_uses + 1) * sizeof *s->emoji_uses);
+    }
+
+    use = &s->emoji_uses[s->nemoji_uses++];
+    *use = (FrecencyUse){.key = str_dup(key)};
+  }
+
+  // the client keeps the last ten.
+  if (use->nrecent_uses == FRECENCY_SAMPLES) {
+    memmove(use->recent_uses, use->recent_uses + 1,
+            (FRECENCY_SAMPLES - 1) * sizeof *use->recent_uses);
+    use->nrecent_uses--;
+  }
+
+  use->recent_uses[use->nrecent_uses++] = now;
+  use->total_uses++;
+}
+
+// the emojis of the settings, null for settings discord did not give.
+static void take_emojis(Session *s, const char *settings) {
+  // what the client counts as used before the user wrote any.
+  static const char *const STARTERS[] = {
+    "thumbsup", "eyes", "laughing",   "watermelon", "fork_and_knife",
+    "yum",      "weary", "tired_face", "poop",       "100",
+  };
+
+  if (settings != nullptr) {
+    s->emoji_uses = settings_proto_emoji_uses(settings, &s->nemoji_uses);
+    s->favorite_emojis =
+      settings_proto_favorite_emojis(settings, &s->nfavorite_emojis);
+    s->emoji_uses_known = true;
+  }
+
+  if (s->nemoji_uses == 0) {
+    for (size_t i = 0; i < countof(STARTERS); i++) {
+      track_emoji(s, STARTERS[i]);
+    }
+  }
+
+  rank_emojis(s);
+}
+
+static void on_emoji_timer(void *ctx) {
+  Session *s = ctx;
+
+  s->emoji_timer = nullptr;
+
+  if (online(s) && s->emoji_uses_known) {
+    int64_t now = (int64_t)(store_now(s->store) * 1000);
+
+    save_frecency(
+      s, settings_proto_with_emoji_uses(s->emoji_uses, s->nemoji_uses, now),
+      nullptr);
+  }
+}
+
+static bool track_emojis_in(Session *s, const MdNode *first) {
+  char key[24];
+  bool any = false;
+
+  for (const MdNode *n = first; n != nullptr; n = n->next) {
+    const char *name = nullptr;
+    size_t name_len = 0;
+    Snowflake id = 0;
+    bool animated = false;
+
+    if (n->kind == MD_CUSTOM_EMOJI) {
+      track_emoji(s, snowflake_format(n->id, key));
+      any = true;
+    }
+    // one of the user's guilds sent as a link to its picture, which
+    // FakeNitro leaves the client count as any other.
+    else if (n->kind == MD_LINK && n->text != nullptr &&
+             fake_emoji_url(n->text, &id, &animated, &name, &name_len) &&
+             guild_emoji_owner(s->store, id) != nullptr) {
+      track_emoji(s, snowflake_format(id, key));
+      any = true;
+      continue;
+    }
+    else if (n->kind == MD_EMOJI) {
+      const UnicodeEmoji *emoji = emoji_by_utf8(n->text);
+
+      if (emoji != nullptr) {
+        track_emoji(s, emoji->name);
+        any = true;
+      }
+    }
+
+    any |= track_emojis_in(s, n->first);
+  }
+
+  return any;
+}
+
+// counts a use of each emoji a message the user sends holds, as the client
+// does once it went.
+static void track_emojis(Session *s, const char *content) {
+  // nothing is counted before the uses discord holds came: they are asked
+  // for, so the next message counts.
+  if (!s->frecency_loaded || content == nullptr || *content == '\0') {
+    session_fetch_frecency(s);
+    return;
+  }
+
+  MdDoc *doc = md_parse(content, strlen(content), nullptr);
+
+  if (track_emojis_in(s, doc->root)) {
+    rank_emojis(s);
+
+    // counted before discord told of the uses, they would be saved over
+    // the ones it holds.
+    if (s->emoji_uses_known && s->emoji_timer == nullptr && online(s)) {
+      s->emoji_timer = platform_timer(EMOJI_SAVE_DELAY, on_emoji_timer, s);
+    }
+  }
+
+  md_free(doc);
+}
+
+static EmojiSource *emoji_source(Session *s, Snowflake emoji_id) {
+  for (size_t i = 0; i < s->nemoji_sources; i++) {
+    if (s->emoji_sources[i].emoji_id == emoji_id) {
+      return &s->emoji_sources[i];
+    }
+  }
+
+  return nullptr;
+}
+
+static void on_emoji_source(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+  EmojiSource *source = emoji_source(s, call->id);
+
+  call_end(call);
+
+  if (source == nullptr) {
+    return;
+  }
+
+  source->loading = false;
+
+  // a guild that keeps to itself is answered with an error, or without one.
+  const cima_json *guild = res->ok ? json_get(res->json, "guild") : nullptr;
+
+  if (json_type(guild) == CIMA_JSON_OBJECT) {
+    source->guild_id = snowflake_of(json_get(guild, "id"));
+    source->guild_name = str_dup(json_get_or(guild, "name", nullptr));
+    source->guild_icon = str_dup(json_get_or(guild, "icon", nullptr));
+    source->online = (uint32_t)json_get_coerce(
+      guild, "approximate_presence_count", (uint64_t)0);
+  }
+
+  changed(s);
+}
+
+const EmojiSource *session_emoji_source(Session *s, Snowflake emoji_id) {
+  EmojiSource *known = emoji_source(s, emoji_id);
+
+  if (known != nullptr || emoji_id == 0 || !online(s)) {
+    return known;
+  }
+
+  char path[64];
+
+  snprintf(path, sizeof path, "/emojis/%" PRIu64 "/source", emoji_id);
+
+  ApiRequest req = {.method = "GET",
+                    .path = path,
+                    .route = "/emojis/:id/source"};
+  EmojiSource *grown = realloc(
+    s->emoji_sources, (s->nemoji_sources + 1) * sizeof *s->emoji_sources);
+
+  if (grown == nullptr) {
+    cilo_oom(sizeof *grown);
+  }
+
+  s->emoji_sources = grown;
+  s->emoji_sources[s->nemoji_sources] =
+    (EmojiSource){.emoji_id = emoji_id, .loading = true};
+  api_request(s->api, &req, on_emoji_source, call_new(s, 0, emoji_id));
+  return &s->emoji_sources[s->nemoji_sources++];
+}
+
+uint32_t session_emoji_score(const Session *s, const char *key) {
+  for (size_t i = 0; i < s->nfrecent_emojis; i++) {
+    if (strcmp(s->frecent_emojis[i].key, key) == 0) {
+      return s->frecent_emojis[i].score;
+    }
+  }
+
+  return 0;
+}
+
+bool session_emoji_starred(const Session *s, const char *key) {
+  for (size_t i = 0; i < s->nfavorite_emojis; i++) {
+    if (strcmp(s->favorite_emojis[i], key) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static void on_frecency(void *ctx, const ApiResponse *res) {
   Call *call = ctx;
 
@@ -3255,6 +3585,8 @@ static void on_frecency(void *ctx, const ApiResponse *res) {
   }
 
   rank_reactions(s, uses, count);
+  take_emojis(
+    s, res->ok ? json_get_or(res->json, "settings", nullptr) : nullptr);
 
   for (size_t i = 0; i < count; i++) {
     free(uses[i].key);
@@ -3336,6 +3668,14 @@ const char *session_application_icon(Session *s, Snowflake application_id) {
 }
 
 void session_fetch_frecency(Session *s) {
+  // a fixture has no settings: what the client starts from.
+  if (s->offline && !s->frecency_loaded) {
+    s->frecency_loaded = true;
+    rank_reactions(s, nullptr, 0);
+    take_emojis(s, nullptr);
+    return;
+  }
+
   if (s->frecency_loading || s->frecency_loaded || !online(s)) {
     return;
   }

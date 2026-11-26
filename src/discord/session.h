@@ -97,6 +97,30 @@ typedef struct {
 } SessionQr;
 
 typedef struct Session Session;
+
+// where an emoji of a guild the user is not in comes from, as discord
+// tells of it.
+typedef struct {
+  Snowflake emoji_id;
+  // asked and not answered yet.
+  bool loading;
+  // the guild that has it when anyone may find that guild, 0 for one that
+  // keeps to itself.
+  Snowflake guild_id;
+  char *guild_name, *guild_icon;
+  // how many of its members are there now, 0 when discord did not say.
+  uint32_t online;
+} EmojiSource;
+
+// an emoji the user writes in messages and how much, as the client ranks
+// them.
+typedef struct {
+  // the first name of one of unicode, the id of a guild's.
+  char *key;
+  // the weights of its last uses together, and its uses times their mean.
+  uint32_t score;
+  uint64_t frecency;
+} FrecentEmoji;
 typedef struct Roster Roster;
 
 // an account logged in on this machine. the names are null until its first
@@ -339,6 +363,23 @@ struct Session {
   // session_fetch_frecency.
   char **frecent_reactions;
   size_t nfrecent_reactions;
+  // the emojis the user writes in messages, the most used first, by the
+  // same keys, and the ones they starred in the order they were. both come
+  // with the same settings.
+  FrecentEmoji *frecent_emojis;
+  size_t nfrecent_emojis;
+  char **favorite_emojis;
+  size_t nfavorite_emojis;
+  // every use the ranking is made of, made again as the user writes one,
+  // whether discord told of them, which saving them needs, and the timer
+  // that saves the ones counted here.
+  FrecencyUse *emoji_uses;
+  size_t nemoji_uses;
+  bool emoji_uses_known;
+  void *emoji_timer;
+  // the emojis asked about, see session_emoji_source.
+  EmojiSource *emoji_sources;
+  size_t nemoji_sources;
   // the gifs the user starred, in no order, which come with the same
   // settings and follow the other clients' changes. `present` once known.
   FavoriteGifs favorite_gifs;
@@ -617,6 +658,12 @@ void session_add_friend_clear(Session *s);
 const char *session_application_icon(Session *s, Snowflake application_id);
 // asks once for what the user uses the most, see `frecent_reactions`.
 void session_fetch_frecency(Session *s);
+// what a search counts an emoji for by its key, the weights of its last
+// uses together. 0 for one never used.
+[[gnu::pure]] uint32_t session_emoji_score(const Session *s, const char *key);
+[[gnu::pure]] bool session_emoji_starred(const Session *s, const char *key);
+// where an emoji comes from, asked once. null while nothing can be asked.
+const EmojiSource *session_emoji_source(Session *s, Snowflake emoji_id);
 // the gifs of the picker, made as they are first asked for.
 Gifs *session_gifs(Session *s);
 // the favorite starred under `url`, null when it is not one.

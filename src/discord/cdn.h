@@ -50,6 +50,9 @@ char *cdn_role_icon(char out[static CDN_URL_MAX], Snowflake role_id,
 // a custom emoji as webp, its first frame when animated.
 char *cdn_emoji(char out[static CDN_URL_MAX], Snowflake emoji_id,
                 uint32_t size);
+// the same with every frame of one that moves.
+char *cdn_emoji_animated(char out[static CDN_URL_MAX], Snowflake emoji_id,
+                         uint32_t size);
 
 // the badge of a guild's tag.
 char *cdn_tag_badge(char out[static CDN_URL_MAX], Snowflake guild_id,

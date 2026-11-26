@@ -204,6 +204,8 @@ void chat(App *app, Channel *c) {
           gif_picker(app, c);
           sticker_picker(app, c);
           sticker_info(app, c);
+          emoji_picker(app, c);
+          emoji_info_card(app, c);
         }
 
         if (members) {

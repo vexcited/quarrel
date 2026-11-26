@@ -208,7 +208,7 @@ static uint32_t peek(const char *s, size_t len, size_t at, size_t *size) {
 }
 
 // the bytes of the emoji starting at `s`, 0 when there is none.
-static size_t emoji_length(const char *s, size_t len) {
+size_t md_emoji_length(const char *s, size_t len) {
   size_t size, at = 0;
   uint32_t cp = peek(s, len, 0, &size);
 
@@ -1055,7 +1055,7 @@ static void parse_inline(Md *md, MdNode *parent, const char *s, size_t len) {
       (unsigned char)c >= 0x80 || is_digit(c) || c == '#' || c == '*';
 
     if (maybe_emoji) {
-      size_t n = emoji_length(s + i, len - i);
+      size_t n = md_emoji_length(s + i, len - i);
 
       if (n > 0) {
         flush(md, parent, base);

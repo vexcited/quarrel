@@ -2354,9 +2354,17 @@ static void free_member(Member *m) {
   free(m);
 }
 
+// what is made of the emojis is made again after any of them changed.
+static void emojis_changed(Store *s) {
+  static uint64_t clock;
+
+  s->emojis_version = ++clock;
+}
+
 static void free_emojis(Guild *g) {
   for (size_t i = 0; i < g->nemojis; i++) {
     free(g->emojis[i].name);
+    free(g->emojis[i].roles);
   }
 
   free(g->emojis);
@@ -2498,14 +2506,20 @@ void store_put_emojis(Store *s, Guild *g, const cima_json *emojis) {
       continue;
     }
 
-    g->emojis[g->nemojis++] = (Emoji){
+    Emoji *e = &g->emojis[g->nemojis++];
+
+    *e = (Emoji){
       .id = id,
       .name = str_dup(json_get_or(item, "name", nullptr)),
       .animated = json_get_coerce(item, "animated", false),
       .available = json_get_coerce(item, "available", true),
+      .managed = json_get_coerce(item, "managed", false),
     };
+
+    e->roles = id_array(json_get(item, "roles"), nullptr, &e->nroles);
   }
 
+  emojis_changed(s);
   store_touch_guild(s, g);
 }
 
@@ -2588,6 +2602,7 @@ Member *store_put_member(Store *s, Guild *g, const cima_json *member,
   // the current user's roles decide what they see.
   if (user_id == s->self_id) {
     touch_layout(s, g);
+    emojis_changed(s);
   }
   else {
     store_touch_guild(s, g);
@@ -2672,6 +2687,7 @@ static void free_guild(Store *s, Guild *g) {
   MAP_DROP(&g->members);
   free_emojis(g);
   free_guild_stickers(g);
+  emojis_changed(s);
   free(g->channels);
   free(g->roles);
   free(g->lists);

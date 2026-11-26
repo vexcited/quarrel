@@ -20,6 +20,9 @@ bool sticker_fill(App *app, Snowflake sticker_id, uint8_t format, bool animated,
 // `emoji_id`, else the twemoji of `name`, its utf-8, or the system's glyph
 // when discord has none.
 void emoji_node(App *app, Snowflake emoji_id, const char *name, float size);
+// a guild's emoji over `r`, every frame of one that moves while the window
+// has the user's attention, as the client plays them. false until it shows.
+bool emoji_image(App *app, Snowflake emoji_id, bool animated, civue_rect r);
 // a round avatar node, with the user's status at its corner over `ring` when
 // `status` is set.
 void avatar(App *app, const User *user, Snowflake guild_id, float size,
@@ -71,6 +74,9 @@ typedef struct {
   bool inline_only;
   // ends with the mark of an edited message.
   bool edited;
+  // a message's own words: a link to an emoji's picture alone is shown as
+  // the emoji, as FakeNitro does.
+  bool fake_emojis;
   // the width laid out at until the node has one of its own.
   float hint;
 } MarkupOptions;

@@ -25,6 +25,48 @@ const UnicodeEmoji *emoji_by_name(const char *name) {
   return found ? &UNICODE_EMOJIS[found->index] : nullptr;
 }
 
+const UnicodeEmoji *emoji_by_colons(const char *name, size_t len,
+                                    uint8_t tone) {
+  char key[80];
+
+  if (len == 0 || len + 8 > sizeof key) {
+    return nullptr;
+  }
+
+  snprintf(key, sizeof key, "%.*s", (int)len, name);
+
+  const UnicodeEmoji *plain = emoji_by_name(key);
+
+  if (plain == nullptr || tone == 0) {
+    return plain;
+  }
+
+  snprintf(key, sizeof key, "%s_tone%u", plain->name, tone);
+
+  const UnicodeEmoji *toned = emoji_by_name(key);
+
+  return toned != nullptr ? toned : plain;
+}
+
+const UnicodeEmoji *const *emoji_picker_order(size_t *count) {
+  constexpr size_t MOST = EMOJI_CATEGORY_STARTS[EMOJI_CATEGORIES];
+  static const UnicodeEmoji *order[MOST];
+  static bool made;
+
+  // the table has one for every place under the last category's end.
+  for (size_t i = 0; !made && i < UNICODE_EMOJIS_COUNT; i++) {
+    const UnicodeEmoji *emoji = &UNICODE_EMOJIS[i];
+
+    if (emoji->order < MOST && !emoji->toned) {
+      order[emoji->order] = emoji;
+    }
+  }
+
+  made = true;
+  *count = MOST;
+  return order;
+}
+
 static const UnicodeEmoji *find(const char *utf8) {
   return bsearch(utf8, UNICODE_EMOJIS, UNICODE_EMOJIS_COUNT,
                  sizeof *UNICODE_EMOJIS, by_utf8);

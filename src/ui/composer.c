@@ -9,6 +9,7 @@
 
 #include <civue/dsl.h>
 
+#include "discord/expressions.h"
 #include "discord/uploads.h"
 #include "forms.h"
 #include "media.h"
@@ -47,6 +48,22 @@ void composer_append(App *app, const char *text) {
   app->focus_composer = true;
 }
 
+void composer_insert(App *app, const char *text) {
+  civue_ui *ui = civue_ui_current();
+  char *held = civue_field_insert(ui, composer_id(), text);
+
+  // the field keeps no caret once it lost the focus: the end then.
+  if (!held) {
+    const char *draft = app->draft ? app->draft : "";
+
+    held = malloc(strlen(draft) + strlen(text) + 1);
+    sprintf(held, "%s%s", draft, text);
+  }
+
+  free(app->draft);
+  app->draft = held;
+}
+
 void upload_clear_draft(App *app) {
   set_draft(app, "");
 }
@@ -73,18 +90,26 @@ static bool blank(const char *s) {
 // `sure` once FakeNitro's notice was answered.
 static void submit(App *app, Channel *c, bool sure) {
   Session *session = app->session;
-  const char *written = app->draft ? app->draft : "";
+  bool faked = false;
 
-  // a sticker discord would refuse goes as a link, as Vencord's FakeNitro
-  // sends it.
+  // the emojis named between colons as a message holds them. the ones
+  // discord would refuse go as links to their pictures, as Vencord's
+  // FakeNitro sends them.
+  char *written =
+    expressions_send(session->store, c, app->draft ? app->draft : "", &faked);
+
+  defer free(written);
+
+  // a sticker discord would refuse goes as a link too.
   Snowflake sticker = app->editing ? 0 : sticker_pending(app, c);
   char *linked =
     sticker_linked(app, c, sticker, blank(written) ? "" : written);
 
   defer free(linked);
+  faked = faked || linked;
 
   // a link shows no picture where the user may not embed any.
-  if (linked && !sure && c->guild_id &&
+  if (faked && !sure && c->guild_id &&
       !store_can(session->store, c, PERM_EMBED_LINKS)) {
     app->fake_ask = true;
     return;
@@ -405,6 +430,15 @@ static void gif_button(App *app, civue_rect box) {
   }
 }
 
+static void emoji_button(App *app, civue_rect box) {
+  if (composer_button(app, id("composer-emoji"), CIVUE_ICON(lucide, smile),
+                      app->popover == POPOVER_EMOJIS, "Select emoji",
+                      &app->emoji_button)
+        .activated) {
+    emoji_picker_toggle(app, box);
+  }
+}
+
 static void writing(App *app, Channel *c) {
   const Look *k = &app->look;
   civue_ui *ui = civue_ui_current();
@@ -430,10 +464,11 @@ static void writing(App *app, Channel *c) {
   // as tall as its lines, up to a dozen of them.
   float width = (float)last_size(id).x;
   const char *draft = app->draft ? app->draft : "";
+  const civue_field_inlays *inlays = composer_inlays(app, c);
   float lines = LINE;
 
   if (width > 0 && *draft) {
-    lines = civue_text_area_height(ui, draft, style, width, nullptr);
+    lines = civue_text_area_height(ui, draft, style, width, inlays);
   }
 
   lines = fminf(fmaxf(lines, LINE), LINE * MAX_LINES);
@@ -472,20 +507,21 @@ static void writing(App *app, Channel *c) {
         .placeholder = k->faint,
         .selection = civue_alpha(k->brand, .45f),
       };
-      civue_field_response field = civue_text_area(
-        ui, id, here(), &app->draft, placeholder, style, look);
+      civue_field_response field = civue_text_area_inlaid(
+        ui, id, here(), &app->draft, placeholder, style, look, inlays);
 
       if (field.changed && !blank(app->draft) && !app->editing) {
         session_typing(app->session, c->id);
       }
     }
 
-    // an edit takes no gif and no sticker.
-    if (!app->editing) {
-      div(flex, items_center, gap(1), flex_shrink_0, self_start, ml(2)) {
+    div(flex, items_center, gap(1), flex_shrink_0, self_start, ml(2)) {
+      if (!app->editing) {
         gif_button(app, box);
         sticker_button(app, box);
       }
+
+      emoji_button(app, box);
     }
   }
 }

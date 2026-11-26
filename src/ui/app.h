@@ -56,6 +56,8 @@ typedef enum : uint8_t {
   POPOVER_GIFS,
   POPOVER_STICKERS,
   POPOVER_STICKER_INFO,
+  POPOVER_EMOJIS,
+  POPOVER_EMOJI_CARD,
   POPOVER_FORUM_VIEW,
   POPOVER_FORUM_TAGS,
   POPOVER_POST_TAGS,
@@ -228,6 +230,17 @@ typedef struct {
   Snowflake sticker_message;
   uint32_t sticker_index;
   civue_rect sticker_info_anchor;
+  // the emoji picker: the composer it opens over and the button that opens
+  // it, and what it shows, see emojis.c.
+  civue_rect emoji_anchor, emoji_button;
+  bool emoji_fresh;
+  struct EmojiPicker *emojis;
+  // the emoji of a message whose card is open while the app shows
+  // POPOVER_EMOJI_CARD, and where it was drawn.
+  Snowflake card_emoji;
+  char *card_emoji_name;
+  bool card_emoji_animated, card_emoji_fake;
+  civue_rect card_emoji_at;
 
   // the message list: whether it follows its end, and what it held last
   // frame, to stay put when history arrives over it.

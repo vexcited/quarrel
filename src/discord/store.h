@@ -208,7 +208,12 @@ typedef struct {
 typedef struct {
   Snowflake id;
   char *name;
+  // the roles that may use it, everyone when it has none.
+  Snowflake *roles;
+  size_t nroles;
   bool animated, available;
+  // an integration's, which the members it comes with use anywhere.
+  bool managed;
 } Emoji;
 
 // a sticker the members of a guild made.
@@ -893,6 +898,9 @@ struct Store {
   bool ready;
 
   uint64_t version, users_version, guilds_version, private_version;
+  // changes with the emojis of any guild and with who may use them. no
+  // two stores ever have the same.
+  uint64_t emojis_version;
 
   // friends, blocked users and requests, in no order.
   Relationship *relationships;

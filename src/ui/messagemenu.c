@@ -1,6 +1,5 @@
 #include "components.h"
 
-#include <ctype.h>
 #include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,47 +15,7 @@
 constexpr float MENU_WIDTH = 248;
 constexpr float PICKER_WIDTH = 332;
 constexpr float PICKER_HEIGHT = 340;
-constexpr float CELL = 38;
-constexpr size_t PICKER_MAX = 64;
 constexpr size_t FORWARD_MAX = 40;
-
-static bool all_digits(const char *s) {
-  for (const char *c = s; *c; c++) {
-    if (!isdigit((unsigned char)*c)) {
-      return false;
-    }
-  }
-
-  return *s != '\0';
-}
-
-// what a key of the user's settings is here: an emoji of unicode by its
-// first name, or one of the channel's guild by its id. those of another
-// guild need nitro, which Quarrel does not know of.
-static bool pick_of(App *app, const Channel *c, const char *key,
-                    ReactionPick *out) {
-  if (!all_digits(key)) {
-    const UnicodeEmoji *emoji = emoji_by_name(key);
-
-    if (!emoji) {
-      return false;
-    }
-
-    *out = (ReactionPick){.name = emoji->utf8};
-    return true;
-  }
-
-  const Guild *guild = store_guild(app->session->store, c->guild_id);
-  const Emoji *emoji =
-    guild ? store_emoji(guild, strtoull(key, nullptr, 10)) : nullptr;
-
-  if (!emoji || !emoji->available || emoji->animated || !emoji->name) {
-    return false;
-  }
-
-  *out = (ReactionPick){.id = emoji->id, .name = emoji->name};
-  return true;
-}
 
 size_t quick_reactions(App *app, const Channel *c, ReactionPick *out,
                        size_t max) {
@@ -66,7 +25,7 @@ size_t quick_reactions(App *app, const Channel *c, ReactionPick *out,
   session_fetch_frecency(session);
 
   for (size_t i = 0; i < session->nfrecent_reactions && n < max; i++) {
-    n += pick_of(app, c, session->frecent_reactions[i], &out[n]);
+    n += emoji_pick_by_key(app, c, session->frecent_reactions[i], &out[n]);
   }
 
   return n;
@@ -390,104 +349,31 @@ static bool contains(const char *text, const char *query) {
   return text && strcasestr(text, query) != nullptr;
 }
 
-// the emojis a search finds: the guild's first, then those whose name starts
-// with it, then those that hold it.
-static size_t search_emojis(App *app, const Channel *c, const char *query,
-                            ReactionPick *out, size_t max) {
-  const Guild *guild = store_guild(app->session->store, c->guild_id);
-  size_t n = 0, len = strlen(query);
-
-  for (size_t i = 0; guild && i < guild->nemojis && n < max; i++) {
-    const Emoji *emoji = &guild->emojis[i];
-
-    if (emoji->available && !emoji->animated && contains(emoji->name, query)) {
-      out[n++] = (ReactionPick){.id = emoji->id, .name = emoji->name};
-    }
-  }
-
-  for (int pass = 0; pass < 2; pass++) {
-  names:
-    for (size_t i = 0; i < UNICODE_EMOJI_NAMES_COUNT && n < max; i++) {
-      const UnicodeEmojiName *name = &UNICODE_EMOJI_NAMES[i];
-      const UnicodeEmoji *emoji = &UNICODE_EMOJIS[name->index];
-      bool starts = !strncasecmp(name->name, query, len);
-
-      if (emoji->toned || starts != (pass == 0) ||
-          (!starts && !contains(name->name, query))) {
-        continue;
-      }
-
-      // an emoji found by two of its names shows once.
-      for (size_t j = 0; j < n; j++) {
-        if (!out[j].id && out[j].name == emoji->utf8) {
-          continue names;
-        }
-      }
-
-      out[n++] = (ReactionPick){.name = emoji->utf8};
-    }
-  }
-
-  return n;
-}
-
 static void react_picker(App *app, const Channel *c, const Message *m) {
-  const Look *k = &app->look;
-  civue_rect card = card_at(app->menu_anchor, PICKER_WIDTH, PICKER_HEIGHT);
-  ReactionPick picks[PICKER_MAX];
-  const char *query = app->menu_search ? app->menu_search : "";
-  size_t npicks = *query ? search_emojis(app, c, query, picks, PICKER_MAX)
-                         : quick_reactions(app, c, picks, PICKER_MAX);
-  int picked = -1;
-  bool submitted = false;
+  civue_rect room = overlay_room();
+  civue_rect card =
+    card_at(app->menu_anchor,
+            fminf(EMOJI_CARD_WIDTH, (float)(room.x1 - room.x0)),
+            fminf(EMOJI_CARD_HEIGHT, (float)(room.y1 - room.y0)));
+  ReactionPick pick = {};
+  bool keep = false;
+  // set as the picker opens, and taken by the first of its frames.
+  bool fresh = app->menu_focus;
 
-  overlay() {
-    div(key(id("react-picker")), flex, flex_col, left(px(card.x0)),
-        top(px(card.y0)), w(px(PICKER_WIDTH)), h(px(PICKER_HEIGHT)),
-        rounded(xl), bg(k->surface_high), border(1),
-        border_color(k->border_strong), shadow(lg), overflow_hidden) {
-      card = here();
-      submitted = search_field(app, id("react-search"), "Find an emoji");
+  app->menu_focus = false;
 
-      text(*query ? "Results" : "Frequently Used", flex_shrink_0, px(4), pb(1),
-           text_size(px(12)), line_height(px(16)), font_weight(semibold),
-           text_color(k->subtle));
+  if (emoji_card(app, c, EMOJI_FOR_REACTION, fresh, card, &pick, &keep)) {
+    react_with(app, m, pick);
 
-      div(key(id("react-grid")), flex, flex_wrap, content_start, flex_1,
-          min_h(0), px(3), pb(3), overflow_y_scroll,
-          scrollbars(&app->thin_bars)) {
-        for (size_t i = 0; i < npicks; i++) {
-          div(key(id_at(id("react-cell"), i)), flex, items_center,
-              justify_center, size(px(CELL)), flex_shrink_0, rounded(lg),
-              hover(bg(k->hover)), cursor_pointer) {
-            if (button().activated) {
-              picked = (int)i;
-            }
-
-            emoji_node(app, picks[i].id, picks[i].name, 26);
-          }
-        }
-
-        if (!npicks) {
-          text(*query ? "No emoji matches." : "Type to find an emoji.", px(1),
-               py(2), text_size(px(14)), line_height(px(18)),
-               text_color(k->faint));
-        }
-      }
+    // a press with shift leaves the picker for another reaction.
+    if (!keep) {
+      app->popover = POPOVER_NONE;
     }
+
+    return;
   }
 
   dismiss(app, card);
-
-  // enter takes the first one found.
-  if (submitted && npicks) {
-    picked = 0;
-  }
-
-  if (picked >= 0) {
-    react_with(app, m, picks[picked]);
-    app->popover = POPOVER_NONE;
-  }
 }
 
 static bool forward_row(App *app, const Channel *to, const char *query,
