@@ -230,8 +230,9 @@ static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
   return (civue_app){app, frame, background};
 }
 
-// what a run leaves behind when it ends without cleaning up: a notification's
-// avatar, a pasted file never sent. a day old, no other instance needs it.
+// what a run leaves behind when it ends without cleaning up, a notification's
+// avatar or a pasted file never sent, and the sounds once fetched. a day
+// old, no other instance needs it.
 static void sweep_cache(void) {
   constexpr time_t AGE = 24 * 60 * 60;
   char dir[1024];
@@ -253,7 +254,8 @@ static void sweep_cache(void) {
     struct stat st;
 
     if ((strncmp(e->d_name, "notify-", 7) == 0 ||
-         strncmp(e->d_name, "upload-", 7) == 0) &&
+         strncmp(e->d_name, "upload-", 7) == 0 ||
+         strncmp(e->d_name, "sound-", 6) == 0) &&
         fstatat(dirfd(d), e->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
         S_ISREG(st.st_mode) && now - st.st_mtime > AGE) {
       unlinkat(dirfd(d), e->d_name, 0);

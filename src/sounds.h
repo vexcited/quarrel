@@ -4,12 +4,11 @@
 #include <stdint.h>
 
 /* ========================================================================== */
-/* the sounds of discord's client, which its site serves as mp3 files. one    */
-/* is fetched the first time it is wanted and kept in the user's caches, and  */
-/* they play through ciren, on the system's own output as the client's do.    */
-/* main thread.                                                               */
+/* the sounds of the app, in packs kept in the binary: discord's and          */
+/* fluxer's. one plays from the pack the user chose unless they set it apart, */
+/* to another pack or to a file of theirs. they play through ciren, on the    */
+/* system's own output as discord's client does. main thread.                 */
 /* ========================================================================== */
-
 // by the names the client knows them by.
 typedef enum : uint8_t {
   // a message worth a notification came.
@@ -59,21 +58,50 @@ typedef enum : uint8_t {
   SOUNDS,
 } Sound;
 
-// plays a sound, `volume` from 0 to 1 of what the speakers are set to. one
-// that was never fetched plays once it came, and one that would not come is
-// asked for again a minute later. nothing for one the user turned off.
+typedef enum : uint8_t {
+  PACK_DISCORD,
+  PACK_FLUXER,
+  PACKS,
+} SoundPack;
+
+extern const char *const SOUND_PACK_NAMES[PACKS];
+
+// where a sound plays from. a pack that lacks it plays discord's.
+typedef enum : uint8_t {
+  SOUND_FROM_PACK,
+  SOUND_FROM_DISCORD,
+  SOUND_FROM_FLUXER,
+  SOUND_FROM_FILE,
+} SoundFrom;
+
+// plays a sound, `volume` from 0 to 1 of what the speakers are set to.
+// nothing for one the user turned off.
 void sounds_play(Sound sound, float volume);
+// plays a sound once at the speakers' volume, turned off or not.
+void sounds_preview(Sound sound);
 // plays a sound over and over until sounds_stop, as a ringtone goes. one
 // that already loops goes on as it is.
 void sounds_loop(Sound sound, float volume);
 // ends the loop of a sound. fine when it has none.
 void sounds_stop(Sound sound);
-// fetches a sound ahead of its first use.
-void sounds_fetch(Sound sound);
 
 // whether the user wants a sound played, kept from a launch to the next
 // and the same for every account, as discord keeps it on the machine.
 bool sounds_enabled(Sound sound);
 void sounds_set_enabled(Sound sound, bool on);
+
+// the pack the sounds play from unless set apart, kept as the rest is.
+SoundPack sounds_pack(void);
+void sounds_set_pack(SoundPack pack);
+// whether a pack has a sound of its own.
+bool sounds_has(SoundPack pack, Sound sound);
+
+SoundFrom sounds_from(Sound sound);
+// the user's file, null unless the sound plays from one.
+const char *sounds_file(Sound sound);
+// the user's file would not play, the pack's did instead.
+bool sounds_file_failed(Sound sound);
+// `path` is the file of SOUND_FROM_FILE, ignored otherwise.
+void sounds_set_from(Sound sound, SoundFrom from, const char *path);
 
 #endif

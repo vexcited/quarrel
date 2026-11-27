@@ -1,7 +1,6 @@
 #include "alerts.h"
 
 #include <inttypes.h>
-#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,12 +85,6 @@ static struct {
   Ring rings[RINGS_MOST];
   size_t nrings;
 } A;
-
-static const Sound FETCHED_FIRST[] = {
-  SOUND_MESSAGE1,
-  SOUND_CALL_RINGING,
-  SOUND_CALL_CALLING,
-};
 
 bool alerts_enabled(void) {
   if (!A.loaded) {
@@ -785,13 +778,6 @@ void alerts_start(App *app) {
   A.focused = true;
   platform_notify_watch(on_activated, nullptr);
   atexit(at_exit);
-
-  // a call does not wait for its ringtone to be fetched.
-  for (size_t i = 0; i < countof(FETCHED_FIRST); i++) {
-    if (sounds_enabled(FETCHED_FIRST[i])) {
-      sounds_fetch(FETCHED_FIRST[i]);
-    }
-  }
 }
 
 void alerts_frame(App *app) {

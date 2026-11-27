@@ -234,11 +234,4 @@ void cues_follow(void) {
 
 void cues_start(App *app) {
   owner = app;
-
-  // a call does not wait for its first sounds to be fetched.
-  for (size_t i = 0; i < CUE_SOUNDS_COUNT; i++) {
-    if (sounds_enabled(CUE_SOUNDS[i])) {
-      sounds_fetch(CUE_SOUNDS[i]);
-    }
-  }
 }

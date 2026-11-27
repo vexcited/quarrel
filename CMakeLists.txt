@@ -122,6 +122,7 @@ set(QUARREL_CORE_SOURCES
   src/http.c
   src/images.c
   src/sounds.c
+  src/sound_files.c
   src/discord/admin.c
   src/discord/api.c
   src/discord/cdn.c

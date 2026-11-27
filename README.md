@@ -30,7 +30,7 @@ sudo apt install clang lld cmake ninja-build libcurl4-openssl-dev libsecret-1-de
 - Tokens are kept by the Secret Service, as GNOME Keyring or KWallet provide it: without one, Quarrel logs in again at every launch.
 - Sound and cameras go through PipeWire. Echo cancellation is PipeWire's own module, with WebRTC's canceller.
 - Cameras that film in JPEG, as most do at 720p, need libturbojpeg.
-- Notifications go to the desktop's own server, over `org.freedesktop.Notifications`. Their sound and the sounds of a call are Discord's, each fetched from its site once and kept in the caches. They play through ciren, which reads their mp3 with libsndfile, 1.1 or later. A call in a private channel rings with Discord's ringtone, and its notification has a button to answer and one to decline where the server shows buttons.
+- Notifications go to the desktop's own server, over `org.freedesktop.Notifications`. Their sound and the sounds of a call come from a pack in the binary, Discord's or Fluxer's, or from a file of the user's for each. They play through ciren, which reads their mp3 with libsndfile, 1.1 or later. A call in a private channel rings, and its notification has a button to answer and one to decline where the server shows buttons.
 
 ## License
 
