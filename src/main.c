@@ -1,5 +1,11 @@
+#include <dirent.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 
 #include <civue/dsl.h>
 
@@ -224,6 +230,39 @@ static civue_app make([[maybe_unused]] civue_ui *ui, void *arg) {
   return (civue_app){app, frame, background};
 }
 
+// what a run leaves behind when it ends without cleaning up: a notification's
+// avatar, a pasted file never sent. a day old, no other instance needs it.
+static void sweep_cache(void) {
+  constexpr time_t AGE = 24 * 60 * 60;
+  char dir[1024];
+
+  if (!platform_cache_path(".", dir, sizeof dir)) {
+    return;
+  }
+
+  DIR *d = opendir(dir);
+
+  if (d == nullptr) {
+    return;
+  }
+
+  time_t now = time(nullptr);
+  struct dirent *e;
+
+  while ((e = readdir(d)) != nullptr) {
+    struct stat st;
+
+    if ((strncmp(e->d_name, "notify-", 7) == 0 ||
+         strncmp(e->d_name, "upload-", 7) == 0) &&
+        fstatat(dirfd(d), e->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
+        S_ISREG(st.st_mode) && now - st.st_mtime > AGE) {
+      unlinkat(dirfd(d), e->d_name, 0);
+    }
+  }
+
+  closedir(d);
+}
+
 int main() {
   App app = {.theme = theme_saved(), .stick = true, .directory_tab = -1};
   char *width = platform_pref_get(SIDEBAR_KEY);
@@ -250,6 +289,7 @@ int main() {
     .app_id = "quarrel",
   };
 
+  sweep_cache();
   civue_window_run(&options, make, &app);
 
   captcha_drop(&app.captcha);
