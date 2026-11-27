@@ -220,6 +220,46 @@ target_link_libraries(quarrel_core PUBLIC
   civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl ciren::ciren)
 target_compile_options(quarrel_core PRIVATE ${QUARREL_C2Y} -Wall -Wextra)
 
+# twemoji's svgs, which discord draws its unicode emoji with, kept in the
+# binary: discord.com/assets serves them only while the web client lives.
+FetchContent_Declare(twemoji
+  URL https://github.com/jdecked/twemoji/archive/refs/tags/v17.0.3.tar.gz
+  URL_HASH SHA256=a0855654b633045ae2337537e77f1bb4361162f7fcd910e613eaab1d6d9c5fca)
+FetchContent_MakeAvailable(twemoji)
+
+file(GLOB twemoji_svgs RELATIVE ${twemoji_SOURCE_DIR}/assets/svg
+  ${twemoji_SOURCE_DIR}/assets/svg/*.svg)
+# sorted as strcmp sorts their names, for a bsearch. one after the other,
+# the like ones close, they pack to a tenth in a single zstd frame.
+list(TRANSFORM twemoji_svgs REPLACE "\\.svg$" "")
+list(SORT twemoji_svgs)
+set(twemoji_packed ${CMAKE_CURRENT_BINARY_DIR}/twemoji.zst)
+if(NOT EXISTS ${twemoji_packed}
+    OR NOT twemoji_packed_from STREQUAL twemoji_SOURCE_DIR)
+  set(twemoji_all "")
+  foreach(name ${twemoji_svgs})
+    file(READ ${twemoji_SOURCE_DIR}/assets/svg/${name}.svg svg)
+    string(APPEND twemoji_all "${svg}")
+  endforeach()
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/twemoji.svgs "${twemoji_all}")
+  file(ARCHIVE_CREATE OUTPUT ${twemoji_packed}
+    PATHS ${CMAKE_CURRENT_BINARY_DIR}/twemoji.svgs
+    FORMAT raw COMPRESSION Zstd COMPRESSION_LEVEL 19)
+  file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/twemoji.svgs)
+  set(twemoji_packed_from ${twemoji_SOURCE_DIR} CACHE INTERNAL "")
+endif()
+set(twemoji_rows "")
+set(twemoji_at 0)
+foreach(name ${twemoji_svgs})
+  file(SIZE ${twemoji_SOURCE_DIR}/assets/svg/${name}.svg len)
+  string(APPEND twemoji_rows "  {\"${name}\", ${twemoji_at}, ${len}},\n")
+  math(EXPR twemoji_at "${twemoji_at} + ${len}")
+endforeach()
+list(LENGTH twemoji_svgs twemoji_count)
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/twemoji.c @ONLY CONTENT
+  "#include \"discord/emoji.h\"\n\nstatic const unsigned char packed[] = {\n#embed \"${twemoji_packed}\"\n};\n\nconst unsigned char *const TWEMOJIS_PACKED = packed;\nconst size_t TWEMOJIS_PACKED_LEN = sizeof packed;\nconst size_t TWEMOJIS_LEN = ${twemoji_at};\n\nconst Twemoji TWEMOJIS[] = {\n${twemoji_rows}};\nconst size_t TWEMOJIS_COUNT = ${twemoji_count};\n")
+target_sources(quarrel_core PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/twemoji.c)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 target_link_libraries(quarrel_core PUBLIC PkgConfig::ZSTD)

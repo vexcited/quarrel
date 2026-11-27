@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "discord/emoji.h"
 #include "http.h"
 
 constexpr size_t IMAGES_MAX_DOWNLOAD = 32u << 20;
@@ -80,6 +81,10 @@ static uint64_t fetch(void *, uint64_t load, const char *url) {
   return http_send(&req, on_fetched, (void *)(uintptr_t)load);
 }
 
+static const void *held(void *, const char *url, size_t *len) {
+  return emoji_svg(url, len);
+}
+
 static void cancel(void *, uint64_t op) {
   http_cancel(op);
 }
@@ -88,6 +93,7 @@ civue_images *images_new(void) {
   images = civue_images_new(&(civue_images_options){
     .fetch = fetch,
     .cancel = cancel,
+    .bytes_of = held,
     .disk_name = "quarrel",
     // a screen of attachments is a few tens of megabytes. what scrolled
     // away comes back from the disk cache.
