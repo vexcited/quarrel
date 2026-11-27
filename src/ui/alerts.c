@@ -403,10 +403,17 @@ void alerts_sweep(void) {
 /* png for every server to know it.                                           */
 /* ========================================================================== */
 
+// named after its url: a server keeps what it read from a path, and would
+// show a slot's former avatar if the name stayed.
 static bool avatar_path(size_t slot, char out[static 1024]) {
-  char name[32];
+  uint64_t hash = 0xcbf29ce484222325;
+  char name[40];
 
-  snprintf(name, sizeof name, "notify-%zu.png", slot);
+  for (const char *at = A.avatars[slot].url; *at != '\0'; at++) {
+    hash = (hash ^ (uint8_t)*at) * 0x100000001b3;
+  }
+
+  snprintf(name, sizeof name, "notify-%016" PRIx64 ".png", hash);
   return platform_cache_path(name, out, 1024);
 }
 
@@ -456,6 +463,12 @@ static size_t avatar_slot(const char *url) {
     if (A.avatars[i].used < A.avatars[oldest].used) {
       oldest = i;
     }
+  }
+
+  char path[1024];
+
+  if (A.avatars[oldest].ready && avatar_path(oldest, path)) {
+    remove(path);
   }
 
   snprintf(A.avatars[oldest].url, CDN_URL_MAX, "%s", url);
