@@ -6,7 +6,6 @@ if(NOT CMAKE_C_COMPILER AND NOT DEFINED ENV{CC})
       PATHS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin NO_DEFAULT_PATH)
     set(CMAKE_OBJC_COMPILER ${CMAKE_C_COMPILER} CACHE FILEPATH "objc compiler")
 
-    # the voice libraries are C++ and stay with Xcode and the system's libc++.
     set(CMAKE_CXX_COMPILER /usr/bin/c++ CACHE FILEPATH "c++ compiler")
   else()
     find_program(CMAKE_C_COMPILER clang)
@@ -41,19 +40,12 @@ if(PROJECT_IS_TOP_LEVEL AND APPLE
   set(CMAKE_INSTALL_PREFIX /Applications CACHE PATH "install prefix" FORCE)
 endif()
 
-# on linux and windows quarrel is built for the machine it is built on, with
-# every instruction its processor has: civue draws on the cpu there. that is
-# avx2 on x86. on arm64, where neon is every processor's, it is the atomics
-# of armv8.1 without a call, the dot products the noise suppression
-# multiplies with, and code laid out for the core. a build meant for other
-# machines turns QUARREL_NATIVE off.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
   option(QUARREL_NATIVE "build for the processor of this machine"
     ${PROJECT_IS_TOP_LEVEL})
   option(QUARREL_LTO "optimize across quarrel and its libraries at link time"
     ${PROJECT_IS_TOP_LEVEL})
 
-  # arm64 names its processors with -mcpu, which sets what -march would.
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)")
     set(QUARREL_NATIVE_FLAG -mcpu=native)
   else()
@@ -65,8 +57,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
     add_compile_options(${QUARREL_NATIVE_FLAG})
   endif()
 
-  # lld links the bitcode the libraries are then made of, and folds what
-  # the linker of binutils leaves twice.
   find_program(QUARREL_LLD ld.lld)
   if(QUARREL_LLD AND NOT CMAKE_LINKER_TYPE)
     set(CMAKE_LINKER_TYPE LLD)
@@ -92,8 +82,6 @@ if(QUARREL_CCACHE)
   endforeach()
 endif()
 
-# the libraries are fetched from code.vexcited.com, from checkouts next to
-# this one when there are. cilo comes first for the others to share it.
 include(FetchContent)
 foreach(dep cilo:ciko/cilo civue:ciko/civue cinc:ciko/cinc cima:ciko/cima
     ciphon:ciko/cilent ciren:ciko/ciren hcaptcha-civue:hcaptcha/civue)
@@ -213,7 +201,6 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_link_libraries(quarrel_core PUBLIC
     PkgConfig::QUARREL_LINUX CURL::libcurl z)
 
-  # a camera that films in jpeg, as most do at 720p, is read through it.
   pkg_check_modules(QUARREL_TURBOJPEG IMPORTED_TARGET libturbojpeg)
 
   if(QUARREL_TURBOJPEG_FOUND)
@@ -376,8 +363,6 @@ else()
   include(GNUInstallDirs)
   target_link_options(quarrel PRIVATE LINKER:--gc-sections,--as-needed,-s)
 
-  # identical functions are kept once, and the addresses the loader fixes at
-  # every launch are packed: fewer pages of the binary are its own.
   if(CMAKE_LINKER_TYPE STREQUAL "LLD")
     target_link_options(quarrel PRIVATE
       LINKER:--icf=safe,-O2,-z,pack-relative-relocs)
