@@ -673,8 +673,15 @@ static void sound_row(App *app, Sound sound) {
   }
 
   const char *slash = file != nullptr ? strrchr(file, '/') : nullptr;
+  const char *backslash = file != nullptr ? strrchr(file, '\\') : nullptr;
 
-  names[count] = slash != nullptr ? slash + 1 : "Local file...";
+  if (backslash != nullptr && (slash == nullptr || backslash > slash)) {
+    slash = backslash;
+  }
+
+  names[count] = file == nullptr    ? "Local file..."
+                 : slash != nullptr ? slash + 1
+                                    : file;
   places[count++] = SOUND_FROM_FILE;
 
   for (size_t i = 0; i < count; i++) {

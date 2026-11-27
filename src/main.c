@@ -1,11 +1,9 @@
 #include <dirent.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <unistd.h>
 
 #include <civue/dsl.h>
 
@@ -323,14 +321,16 @@ static void sweep_cache(void) {
   struct dirent *e;
 
   while ((e = readdir(d)) != nullptr) {
+    char path[1024];
     struct stat st;
 
     if ((strncmp(e->d_name, "notify-", 7) == 0 ||
          strncmp(e->d_name, "upload-", 7) == 0 ||
          strncmp(e->d_name, "sound-", 6) == 0) &&
-        fstatat(dirfd(d), e->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
-        S_ISREG(st.st_mode) && now - st.st_mtime > AGE) {
-      unlinkat(dirfd(d), e->d_name, 0);
+        platform_cache_path(e->d_name, path, sizeof path) &&
+        stat(path, &st) == 0 && S_ISREG(st.st_mode) &&
+        now - st.st_mtime > AGE) {
+      remove(path);
     }
   }
 

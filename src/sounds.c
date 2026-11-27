@@ -138,7 +138,7 @@ static void from_key(Sound sound, char out[static 64]) {
   snprintf(out, 64, "sound_from_%s", ENTRIES[sound].name);
 }
 
-// the preference is a pack's name or the absolute path of a file.
+// the preference is a pack's name or the path of a file.
 static void place(Sound sound) {
   char key[64];
 
@@ -153,16 +153,17 @@ static void place(Sound sound) {
   held[sound].placed = true;
   held[sound].from = SOUND_FROM_PACK;
 
-  if (saved != nullptr && saved[0] == '/') {
-    held[sound].from = SOUND_FROM_FILE;
-    held[sound].file = saved;
-    return;
-  }
-
   for (size_t i = 0; saved != nullptr && i < PACKS; i++) {
     if (strcmp(saved, PACK_IDS[i]) == 0) {
       held[sound].from = (SoundFrom)(SOUND_FROM_DISCORD + i);
     }
+  }
+
+  if (saved != nullptr && saved[0] != '\0' &&
+      held[sound].from == SOUND_FROM_PACK) {
+    held[sound].from = SOUND_FROM_FILE;
+    held[sound].file = saved;
+    return;
   }
 
   free(saved);
@@ -189,7 +190,7 @@ void sounds_set_from(Sound sound, SoundFrom from, const char *path) {
   char key[64];
 
   if (sound >= SOUNDS || from > SOUND_FROM_FILE ||
-      (from == SOUND_FROM_FILE && (path == nullptr || path[0] != '/'))) {
+      (from == SOUND_FROM_FILE && (path == nullptr || path[0] == '\0'))) {
     return;
   }
 
