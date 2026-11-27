@@ -560,6 +560,15 @@ void window_handle(civue_id id) {
   }
 }
 
+void header_end(App *app) {
+  civue_rect bar = here();
+  float room = (float)(bar.x1 - app->notch.x0);
+
+  if (app->notch.y1 > bar.y0 && room > 0) {
+    div(flex_shrink_0, w(px(room))) {}
+  }
+}
+
 void captcha_start(Captcha *c, const char *sitekey, const char *rqdata) {
   if (c->h) {
     return;

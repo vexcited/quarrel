@@ -257,9 +257,14 @@ void preview_bar(App *app) {
     snprintf(label, sizeof label, "Join %s", g->name ? g->name : "Server");
   }
 
+  // it ends before the window's buttons where they are at the end of the
+  // title bar, as on windows.
+  float end = civue_ui_current()->titlebar_end_inset;
+
   div(key(id("preview-bar")), flex, items_center, gap(3), flex_shrink_0,
       min_h(9), mb(2), px(2), rounded(lg), bg(k->primary), text_size(px(14)),
-      line_height(px(18)), text_color(k->on_primary)) {
+      line_height(px(18)), text_color(k->on_primary),
+      style(.margin[1] = civue_px(end))) {
     window_handle(id("preview-bar-handle"));
 
     if (outlined(k, id("preview-back"), "Back", &back, true)) {
@@ -541,6 +546,8 @@ static void header(App *app, Discovery *d) {
       discovery_search(d, app->explore_field);
       civue_set_scroll_y(civue_ui_current(), id("explore-results"), 0);
     }
+
+    header_end(app);
   }
 }
 

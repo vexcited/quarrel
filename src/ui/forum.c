@@ -1265,6 +1265,8 @@ static void forum_header(App *app, const Channel *forum) {
 
     text(forum->name ? forum->name : "", flex_1, min_w(0), truncate,
          font_weight(semibold), text_color(k->strong));
+
+    header_end(app);
   }
 }
 

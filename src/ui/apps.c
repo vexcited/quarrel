@@ -535,6 +535,8 @@ static void header(App *app, Apps *a) {
       st->found_page = 1;
       civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
     }
+
+    header_end(app);
   }
 }
 

@@ -160,6 +160,9 @@ typedef struct {
   bool guilds_armed;
   // something is drawn over the window's buttons, and they are hidden for it.
   bool covers_buttons, buttons_hidden;
+  // where the window's buttons cut into the panel's top right corner, as they
+  // do on windows, empty where they do not.
+  civue_rect notch;
   // the inbox's tab, and whether its mentions were asked for since it
   // opened.
   bool inbox_asked;
