@@ -220,14 +220,9 @@ target_link_libraries(quarrel_core PUBLIC
   civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl ciren::ciren)
 target_compile_options(quarrel_core PRIVATE ${QUARREL_C2Y} -Wall -Wextra)
 
-find_package(PkgConfig)
-if(PkgConfig_FOUND)
-  pkg_check_modules(ZSTD IMPORTED_TARGET libzstd)
-endif()
-if(ZSTD_FOUND)
-  target_link_libraries(quarrel_core PUBLIC PkgConfig::ZSTD)
-  target_compile_definitions(quarrel_core PRIVATE QUARREL_ZSTD)
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
+target_link_libraries(quarrel_core PUBLIC PkgConfig::ZSTD)
 
 include(cmake/voice.cmake)
 target_link_libraries(quarrel_core PUBLIC

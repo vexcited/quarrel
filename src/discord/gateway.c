@@ -3,11 +3,7 @@
 #include <stdcountof.h>
 #include <stdio.h>
 
-#ifdef QUARREL_ZSTD
 #include <zstd.h>
-#else
-#include <zlib.h>
-#endif
 
 #include "discord/api.h"
 #include "discord/etf.h"
@@ -16,12 +12,8 @@
 #define GATEWAY_URL "wss://gateway.discord.gg"
 
 // the desktop client's choices: etf since it ships erlpack, and zstd since
-// it ships discord_zstd. zlib is what is left when zstd is not around.
-#ifdef QUARREL_ZSTD
+// it ships discord_zstd.
 #define GATEWAY_QUERY "/?encoding=etf&v=9&compress=zstd-stream"
-#else
-#define GATEWAY_QUERY "/?encoding=etf&v=9&compress=zlib-stream"
-#endif
 
 // the capabilities the desktop client identifies with, 1734653 in its
 // bundle, so that the session looks like one of its own. what the store has
@@ -96,12 +88,7 @@ struct Gateway {
 
   // the decompression stream of the connection and what it has produced of
   // the message being received.
-#ifdef QUARREL_ZSTD
   ZSTD_DStream *zstd;
-#else
-  z_stream inflate;
-  bool inflating;
-#endif
   char *message;
   size_t message_len, message_cap;
 };
@@ -150,15 +137,8 @@ static void drop_socket(Gateway *g, int code) {
     g->ws = nullptr;
   }
 
-#ifdef QUARREL_ZSTD
   ZSTD_freeDStream(g->zstd);
   g->zstd = nullptr;
-#else
-  if (g->inflating) {
-    inflateEnd(&g->inflate);
-    g->inflating = false;
-  }
-#endif
 
   g->message_len = 0;
 }
@@ -488,8 +468,6 @@ static bool message_room(Gateway *g) {
   return true;
 }
 
-#ifdef QUARREL_ZSTD
-
 // zstd-stream: one stream lasts as long as the connection, and every
 // websocket message holds one whole payload without ending a frame.
 static bool decompress(Gateway *g, const uint8_t *data, size_t len,
@@ -532,57 +510,6 @@ static bool decompress(Gateway *g, const uint8_t *data, size_t len,
   *whole = true;
   return true;
 }
-
-#else
-
-// zlib-stream: every message is a piece of one deflate stream that lasts as
-// long as the connection, and a payload is whole once a piece ends with the
-// sync flush marker 00 00 ff ff.
-static bool decompress(Gateway *g, const uint8_t *data, size_t len,
-                       bool *whole) {
-  if (!g->inflating) {
-    g->inflate = (z_stream){};
-
-    if (inflateInit(&g->inflate) != Z_OK) {
-      return false;
-    }
-
-    g->inflating = true;
-  }
-
-  g->inflate.next_in = (Bytef *)data;
-  g->inflate.avail_in = (uInt)len;
-
-  for (;;) {
-    if (!message_room(g)) {
-      return false;
-    }
-
-    size_t room = g->message_cap - g->message_len;
-
-    g->inflate.next_out = (Bytef *)g->message + g->message_len;
-    g->inflate.avail_out = (uInt)room;
-
-    int result = inflate(&g->inflate, Z_SYNC_FLUSH);
-
-    g->message_len += room - g->inflate.avail_out;
-
-    if (result != Z_OK && result != Z_BUF_ERROR) {
-      return false;
-    }
-
-    // room left over means everything received so far came out.
-    if (g->inflate.avail_out != 0) {
-      break;
-    }
-  }
-
-  *whole = len >= 4 && data[len - 4] == 0x00 && data[len - 3] == 0x00 &&
-           data[len - 2] == 0xff && data[len - 1] == 0xff;
-  return true;
-}
-
-#endif
 
 static void on_binary(void *ctx, const uint8_t *data, size_t len) {
   Gateway *g = ctx;
