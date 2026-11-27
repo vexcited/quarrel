@@ -7,7 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef _WIN32
 #include <sys/utsname.h>
+#endif
 
 #include "http.h"
 #include "platform/platform.h"
@@ -29,6 +32,27 @@ constexpr uint64_t NATIVE_BUILD_NUMBER = 98625;
 #define CH_PLATFORM "\"macOS\""
 // chromium freezes the system's version at 10.15.7 whatever it really is.
 #define UA_SYSTEM "Macintosh; Intel Mac OS X 10_15_7"
+#elifdef _WIN32
+// read from Discord 1.0.9270 for windows on x64 and 1.0.62 on arm64, which
+// ships apart: the version in the build_info.json of their host packages on
+// updates.discord.com, the Electron their Discord.exe is, and the
+// metadata_version that update server gives an install, which
+// DiscordNative.app.getBuildNumber answers with.
+#ifdef __aarch64__
+#define CLIENT_VERSION "1.0.62"
+#define APP_ARCH "arm64"
+#else
+#define CLIENT_VERSION "1.0.9270"
+#define APP_ARCH "x64"
+#endif
+#define ELECTRON_VERSION "44.11.4"
+#define CHROME_VERSION "152.0.7977.169"
+#define CHROME_MAJOR "152"
+constexpr uint64_t NATIVE_BUILD_NUMBER = 99581;
+#define OS_NAME "Windows"
+#define CH_PLATFORM "\"Windows\""
+// chromium says x64 whatever the machine is.
+#define UA_SYSTEM "Windows NT 10.0; Win64; x64"
 #else
 // read from Discord 1.0.171 for linux: the version
 // discord.com/api/updates/stable?platform=linux names, the Electron its host
@@ -213,7 +237,7 @@ const char *api_user_agent(void) {
   return USER_AGENT;
 }
 
-#ifndef __APPLE__
+#ifdef __linux__
 static const char *env_or(const char *name, const char *otherwise) {
   const char *value = getenv(name);
 
@@ -348,14 +372,25 @@ static const char *distro(void) {
 // client now sends what process.getSystemVersion says with
 // os_version_is_release, and keeps the kernel's major in os_sdk_version.
 // on linux it sends the kernel's release and what its crash reporter knows
-// of the desktop.
+// of the desktop. on windows the system's version, its build in
+// os_sdk_version, and the architecture node is built for.
 void api_write_client_properties(cima_json_writer *w, bool gateway) {
   char locale[32], os_version[64], sdk[16];
-  struct utsname sys = {};
 
   make_identity();
   platform_locale(locale, sizeof locale);
   platform_os_version(os_version, sizeof os_version);
+
+#ifdef _WIN32
+  const char *build = strchr(os_version, '.');
+
+  build = build != nullptr ? strchr(build + 1, '.') : nullptr;
+  snprintf(sdk, sizeof sdk, "%s", build != nullptr ? build + 1 : "");
+
+  const char *arch = APP_ARCH;
+#else
+  struct utsname sys = {};
+
   uname(&sys);
   snprintf(sdk, sizeof sdk, "%.*s", (int)strcspn(sys.release, "."),
            sys.release);
@@ -365,6 +400,7 @@ void api_write_client_properties(cima_json_writer *w, bool gateway) {
   const char *arch = strcmp(sys.machine, "x86_64") == 0    ? "x64"
                      : strcmp(sys.machine, "aarch64") == 0 ? "arm64"
                                                            : sys.machine;
+#endif
 
   json_begin_object(w);
   json_field(w, "os", OS_NAME);
@@ -373,7 +409,7 @@ void api_write_client_properties(cima_json_writer *w, bool gateway) {
   json_field(w, "client_version", CLIENT_VERSION);
   json_field(w, "os_version", os_version);
   json_field(w, "os_version_is_release", true);
-#ifdef __APPLE__
+#ifndef __linux__
   json_field(w, "os_sdk_version", sdk);
 #endif
   json_field(w, "os_arch", arch);
@@ -384,7 +420,7 @@ void api_write_client_properties(cima_json_writer *w, bool gateway) {
   json_field(w, "browser_user_agent", USER_AGENT);
   json_field(w, "browser_version", ELECTRON_VERSION);
 
-#ifndef __APPLE__
+#ifdef __linux__
   char wm[128];
   const char *runtime =
     getenv("FLATPAK_ID") != nullptr                               ? "flatpak"
