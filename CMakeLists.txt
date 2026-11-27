@@ -41,20 +41,20 @@ if(PROJECT_IS_TOP_LEVEL AND APPLE
   set(CMAKE_INSTALL_PREFIX /Applications CACHE PATH "install prefix" FORCE)
 endif()
 
-# on linux quarrel is built for the machine it is built on, with every
-# instruction its processor has: civue draws on the cpu there. that is avx2
-# on x86. on arm64, where neon is every processor's, it is the atomics of
-# armv8.1 without a call, the dot products the noise suppression multiplies
-# with, and code laid out for the core. a build meant for other machines
-# turns QUARREL_NATIVE off.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+# on linux and windows quarrel is built for the machine it is built on, with
+# every instruction its processor has: civue draws on the cpu there. that is
+# avx2 on x86. on arm64, where neon is every processor's, it is the atomics
+# of armv8.1 without a call, the dot products the noise suppression
+# multiplies with, and code laid out for the core. a build meant for other
+# machines turns QUARREL_NATIVE off.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
   option(QUARREL_NATIVE "build for the processor of this machine"
     ${PROJECT_IS_TOP_LEVEL})
   option(QUARREL_LTO "optimize across quarrel and its libraries at link time"
     ${PROJECT_IS_TOP_LEVEL})
 
   # arm64 names its processors with -mcpu, which sets what -march would.
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)")
     set(QUARREL_NATIVE_FLAG -mcpu=native)
   else()
     set(QUARREL_NATIVE_FLAG -march=native)
@@ -177,6 +177,18 @@ set(QUARREL_LINUX_SOURCES
   src/platform/linux/websocket.c
   src/platform/qr.c)
 
+set(QUARREL_WINDOWS_SOURCES
+  src/platform/windows/audio.c
+  src/platform/windows/camera.c
+  src/platform/windows/loop.c
+  src/platform/windows/notify.c
+  src/platform/windows/posix.c
+  src/platform/windows/storage.c
+  src/platform/windows/system.c
+  src/platform/windows/websocket.c
+  src/platform/windows/win.c
+  src/platform/qr.c)
+
 if(APPLE)
   add_library(quarrel_core STATIC
     ${QUARREL_CORE_SOURCES} ${QUARREL_DARWIN_SOURCES})
@@ -210,8 +222,23 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   else()
     message(STATUS "quarrel: no libturbojpeg, cameras that film in jpeg are left out")
   endif()
+elseif(WIN32)
+  find_package(CURL REQUIRED)
+
+  add_library(quarrel_core STATIC
+    ${QUARREL_CORE_SOURCES} ${QUARREL_WINDOWS_SOURCES})
+  target_compile_definitions(quarrel_core PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX COBJMACROS
+    _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+
+  target_compile_definitions(quarrel_core PUBLIC _FILE_OFFSET_BITS=64)
+  target_compile_options(quarrel_core PUBLIC
+    "$<$<COMPILE_LANGUAGE:C>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows/posix.h>")
+  target_link_libraries(quarrel_core PUBLIC
+    CURL::libcurl z ws2_32 advapi32 crypt32 bcrypt cfgmgr32 user32 shell32
+    ole32 oleaut32 uuid runtimeobject avrt mfplat mf mfreadwrite mfuuid)
 else()
-  message(FATAL_ERROR "Quarrel runs on macOS and Linux")
+  message(FATAL_ERROR "Quarrel runs on macOS, Linux and Windows")
 endif()
 
 target_include_directories(quarrel_core PUBLIC
@@ -309,6 +336,42 @@ if(APPLE)
     --sign [==[${QUARREL_SIGN_IDENTITY}]==]
     \"\${CMAKE_INSTALL_PREFIX}/$<TARGET_BUNDLE_DIR_NAME:quarrel>\"
     COMMAND_ERROR_IS_FATAL ANY)" COMPONENT quarrel)
+elseif(WIN32)
+  enable_language(RC)
+  configure_file(cmake/quarrel.rc ${CMAKE_CURRENT_BINARY_DIR}/quarrel.rc @ONLY)
+  target_sources(quarrel PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/quarrel.rc)
+  set_target_properties(quarrel PROPERTIES
+    WIN32_EXECUTABLE ON
+    OUTPUT_NAME Quarrel)
+  target_link_options(quarrel PRIVATE LINKER:--gc-sections,-s)
+
+  if(CMAKE_LINKER_TYPE STREQUAL "LLD")
+    target_link_options(quarrel PRIVATE LINKER:--icf=safe)
+  endif()
+
+  get_filename_component(QUARREL_DLLS ${CMAKE_C_COMPILER} DIRECTORY)
+  get_filename_component(QUARREL_MSYS ${QUARREL_DLLS} DIRECTORY)
+
+  if(POLICY CMP0207)
+    cmake_policy(SET CMP0207 NEW)
+  endif()
+
+  install(TARGETS quarrel
+    RUNTIME_DEPENDENCIES
+      DIRECTORIES ${QUARREL_DLLS}
+      PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+      POST_EXCLUDE_REGEXES "[Ss][Yy][Ss][Tt][Ee][Mm]32"
+    RUNTIME DESTINATION bin COMPONENT quarrel)
+
+  if(EXISTS ${QUARREL_DLLS}/WebView2Loader.dll)
+    install(FILES ${QUARREL_DLLS}/WebView2Loader.dll
+      DESTINATION bin COMPONENT quarrel)
+  endif()
+
+  if(EXISTS ${QUARREL_MSYS}/etc/ssl/certs/ca-bundle.crt)
+    install(FILES ${QUARREL_MSYS}/etc/ssl/certs/ca-bundle.crt
+      DESTINATION etc/ssl/certs COMPONENT quarrel)
+  endif()
 else()
   include(GNUInstallDirs)
   target_link_options(quarrel PRIVATE LINKER:--gc-sections,--as-needed,-s)
