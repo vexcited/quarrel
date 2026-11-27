@@ -39,3 +39,4 @@ Quarrel is licensed under the [GPL-3.0](LICENSE).
 ## Credits
 
 - The Unicode emoji are [Twemoji](https://github.com/jdecked/twemoji), its graphics licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- The sounds of the Discord pack are Discord's, see [assets/discord](assets/discord/README.md).
