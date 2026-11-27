@@ -172,10 +172,10 @@ set(QUARREL_LINUX_SOURCES
   src/platform/linux/memory.c
   src/platform/linux/notify.c
   src/platform/linux/pipe.c
-  src/platform/linux/qr.c
   src/platform/linux/storage.c
   src/platform/linux/system.c
-  src/platform/linux/websocket.c)
+  src/platform/linux/websocket.c
+  src/platform/qr.c)
 
 if(APPLE)
   add_library(quarrel_core STATIC
