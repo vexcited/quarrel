@@ -45,6 +45,9 @@ void hint(App *app, civue_id id, const civue_response *resp, const char *label,
 // the open node moves the window when pressed where nothing of it answers,
 // and zooms it on a double click.
 void window_handle(civue_id id);
+// room at the end of a page's header, the open node, for the window's buttons
+// where they cut into it. its last child.
+void header_end(App *app);
 // a square button holding an icon, true when pressed.
 bool icon_button(App *app, civue_id id, civue_icon icon, float size,
                  float icon_size, const char *label);

@@ -167,6 +167,8 @@ static void chat_header(App *app, Channel *c) {
           app->members_hidden ? "Show Member List" : "Hide Member List")) {
       app->members_hidden = !app->members_hidden;
     }
+
+    header_end(app);
   }
 }
 

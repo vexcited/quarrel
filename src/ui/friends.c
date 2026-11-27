@@ -852,6 +852,8 @@ void friends_page(App *app) {
       tab(app, FRIENDS_ALL, "All");
       tab(app, FRIENDS_IMPLICIT, "Implicit");
       add_friend_tab(app);
+
+      header_end(app);
     }
 
     div(flex, flex_1, min_h(0)) {

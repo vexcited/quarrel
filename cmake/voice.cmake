@@ -80,3 +80,7 @@ target_include_directories(quarrel_dave
 target_compile_definitions(quarrel_dave
   PUBLIC DAVE_STATIC PRIVATE WITH_OPENSSL3)
 target_link_libraries(quarrel_dave PRIVATE mlspp OpenSSL::Crypto)
+
+if(WIN32)
+  target_compile_options(mlspp PRIVATE -include ctime)
+endif()

@@ -94,6 +94,74 @@ static void sidebar_handle(App *app) {
   }
 }
 
+// windows 11 rounds its windows by 8 points, and the panel's corners follow
+// them there.
+#ifdef _WIN32
+constexpr float PANEL_RADIUS = 8;
+#else
+constexpr float PANEL_RADIUS = 12;
+#endif
+
+// where the window's buttons, at the end of the title bar as on windows, cut
+// into the panel: as far from them as the panel is from the window's edge.
+static civue_rect notch_of(civue_rect panel) {
+  civue_ui *ui = civue_ui_current();
+  double gap = ui->size.x - panel.x1;
+
+  if (ui->titlebar_end_inset <= 0 || civue_rect_w(panel) <= 0 ||
+      panel.y0 >= ui->titlebar_height) {
+    return (civue_rect){};
+  }
+
+  return civue_rect_from(ui->size.x - ui->titlebar_end_inset - gap, panel.y0,
+                         panel.x1, ui->titlebar_height);
+}
+
+static civue_color over(civue_color top, civue_color under) {
+  float a = top.a;
+
+  return (civue_color){top.r * a + under.r * (1 - a),
+                       top.g * a + under.g * (1 - a),
+                       top.b * a + under.b * (1 - a), 1};
+}
+
+// rounds the panel's top right corner at `at`: the frame outside its round,
+// as the inside of a border on the top and the right of a box around it, and
+// the panel's border along it.
+static void round_corner(civue_ui *ui, civue_vec2 at, float r,
+                         civue_color frame, civue_color line) {
+  civue_stroke_sides(
+    ui, civue_rect_from(at.x - 3 * r, at.y - r, at.x + r, at.y + 3 * r), frame,
+    (float[4]){r, r, 0, 0}, (float[4]){0, 2 * r, 0, 0});
+  civue_stroke_sides(ui,
+                     civue_rect_from(at.x - 2 * r, at.y, at.x, at.y + 2 * r),
+                     line, (float[4]){1, 1, 0, 0}, (float[4]){0, r, 0, 0});
+}
+
+// the panel going around the window's buttons: the frame over its corner,
+// round where the panel turns, with the panel's border along it.
+static void paint_notch(App *app) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  civue_rect n = app->notch;
+  float r = PANEL_RADIUS;
+  // a border is whole pixels.
+  float bw = fmaxf(roundf(ui->scale), 1) / ui->scale;
+  // the border as it shows over the panel. its pieces meet and cross here,
+  // and an opaque one stays the same where they do.
+  civue_color line = over(k->frame_border, k->chat);
+
+  if (civue_rect_w(n) <= 0) {
+    return;
+  }
+
+  civue_fill_corners(ui, n, k->frame, (float[4]){0, 0, 0, r});
+  civue_stroke_sides(ui, civue_rect_from(n.x0 - bw, n.y0, n.x1, n.y1 + bw),
+                     line, (float[4]){0, 0, 1, 1}, (float[4]){0, 0, 0, r + bw});
+  round_corner(ui, civue_v2(n.x0, n.y0), r, k->frame, line);
+  round_corner(ui, civue_v2(n.x1, n.y1), r, k->frame, line);
+}
+
 static void shell(App *app) {
   const Look *k = &app->look;
   Channel *channel = app_channel(app);
@@ -105,8 +173,11 @@ static void shell(App *app) {
     div(flex, flex_col, flex_1, min_w(0), h(full), py(2), pr(2)) {
       preview_bar(app);
 
-      div(flex, flex_1, min_w(0), min_h(0), rounded(xl), bg(k->chat),
-          border(1), border_color(k->frame_border), overflow_hidden) {
+      div(flex, flex_1, min_w(0), min_h(0), rounded(px(PANEL_RADIUS)),
+          bg(k->chat), border(1), border_color(k->frame_border),
+          overflow_hidden) {
+        app->notch = notch_of(here());
+
         if (channel && channel_is_forum(channel)) {
           forum_page(app, channel);
         }
@@ -126,6 +197,7 @@ static void shell(App *app) {
     }
   }
 
+  paint_notch(app);
   sidebar_handle(app);
 }
 

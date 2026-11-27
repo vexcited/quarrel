@@ -5182,39 +5182,32 @@ static void on_forum_page(void *ctx, const ApiResponse *res) {
 static void fetch_forum_page(Session *s) {
   SessionForum *f = &s->forum;
   const ForumQuery *q = &f->query;
-  char *path = nullptr;
-  size_t size = 0;
-  FILE *out = open_memstream(&path, &size);
+  char *words = q->query != nullptr ? url_encode(q->query) : nullptr;
+  // the words, every tag in digits, and what is around them.
+  size_t cap = (words != nullptr ? strlen(words) : 0) + 21 * q->ntags + 256;
+  char *path = malloc(cap);
 
-  if (out == nullptr) {
+  if (path == nullptr) {
+    free(words);
     return;
   }
 
   // what the web client asks: the archived posts, the active ones coming
   // through the gateway, unless words are looked for in every post. both
   // are latest first whatever the order shown.
-  fprintf(out, "/channels/%" PRIu64 "/threads/search?", f->channel_id);
-
-  if (q->query != nullptr) {
-    char *words = url_encode(q->query);
-
-    fprintf(out, "name=%s&", words);
-    free(words);
-  }
-  else {
-    fprintf(out, "archived=true&");
-  }
-
-  fprintf(out,
-          "sort_by=last_message_time&sort_order=desc&limit=%u"
-          "&tag_setting=%s&offset=%zu",
-          FORUM_PAGE, q->match_all ? "match_all" : "match_some", f->nposts);
+  size_t len = (size_t)snprintf(
+    path, cap,
+    "/channels/%" PRIu64 "/threads/search?%s%s&sort_by=last_message_time"
+    "&sort_order=desc&limit=%u&tag_setting=%s&offset=%zu",
+    f->channel_id, words != nullptr ? "name=" : "",
+    words != nullptr ? words : "archived=true", FORUM_PAGE,
+    q->match_all ? "match_all" : "match_some", f->nposts);
+  free(words);
 
   for (size_t i = 0; i < q->ntags; i++) {
-    fprintf(out, i == 0 ? "&tag=%" PRIu64 : ",%" PRIu64, q->tags[i]);
+    len += (size_t)snprintf(path + len, cap - len,
+                            i == 0 ? "&tag=%" PRIu64 : ",%" PRIu64, q->tags[i]);
   }
-
-  fclose(out);
 
   ApiRequest req = {
     .method = "GET",
