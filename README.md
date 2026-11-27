@@ -1,6 +1,6 @@
 ## Usage
 
-Quarrel is currently WIP so it is only supported through building from source, on macOS and on Linux, x86-64 and arm64.
+Quarrel is currently WIP so it is only supported through building from source, on macOS, Linux and Windows, x86-64 and arm64.
 
 ```sh
 git clone https://code.vexcited.com/quarrel/quarrel
@@ -8,7 +8,7 @@ git clone https://code.vexcited.com/quarrel/quarrel
 
 make
 make run
-make install # to /Applications on macOS, ~/.local on Linux
+make install # to /Applications on macOS, ~/.local on Linux, %LOCALAPPDATA%\Programs\Quarrel on Windows
 ```
 
 Quarrel is C2y, it builds with clang 22 or later.
@@ -31,3 +31,18 @@ sudo apt install clang lld cmake ninja-build libcurl4-openssl-dev libsecret-1-de
 - Sound and cameras go through PipeWire. Echo cancellation is PipeWire's own module, with WebRTC's canceller.
 - Cameras that film in JPEG, as most do at 720p, need libturbojpeg.
 - Notifications go to the desktop's own server, over `org.freedesktop.Notifications`. Their sound and the sounds of a call are Discord's, each fetched from its site once and kept in the caches. They play through ciren, which reads their mp3 with libsndfile, 1.1 or later. A call in a private channel rings with Discord's ringtone, and its notification has a button to answer and one to decline where the server shows buttons.
+
+### Windows
+
+Quarrel runs on Windows 10 and 11 through civue, and builds in the CLANGARM64 shell of MSYS2 on arm64, or its CLANG64 shell on x86-64. It needs what civue needs, see its README, with:
+
+```sh
+pacman -S make $MINGW_PACKAGE_PREFIX-{clang,lld,cmake,ninja,pkgconf,curl,openssl,opus,zstd}
+```
+
+- The build is for the machine it runs on, as on Linux.
+- `make install` copies Quarrel with the DLLs it needs, the WebView2 loader and curl's certificates to `%LOCALAPPDATA%\Programs\Quarrel`, and adds it to the Start menu. `make uninstall` takes them back.
+- Tokens are kept by the Credential Manager, as generic credentials named `Quarrel/<key>`. A value too large for one is sealed to the user with DPAPI, in `%APPDATA%\Quarrel`. Preferences are under `HKCU\Software\Quarrel`, caches in `%LOCALAPPDATA%\Quarrel`.
+- Sound goes through WASAPI, as a communications stream: echo cancellation is the device's own, or Voice Clarity's on Windows 11 where the device has none, the canceller told which speakers the call plays to. Windows 10 with a device that has none cancels no echo. The microphone needs desktop apps to be allowed it, in Settings, Privacy & security, Microphone.
+- Cameras go through Media Foundation.
+- Notifications are the system's toasts, pressed through a COM class Quarrel registers for itself under `HKCU\Software\Classes`. A call in a private channel rings with a notification that has a button to answer and one to decline.
