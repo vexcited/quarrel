@@ -441,18 +441,46 @@ static uint32_t inlay_find(void *, const char *text, uint32_t len, uint32_t at,
   return (uint32_t)taken;
 }
 
-// an emoji of unicode as messages draw them, in the system's own glyphs.
-static void unicode_glyph(civue_ui *ui, const char *utf8, size_t len,
-                          civue_rect r, civue_color color) {
+// an emoji of unicode as messages draw them: its twemoji, else the
+// system's own glyph.
+static void unicode_glyph(App *app, civue_ui *ui, const char *utf8,
+                          size_t len, civue_rect r, civue_color color) {
+  civue_vec2 center = civue_rect_center(r);
+  char held[64], url[EMOJI_URL_MAX];
+  const UnicodeEmoji *known = nullptr;
+  size_t svg_len;
+
+  if (len < sizeof held) {
+    memcpy(held, utf8, len);
+    held[len] = '\0';
+    known = emoji_by_utf8(held);
+  }
+
+  if (known) {
+    emoji_url(url, known);
+  }
+
+  if (known && emoji_svg(url, &svg_len)) {
+    civue_rect box =
+      xywh(center.x - INLINE / 2, center.y - INLINE / 2, INLINE, INLINE);
+    civue_image_info image = civue_images_get(
+      app->images, ui, url, (uint32_t)(INLINE * ui->scale));
+
+    if (image.state == CIVUE_IMAGE_READY) {
+      civue_image(ui, image.texture, box, (float[4]){0, 0, 1, 1}, 1, 0, false);
+    }
+
+    return;
+  }
+
   civue_text_style style = civue_style(20, 400, INLINE, 0);
 
   style.emoji = true;
 
   const civue_text_block *block = civue_layout_n(ui, utf8, len, style, 0);
-  civue_vec2 middle = civue_rect_center(r);
 
   civue_draw_text(ui, block,
-                  point(middle.x - block->width / 2, middle.y - INLINE / 2),
+                  point(center.x - block->width / 2, center.y - INLINE / 2),
                   color);
 }
 
@@ -483,7 +511,7 @@ static void inlay_paint(civue_ui *ui, void *, const char *text, uint32_t len,
   }
 
   if (text[0] != ':') {
-    unicode_glyph(ui, text, len, r, app->look.text);
+    unicode_glyph(app, ui, text, len, r, app->look.text);
     return;
   }
 
@@ -496,7 +524,7 @@ static void inlay_paint(civue_ui *ui, void *, const char *text, uint32_t len,
     emoji_image(app, cell.custom->emoji->id, cell.custom->emoji->animated, box);
   }
   else {
-    unicode_glyph(ui, cell.unicode->utf8, strlen(cell.unicode->utf8), r,
+    unicode_glyph(app, ui, cell.unicode->utf8, strlen(cell.unicode->utf8), r,
                   app->look.text);
   }
 }
@@ -1534,20 +1562,27 @@ void emoji_info_card(App *app, Channel *c) {
   }
 
   Snowflake emoji_id = app->card_emoji;
-  const Guild *owner = guild_emoji_owner(store, emoji_id);
+  // one of unicode is kept by its utf-8, without an id.
+  const UnicodeEmoji *unicode =
+    emoji_id ? nullptr : emoji_by_utf8(app->card_emoji_name);
+  const Guild *owner = emoji_id ? guild_emoji_owner(store, emoji_id) : nullptr;
   const EmojiSource *source =
-    owner ? nullptr : session_emoji_source(app->session, emoji_id);
+    owner || !emoji_id ? nullptr : session_emoji_source(app->session, emoji_id);
   const Emoji *emoji = owner ? store_emoji(owner, emoji_id) : nullptr;
   const char *about = nullptr;
   char name[80], online[48] = "", told[320];
 
   // the name its guild gives it now, when the message's is an older one.
   snprintf(name, sizeof name, ":%s:",
-           emoji && emoji->name   ? emoji->name
+           unicode                ? unicode->name
+           : emoji && emoji->name ? emoji->name
            : app->card_emoji_name ? app->card_emoji_name
                                   : "");
 
-  if (owner && owner->id == c->guild_id) {
+  if (unicode) {
+    about = "A default emoji. You can use this emoji everywhere on Discord.";
+  }
+  else if (owner && owner->id == c->guild_id) {
     about = "This emoji is from this server.";
   }
   else if (owner) {
@@ -1601,9 +1636,14 @@ void emoji_info_card(App *app, Channel *c) {
       button();
 
       div(flex, items_start, gap(3)) {
-        div(size(12), flex_shrink_0) {
-          if (!emoji_image(app, emoji_id, app->card_emoji_animated, here())) {
-            fill(civue_rect_inflate(here(), -4, -4), k->hover, 6);
+        if (unicode) {
+          emoji_node(app, 0, unicode->utf8, 48);
+        }
+        else {
+          div(size(12), flex_shrink_0) {
+            if (!emoji_image(app, emoji_id, app->card_emoji_animated, here())) {
+              fill(civue_rect_inflate(here(), -4, -4), k->hover, 6);
+            }
           }
         }
 
