@@ -5,8 +5,8 @@
 
 /* ========================================================================== */
 /* the sounds of the app, in packs kept in the binary: discord's and          */
-/* fluxer's. one plays from the pack the user chose unless they set it apart, */
-/* to another pack or to a file of theirs. they play through ciren, on the    */
+/* fluxer's. each plays from the pack the user chose for it or from a file of */
+/* theirs, discord's until they choose. they play through ciren, on the       */
 /* system's own output as discord's client does. main thread.                 */
 /* ========================================================================== */
 // by the names the client knows them by.
@@ -68,7 +68,6 @@ extern const char *const SOUND_PACK_NAMES[PACKS];
 
 // where a sound plays from. a pack that lacks it plays discord's.
 typedef enum : uint8_t {
-  SOUND_FROM_PACK,
   SOUND_FROM_DISCORD,
   SOUND_FROM_FLUXER,
   SOUND_FROM_FILE,
@@ -90,16 +89,13 @@ void sounds_stop(Sound sound);
 bool sounds_enabled(Sound sound);
 void sounds_set_enabled(Sound sound, bool on);
 
-// the pack the sounds play from unless set apart, kept as the rest is.
-SoundPack sounds_pack(void);
-void sounds_set_pack(SoundPack pack);
 // whether a pack has a sound of its own.
 bool sounds_has(SoundPack pack, Sound sound);
 
 SoundFrom sounds_from(Sound sound);
 // the user's file, null unless the sound plays from one.
 const char *sounds_file(Sound sound);
-// the user's file would not play, the pack's did instead.
+// the user's file would not play, discord's did instead.
 bool sounds_file_failed(Sound sound);
 // `path` is the file of SOUND_FROM_FILE, ignored otherwise.
 void sounds_set_from(Sound sound, SoundFrom from, const char *path);

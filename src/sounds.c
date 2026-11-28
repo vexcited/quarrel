@@ -13,8 +13,6 @@
 #include "sound_files.h"
 #include "voice/devices.h"
 
-#define PACK_KEY "sound_pack"
-
 // the client plays the sounds of messages once a second at most, whatever
 // comes meanwhile.
 constexpr double MESSAGE_APART = 1;
@@ -83,15 +81,12 @@ static struct {
   bool placed;
   SoundFrom from;
   char *file;
-  // the file would not decode: the pack's plays until another is set.
+  // the file would not decode: discord's plays until another is set.
   bool failed;
   // the volume it loops at, 0 for not at all, and it last played at.
   float looping, played;
   double played_at;
 } held[SOUNDS];
-
-static SoundPack pack;
-static bool pack_known;
 
 /* ========================================================================== */
 /* where a sound plays from.                                                  */
@@ -108,28 +103,6 @@ static bool same_source(const Source *a, const Source *b) {
   return a->bytes == b->bytes && strcmp(a->path, b->path) == 0;
 }
 
-SoundPack sounds_pack(void) {
-  if (!pack_known) {
-    char *saved = platform_pref_get(PACK_KEY);
-
-    pack_known = true;
-    pack = saved != nullptr && strcmp(saved, PACK_IDS[PACK_FLUXER]) == 0
-             ? PACK_FLUXER
-             : PACK_DISCORD;
-    free(saved);
-  }
-
-  return pack;
-}
-
-void sounds_set_pack(SoundPack chosen) {
-  if (chosen < PACKS) {
-    pack_known = true;
-    pack = chosen;
-    platform_pref_set(PACK_KEY, PACK_IDS[chosen]);
-  }
-}
-
 bool sounds_has(SoundPack in, Sound sound) {
   return in < PACKS && sound < SOUNDS && SOUND_FILES[in][sound].bytes;
 }
@@ -138,7 +111,8 @@ static void from_key(Sound sound, char out[static 64]) {
   snprintf(out, 64, "sound_from_%s", ENTRIES[sound].name);
 }
 
-// the preference is a pack's name or the path of a file.
+// the preference is a pack's name or the path of a file. none plays
+// discord's, the pack of the only accounts there are.
 static void place(Sound sound) {
   char key[64];
 
@@ -151,27 +125,28 @@ static void place(Sound sound) {
   char *saved = platform_pref_get(key);
 
   held[sound].placed = true;
-  held[sound].from = SOUND_FROM_PACK;
+  held[sound].from = SOUND_FROM_DISCORD;
 
-  for (size_t i = 0; saved != nullptr && i < PACKS; i++) {
-    if (strcmp(saved, PACK_IDS[i]) == 0) {
-      held[sound].from = (SoundFrom)(SOUND_FROM_DISCORD + i);
-    }
-  }
-
-  if (saved != nullptr && saved[0] != '\0' &&
-      held[sound].from == SOUND_FROM_PACK) {
-    held[sound].from = SOUND_FROM_FILE;
-    held[sound].file = saved;
+  if (saved == nullptr || saved[0] == '\0') {
+    free(saved);
     return;
   }
 
-  free(saved);
+  for (size_t i = 0; i < PACKS; i++) {
+    if (strcmp(saved, PACK_IDS[i]) == 0) {
+      held[sound].from = (SoundFrom)(SOUND_FROM_DISCORD + i);
+      free(saved);
+      return;
+    }
+  }
+
+  held[sound].from = SOUND_FROM_FILE;
+  held[sound].file = saved;
 }
 
 SoundFrom sounds_from(Sound sound) {
   if (sound >= SOUNDS) {
-    return SOUND_FROM_PACK;
+    return SOUND_FROM_DISCORD;
   }
 
   place(sound);
@@ -201,9 +176,8 @@ void sounds_set_from(Sound sound, SoundFrom from, const char *path) {
   held[sound].failed = false;
 
   from_key(sound, key);
-  platform_pref_set(key, from == SOUND_FROM_FILE ? path
-                         : from == SOUND_FROM_PACK
-                           ? nullptr
+  platform_pref_set(key, from == SOUND_FROM_FILE
+                           ? path
                            : PACK_IDS[from - SOUND_FROM_DISCORD]);
 }
 
@@ -217,9 +191,7 @@ static Source source_of(Sound sound) {
     return s;
   }
 
-  SoundPack in = from == SOUND_FROM_DISCORD  ? PACK_DISCORD
-                 : from == SOUND_FROM_FLUXER ? PACK_FLUXER
-                                             : sounds_pack();
+  SoundPack in = from == SOUND_FROM_FLUXER ? PACK_FLUXER : PACK_DISCORD;
   SoundFile file = sounds_has(in, sound) ? SOUND_FILES[in][sound]
                                          : SOUND_FILES[PACK_DISCORD][sound];
 
@@ -266,7 +238,7 @@ static void loop(Sound sound);
 // what failed, for the main thread.
 constexpr uintptr_t FAILED_FILE = 1 << 8, FAILED_LOOP = 1 << 9;
 
-// the user's file would not decode: the pack's plays in its place and from
+// the user's file would not decode: discord's plays in its place and from
 // now on, a ringtone going on with it. a loop that could not start
 // otherwise is not one that plays.
 static void failed_on_main(void *ctx) {

@@ -608,47 +608,17 @@ static const char *sound_label(Sound sound) {
   }
 }
 
-// the box of the pack, and of where each sound plays from.
+// the box of where each sound plays from.
 static Dropdown sound_menu;
 constexpr float SOUND_BOX = 176;
 
-static void pick_sound_file(Sound sound) {
-  static const char *const KINDS[] = {"mp3", "wav",  "flac",
-                                      "ogg", "aiff", "m4a"};
-  civue_strs picked = civue_file_panel_open(KINDS, countof(KINDS), false);
+static const char *const SOUND_KINDS[] = {"mp3", "wav",  "flac",
+                                          "ogg", "aiff", "m4a"};
 
-  if (picked.len != 0) {
-    sounds_set_from(sound, SOUND_FROM_FILE, picked.v[0]);
-    sounds_preview(sound);
-  }
-
-  for (size_t i = 0; i < picked.len; i++) {
-    free(picked.v[i]);
-  }
-
-  free(picked.v);
-}
-
-static void pack_row(App *app) {
-  const Look *k = &app->look;
-
-  div(flex, items_center, gap(4), flex_shrink_0) {
-    div(flex, flex_col, gap(1), flex_1, min_w(0)) {
-      text("Pack", font_weight(medium), text_color(k->strong));
-      text("Every sound plays from it unless set apart below. Fluxer's has "
-           "fewer, Discord's play for the others.",
-           text_size(px(14)), line_height(px(18)), text_color(k->subtle));
-    }
-
-    div(flex, flex_col, flex_shrink_0, w(px(SOUND_BOX))) {
-      int chosen =
-        form_select(app, &sound_menu, id("settings-sound-pack"),
-                    SOUND_PACK_NAMES, PACKS, sounds_pack(), nullptr, false);
-
-      if (chosen >= 0) {
-        sounds_set_pack((SoundPack)chosen);
-      }
-    }
+static void sound_picked(App *, civue_strs files, uint64_t sound) {
+  if (files.len != 0) {
+    sounds_set_from((Sound)sound, SOUND_FROM_FILE, files.v[0]);
+    sounds_preview((Sound)sound);
   }
 }
 
@@ -661,9 +631,6 @@ static void sound_row(App *app, Sound sound) {
   SoundFrom places[SOUND_FROM_FILE + 1];
   size_t count = 0;
   int current = -1;
-
-  names[count] = "Pack";
-  places[count++] = SOUND_FROM_PACK;
 
   for (size_t i = 0; i < PACKS; i++) {
     if (sounds_has((SoundPack)i, sound)) {
@@ -693,7 +660,7 @@ static void sound_row(App *app, Sound sound) {
       text(sound_label(sound), font_weight(medium), text_color(k->strong));
 
       if (sounds_file_failed(sound)) {
-        text("The file would not play, the pack's plays instead.",
+        text("The file would not play, Discord's plays instead.",
              text_size(px(14)), line_height(px(18)), text_color(k->danger));
       }
     }
@@ -704,7 +671,8 @@ static void sound_row(App *app, Sound sound) {
                     names, count, current, nullptr, false);
 
       if (chosen >= 0 && places[chosen] == SOUND_FROM_FILE) {
-        pick_sound_file(sound);
+        pick_files_later(app, SOUND_KINDS, countof(SOUND_KINDS), false,
+                         sound_picked, sound);
       }
       else if (chosen >= 0) {
         sounds_set_from(sound, places[chosen], nullptr);
@@ -1014,7 +982,6 @@ static void notifications_page(App *app, bool narrow) {
              text_size(px(14)), line_height(px(18)), text_color(k->subtle));
       }
 
-      pack_row(app);
       sound_row(app, SOUND_MESSAGE1);
 
       for (size_t i = 0; i < CUE_SOUNDS_COUNT; i++) {
