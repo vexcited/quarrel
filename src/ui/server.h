@@ -9,6 +9,13 @@
 /* as discord's client has them.                                              */
 /* ========================================================================== */
 
+// what discord takes for a guild's images.
+constexpr size_t IMAGE_MOST = 10u << 20;
+
+// a file picked from the disk for an image, written to `*path` once the
+// panel answers, `*removed` then false when not null.
+void pick_image(App *app, char **path, bool *removed);
+
 typedef enum : uint8_t {
   SERVER_PROFILE,
   SERVER_ENGAGEMENT,

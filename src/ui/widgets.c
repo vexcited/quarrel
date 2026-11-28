@@ -2,14 +2,70 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include <civue/dsl.h>
 
+#include "components.h"
 #include "discord/emoji.h"
 #include "discord/cdn.h"
 #include "explore.h"
+
+typedef struct {
+  App *app;
+  const char *const *types;
+  uint32_t n;
+  bool multiple;
+  FilesPicked done;
+  uint64_t arg;
+} PickJob;
+
+static void pick_now(void *ctx) {
+  PickJob *job = ctx;
+  civue_strs files = civue_file_panel_open(job->types, job->n, job->multiple);
+
+  job->done(job->app, files, job->arg);
+
+  for (uint32_t i = 0; i < files.len; i++) {
+    free(files.v[i]);
+  }
+
+  free(files.v);
+  free(job);
+  civue_window_wake();
+}
+
+void pick_files_later(App *app, const char *const *types, uint32_t n,
+                      bool multiple, FilesPicked done, uint64_t arg) {
+  PickJob *job = malloc(sizeof *job);
+
+  *job = (PickJob){app, types, n, multiple, done, arg};
+  platform_post(pick_now, job);
+}
+
+typedef struct {
+  char *name;
+  FileSaved done;
+  void *ctx;
+} SaveJob;
+
+static void save_now(void *ctx) {
+  SaveJob *job = ctx;
+
+  job->done(civue_file_panel_save(job->name), job->ctx);
+  free(job->name);
+  free(job);
+  civue_window_wake();
+}
+
+void save_file_later(const char *name, FileSaved done, void *ctx) {
+  SaveJob *job = malloc(sizeof *job);
+
+  *job = (SaveJob){strdup(name), done, ctx};
+  platform_post(save_now, job);
+}
 
 void glyph(civue_icon icon, float size, civue_color color) {
   civue_node_icon(civue_ui_current(), icon,

@@ -92,6 +92,20 @@ void markup(App *app, civue_id key, const char *source, const MarkupOptions *o);
 // out of the window.
 civue_rect overlay_room(void);
 
+// what a file panel picked, absolute paths freed once `done` returns, none
+// on cancel. `arg` is what the panel was opened with.
+typedef void (*FilesPicked)(App *app, civue_strs files, uint64_t arg);
+// a saved file's path for `done` to free, null on cancel.
+typedef void (*FileSaved)(char *path, void *ctx);
+
+// the system's panel picking files of `types`, any for none, opened once
+// the frame is over: it draws the window while it waits, which a frame
+// with nodes open cannot take. `types` must outlive the frame.
+void pick_files_later(App *app, const char *const *types, uint32_t n,
+                      bool multiple, FilesPicked done, uint64_t arg);
+// the same with the panel saving a file named `name`.
+void save_file_later(const char *name, FileSaved done, void *ctx);
+
 // starts discord's challenge for `sitekey` unless `c` runs one already.
 void captcha_start(Captcha *c, const char *sitekey, const char *rqdata);
 void captcha_drop(Captcha *c);

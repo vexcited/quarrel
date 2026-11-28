@@ -122,13 +122,18 @@ static void free_strs(civue_strs *strs) {
   *strs = (civue_strs){};
 }
 
+static void files_picked(App *app, civue_strs files, uint64_t channel_id) {
+  Channel *c = store_channel(app->session->store, channel_id);
+
+  if (c) {
+    add_paths(app, c, (const char *const *)files.v, files.len);
+  }
+}
+
 static void pick_files(App *app, Channel *c) {
   // a channel in slow mode takes one file at a time.
-  civue_strs picked =
-    civue_file_panel_open(nullptr, 0, c->rate_limit_per_user == 0);
-
-  add_paths(app, c, (const char *const *)picked.v, picked.len);
-  free_strs(&picked);
+  pick_files_later(app, nullptr, 0, c->rate_limit_per_user == 0, files_picked,
+                   c->id);
 }
 
 /* ========================================================================== */

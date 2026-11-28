@@ -1,6 +1,7 @@
 #include "server.h"
 
 #include <math.h>
+#include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,8 +22,7 @@
 constexpr float SIDEBAR = 264;
 constexpr float COLUMN = 740;
 constexpr float TOOLS = 60;
-// what discord takes for a guild's images and an emoji.
-constexpr size_t IMAGE_MOST = 10u << 20;
+// what discord takes for an emoji.
 constexpr size_t EMOJI_MOST = 256u << 10;
 
 static const char *const IMAGE_TYPES[] = {"png", "jpg", "jpeg", "gif", "webp"};
@@ -512,23 +512,32 @@ static void channel_select(App *app, ServerUi *ui, civue_id id, const Guild *g,
   }
 }
 
-// a file picked from the disk for an image, written to `*path`.
-static bool pick_image(char **path) {
-  civue_strs files = civue_file_panel_open(
-    IMAGE_TYPES, sizeof IMAGE_TYPES / sizeof *IMAGE_TYPES, false);
-  bool picked = files.len != 0;
+typedef struct {
+  char **path;
+  bool *removed;
+} ImagePick;
 
-  if (picked) {
-    free(*path);
-    *path = strdup(files.v[0]);
+static void image_picked(App *, civue_strs files, uint64_t arg) {
+  ImagePick *pick = (ImagePick *)(uintptr_t)arg;
+
+  if (files.len) {
+    free(*pick->path);
+    *pick->path = strdup(files.v[0]);
+
+    if (pick->removed) {
+      *pick->removed = false;
+    }
   }
 
-  for (uint32_t i = 0; i < files.len; i++) {
-    free(files.v[i]);
-  }
+  free(pick);
+}
 
-  free(files.v);
-  return picked;
+void pick_image(App *app, char **path, bool *removed) {
+  ImagePick *pick = malloc(sizeof *pick);
+
+  *pick = (ImagePick){path, removed};
+  pick_files_later(app, IMAGE_TYPES, countof(IMAGE_TYPES), false,
+                   image_picked, (uintptr_t)pick);
 }
 
 // what shows for an image: the file picked, nothing once taken off, or the
@@ -641,9 +650,8 @@ static void profile_page(App *app, ServerUi *ui, Guild *g, float wide) {
 
       div(flex, gap(2), flex_shrink_0) {
         if (form_button_small(app, id("profile-icon"), "Change Server Icon",
-                              BUTTON_PRIMARY, !editable) &&
-            pick_image(&d->icon_path)) {
-          d->icon_removed = false;
+                              BUTTON_PRIMARY, !editable)) {
+          pick_image(app, &d->icon_path, &d->icon_removed);
         }
 
         if (has_icon && form_button_small(app, id("profile-icon-remove"),
@@ -866,8 +874,8 @@ static void perk_section(App *app, civue_id id, const char *title,
     }
   }
 
-  if (pick && pick_image(path)) {
-    *removed = false;
+  if (pick) {
+    pick_image(app, path, removed);
   }
 
   if (take_off) {
@@ -1656,9 +1664,12 @@ static size_t emoji_slots(const Guild *g) {
   return SLOTS[g->premium_tier < 4 ? g->premium_tier : 3];
 }
 
-static void emoji_upload(App *app, ServerUi *ui, Guild *g) {
-  civue_strs files = civue_file_panel_open(
-    IMAGE_TYPES, sizeof IMAGE_TYPES / sizeof *IMAGE_TYPES, true);
+static void emojis_picked(App *app, civue_strs files, uint64_t guild_id) {
+  ServerUi *ui = server_ui(app);
+
+  if (!files.len) {
+    return;
+  }
 
   free(ui->error);
   ui->error = nullptr;
@@ -1685,14 +1696,11 @@ static void emoji_upload(App *app, ServerUi *ui, Guild *g) {
     name[n] = 0;
 
     if (uri != nullptr) {
-      admin_create_emoji(app->session, g->id, name, uri);
+      admin_create_emoji(app->session, guild_id, name, uri);
     }
 
     free(uri);
-    free(files.v[i]);
   }
-
-  free(files.v);
 }
 
 static void emoji_row(App *app, ServerUi *ui, Guild *g, const Emoji *e) {
@@ -1768,7 +1776,8 @@ static void emoji_page(App *app, ServerUi *ui, Guild *g) {
   div(flex, items_center, gap(4), flex_shrink_0, mt(6), mb(8)) {
     if (form_button_small(app, id("emoji-upload"), "Upload Emoji",
                           BUTTON_PRIMARY, a->action.status == ADMIN_BUSY)) {
-      emoji_upload(app, ui, g);
+      pick_files_later(app, IMAGE_TYPES, countof(IMAGE_TYPES), true,
+                       emojis_picked, g->id);
     }
 
     if (error != nullptr) {
