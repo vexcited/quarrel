@@ -57,6 +57,9 @@ char *cdn_emoji(char out[static CDN_URL_MAX], Snowflake emoji_id,
 char *cdn_emoji_animated(char out[static CDN_URL_MAX], Snowflake emoji_id,
                          uint32_t size);
 
+// a nameplate of the shop, still or as an animated png.
+char *cdn_nameplate(char out[static CDN_URL_MAX], Snowflake sku_id,
+                    bool animated);
 // the badge of a guild's tag.
 char *cdn_tag_badge(char out[static CDN_URL_MAX], Snowflake guild_id,
                     const char *hash, uint32_t size);

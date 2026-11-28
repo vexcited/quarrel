@@ -112,6 +112,10 @@ typedef struct {
   char *avatar, *banner;
   // the asset of what frames the avatar, null for nothing.
   char *decoration;
+  // the shop item of the nameplate the user wears behind their name, 0 for
+  // none, and the name of its colors, like "bubble_gum".
+  Snowflake nameplate;
+  char *nameplate_palette;
   // what the profile says. discord sends these for the current user only.
   char *bio, *pronouns;
   // 0xrrggbb when `has_accent`, the banner's color when there is no image.

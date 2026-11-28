@@ -174,6 +174,18 @@ char *cdn_emoji_animated(char out[static CDN_URL_MAX], Snowflake emoji_id,
   return out;
 }
 
+char *cdn_nameplate(char out[static CDN_URL_MAX], Snowflake sku_id,
+                    bool animated) {
+  if (sku_id == 0) {
+    return empty(out);
+  }
+
+  snprintf(out, CDN_URL_MAX,
+           CDN_BASE "/media/v1/collectibles-shop/%" PRIu64 "/%s", sku_id,
+           animated ? "animated" : "static");
+  return out;
+}
+
 char *cdn_tag_badge(char out[static CDN_URL_MAX], Snowflake guild_id,
                     const char *hash, uint32_t size) {
   if (guild_id == 0 || !hash_ok(hash)) {

@@ -110,6 +110,37 @@ static bool put_decoration(char **dst, const cima_json *owner) {
   return worn;
 }
 
+// the nameplate of `collectibles`, none when they hold none. true when it
+// changed.
+static bool put_nameplate(User *u, const cima_json *user) {
+  const cima_json *collectibles = json_get(user, "collectibles");
+  const cima_json *plate = nullptr;
+
+  if (collectibles == nullptr) {
+    return false;
+  }
+
+  if (json_type(collectibles) == CIMA_JSON_OBJECT) {
+    plate = json_get(collectibles, "nameplate");
+  }
+
+  Snowflake sku =
+    plate != nullptr && json_type(plate) == CIMA_JSON_OBJECT
+      ? snowflake_of(json_get(plate, "sku_id"))
+      : 0;
+  bool changed = u->nameplate != sku;
+
+  u->nameplate = sku;
+
+  if (sku != 0) {
+    return put_str(&u->nameplate_palette, plate, "palette") || changed;
+  }
+
+  free(u->nameplate_palette);
+  u->nameplate_palette = nullptr;
+  return changed;
+}
+
 static bool put_bool(bool *dst, const cima_json *obj, const char *key) {
   const cima_json *v = json_get(obj, key);
 
@@ -493,6 +524,7 @@ static void free_user(User *u) {
   free(u->pronouns);
   free(u->activity);
   free(u->decoration);
+  free(u->nameplate_palette);
   free(u->status_text);
   free(u->status_emoji);
   free(u);
@@ -529,6 +561,7 @@ User *store_put_user(Store *s, const cima_json *user) {
   changed |= put_str(&u->banner, user, "banner");
 
   changed |= put_decoration(&u->decoration, user);
+  changed |= put_nameplate(u, user);
   changed |= put_str(&u->bio, user, "bio");
   changed |= put_str(&u->pronouns, user, "pronouns");
   changed |= put_bool(&u->bot, user, "bot");
