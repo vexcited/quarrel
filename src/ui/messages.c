@@ -806,14 +806,21 @@ static void stickers(App *app, const Message *m) {
   }
 }
 
-static void reactions(App *app, const Message *m) {
+// discord's sizes: 30 tall with an emoji of 20, and a way to another one
+// after them while the pointer is over the message.
+static void reactions(App *app, const Channel *c, const Message *m) {
   const Look *k = &app->look;
 
   if (!m->nreactions) {
     return;
   }
 
-  div(flex, flex_wrap, gap(1), mt(1)) {
+  bool hot = app->hover_message == (m->id ? m->id : m->nonce) ||
+             message_popover_open(app, m);
+  bool adds =
+    hot && m->id && store_can(app->session->store, c, PERM_ADD_REACTIONS);
+
+  div(flex, flex_wrap, items_center, gap(px(4)), pt(px(2)), pb(px(2))) {
     for (size_t i = 0; i < m->nreactions; i++) {
       const Reaction *r = &m->reactions[i];
       char count[16];
@@ -821,7 +828,7 @@ static void reactions(App *app, const Message *m) {
       snprintf(count, sizeof count, "%u", r->count);
 
       div(key(id_at(message_key(m), 0x200 + i)), flex, items_center, gap(px(6)),
-          h(7), px(px(7)), rounded(lg),
+          flex_shrink_0, h(px(30)), px(px(7)), rounded(lg),
           bg(r->me ? civue_alpha(k->primary, .24f) : k->hover), border(1),
           border_color(r->me ? k->primary : CIVUE_CLEAR),
           hover(border_color(r->me ? k->primary : k->border_strong)),
@@ -832,17 +839,37 @@ static void reactions(App *app, const Message *m) {
         }
 
         if (r->emoji_id && r->animated) {
-          div(size(4), flex_shrink_0) {
+          div(size(px(20)), flex_shrink_0) {
             emoji_image(app, r->emoji_id, true, here());
           }
         }
         else {
-          emoji_node(app, r->emoji_id, r->name, 16);
+          emoji_node(app, r->emoji_id, r->name, 20);
         }
 
         text(count, text_size(px(14)), line_height(px(18)),
              font_weight(semibold),
              text_color(r->me ? k->mention_text : k->subtle));
+      }
+    }
+
+    if (adds) {
+      civue_id id = id_at(message_key(m), 0x2ff);
+
+      div(key(id), flex, items_center, justify_center, flex_shrink_0,
+          h(px(30)), px(px(8)), rounded(lg), bg(k->hover), border(1),
+          border_color(CIVUE_CLEAR), text_color(k->subtle),
+          hover(border_color(k->border_strong), text_color(k->text)),
+          cursor_pointer) {
+        civue_button_state state = button();
+
+        hint(app, id, &state.response, "Add Reaction", CIVUE_TOOLTIP_ABOVE);
+
+        if (state.activated) {
+          message_popover(app, POPOVER_REACT, m, here());
+        }
+
+        icon(mingcute, emoji_2_fill, size(px(18)));
       }
     }
   }
@@ -1333,7 +1360,7 @@ static void message_body(App *app, const Channel *c, const Message *m,
          text_color(app->look.muted));
   }
 
-  reactions(app, m);
+  reactions(app, c, m);
 }
 
 void message_preview(App *app, const Channel *c, const Message *m,
