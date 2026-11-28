@@ -358,6 +358,9 @@ struct Session {
   bool guild_creating;
   char *guild_error;
   Snowflake guild_created;
+  // the tag session_wear_tag puts on: on its way, or why it failed.
+  bool tag_wearing;
+  char *tag_error;
   // the friend request session_add_friend sent: on its way, then what to
   // tell of it, `friend_sent` saying whether it went through. a challenge
   // discord asks for waits in `friend_captcha`, service null for none.
@@ -667,6 +670,8 @@ void session_open_dm(Session *s, Snowflake user_id);
 void session_open_group(Session *s, const Snowflake *user_ids, size_t count);
 // creates a guild named `name`, see `guild_created`.
 void session_create_guild(Session *s, const char *name);
+// wears the tag of a guild, or none for 0. see `tag_wearing`.
+void session_wear_tag(Session *s, Snowflake guild_id);
 // a friend request to a username, or a legacy "name#0000" tag, with a note
 // of at most 120 characters, null or empty for none. see `friend_adding`.
 void session_add_friend(Session *s, const char *tag, const char *note);

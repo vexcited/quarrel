@@ -1311,6 +1311,9 @@ static void clear_invite(Session *s) {
   s->guild_error = nullptr;
   s->guild_creating = false;
   s->guild_created = 0;
+  free(s->tag_error);
+  s->tag_error = nullptr;
+  s->tag_wearing = false;
 }
 
 static void clear_forum(Session *s);
@@ -3947,6 +3950,68 @@ void session_open_group(Session *s, const Snowflake *user_ids, size_t count) {
   else if (count > 1 && online(s)) {
     api_open_group(s->api, user_ids, count, on_dm_opened, call_new(s, 0, 0));
   }
+}
+
+static void on_tag_worn(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+  s->tag_wearing = false;
+
+  // the answer is the user, whose tag is the new one.
+  if (res->ok && json_type(res->json) == CIMA_JSON_OBJECT) {
+    store_put_user(s->store, res->json);
+  }
+  else {
+    str_set(&s->tag_error,
+            res->ok ? "Discord sent no profile." : res->error.message);
+  }
+
+  changed(s);
+}
+
+void session_wear_tag(Session *s, Snowflake guild_id) {
+  if (s->tag_wearing) {
+    return;
+  }
+
+  str_set(&s->tag_error, nullptr);
+
+  if (!online(s)) {
+    str_set(&s->tag_error, "Changing your tag needs a connection.");
+    changed(s);
+    return;
+  }
+
+  cima_json_writer w = {};
+
+  json_begin_object(&w);
+  json_key(&w, "identity_guild_id");
+
+  if (guild_id != 0) {
+    snowflake_write(&w, guild_id);
+  }
+  else {
+    cima_json_write_null(&w);
+  }
+
+  json_field(&w, "identity_enabled", guild_id != 0);
+  json_end_object(&w);
+
+  s->tag_wearing = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "PUT",
+                            .path = "/users/@me/clan",
+                            .body = cima_json_writer_text(&w)},
+              on_tag_worn, call_new(s, 0, guild_id));
+  cima_json_writer_dispose(&w);
+  changed(s);
 }
 
 static void on_guild_created(void *ctx, const ApiResponse *res) {

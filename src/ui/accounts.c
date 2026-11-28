@@ -287,6 +287,79 @@ static void profile(App *app) {
   }
 }
 
+// one choice of the tag to wear: a guild's, or none for a null guild.
+static bool tag_choice(App *app, const Guild *g, bool worn) {
+  const Look *k = &app->look;
+  bool pressed = false;
+  char url[CDN_URL_MAX] = "";
+
+  div(key(id_at(id("tag-choice"), g != nullptr ? g->id : 0)), flex,
+      items_center, gap(2), flex_shrink_0, h(9), px(2), rounded(lg),
+      hover(bg(k->hover)), active(bg(k->pressed)), cursor_pointer) {
+    pressed = button().activated;
+
+    if (g != nullptr) {
+      cdn_tag_badge(url, g->id, g->tag_badge, 32);
+      guild_tag_pill(app, g->tag, url);
+      text(g->name ? g->name : "", flex_1, min_w(0), truncate,
+           text_size(px(14)), line_height(px(18)), text_color(k->subtle));
+    }
+    else {
+      text("No Server Tag", flex_1, min_w(0), truncate, text_size(px(14)),
+           line_height(px(18)), text_color(k->text));
+    }
+
+    if (worn) {
+      glyph(CIVUE_ICON(mingcute, check_fill), 16, k->primary);
+    }
+  }
+
+  return pressed;
+}
+
+// the tags of the user's guilds, under the row that opens them. true once
+// one was picked.
+static bool tag_choices(App *app) {
+  Session *session = app->session;
+  const User *self = session->store->self;
+  Snowflake worn = self != nullptr && self->tag ? self->tag_guild_id : 0;
+  size_t count = 0, shown = 0;
+  const GuildFolder *folders = store_guild_folders(session->store, &count);
+  bool picked = false;
+
+  div(key(id("tag-choices")), flex, flex_col, flex_shrink_0, pl(4),
+      max_h(px(264)), overflow_y_scroll, scrollbars(&app->thin_bars)) {
+    for (size_t i = 0; i < count; i++) {
+      for (size_t j = 0; j < folders[i].nguilds; j++) {
+        const Guild *g = folders[i].guilds[j];
+
+        if (g->tag == nullptr || !*g->tag) {
+          continue;
+        }
+
+        shown++;
+
+        if (tag_choice(app, g, worn == g->id) && worn != g->id) {
+          session_wear_tag(session, g->id);
+          picked = true;
+        }
+      }
+    }
+
+    if (shown == 0) {
+      text("You don't have any Server Tags to choose from.", px(2), py(2),
+           text_size(px(12)), line_height(px(16)),
+           text_color(app->look.subtle));
+    }
+    else if (tag_choice(app, nullptr, worn == 0) && worn != 0) {
+      session_wear_tag(session, 0);
+      picked = true;
+    }
+  }
+
+  return picked;
+}
+
 void account_switcher(App *app, civue_rect anchor) {
   if (app->popover != POPOVER_ACCOUNTS) {
     app->status_menu_open = false;
@@ -366,6 +439,25 @@ void account_switcher(App *app, civue_rect anchor) {
 
         separator(k);
 
+        if (menu_row(app, id("server-tag"), CIVUE_ICON(mingcute, tag_fill),
+                     session->tag_wearing ? "Changing Server Tag..."
+                                          : "Change Server Tag",
+                     k->text)) {
+          app->tag_menu_open = !app->tag_menu_open;
+          civue_request_repaint(ui);
+        }
+
+        if (app->tag_menu_open && tag_choices(app)) {
+          app->tag_menu_open = false;
+        }
+
+        if (session->tag_error != nullptr) {
+          text(session->tag_error, px(2), text_size(px(12)),
+               line_height(px(16)), text_color(k->critical_text));
+        }
+
+        separator(k);
+
         leave = menu_row(app, id("logout"), CIVUE_ICON(mingcute, exit_fill),
                          "Log Out", k->critical_text);
       }
@@ -395,6 +487,7 @@ void account_switcher(App *app, civue_rect anchor) {
   if (app->popover != POPOVER_ACCOUNTS) {
     app->status_menu_open = false;
     app->status_menu_row = (civue_rect){};
+    app->tag_menu_open = false;
   }
 
   // the roster changes last: the rows were read from it. the frame ends with

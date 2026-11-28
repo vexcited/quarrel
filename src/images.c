@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "discord/emoji.h"
+#include "discord/tags.h"
 #include "http.h"
 
 constexpr size_t IMAGES_MAX_DOWNLOAD = 32u << 20;
@@ -82,7 +83,9 @@ static uint64_t fetch(void *, uint64_t load, const char *url) {
 }
 
 static const void *held(void *, const char *url, size_t *len) {
-  return emoji_svg(url, len);
+  const char *svg = emoji_svg(url, len);
+
+  return svg != nullptr ? svg : tag_badge_svg(url, len);
 }
 
 static void cancel(void *, uint64_t op) {

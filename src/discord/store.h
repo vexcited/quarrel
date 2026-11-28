@@ -378,6 +378,8 @@ struct Guild {
   char **features;
   size_t nfeatures;
   char *vanity_code;
+  // the tag its members may wear and the hash of its badge, null without.
+  char *tag, *tag_badge;
   uint32_t member_count;
   uint8_t premium_tier;
   uint32_t premium_subscription_count;

@@ -1099,9 +1099,7 @@ static float clamp01(double v) {
   return (float)(v < 0 ? 0 : v > 1 ? 1 : v);
 }
 
-// the popout of a custom color: saturation and value over a square, the
-// hue along a bar, the hex under them. true once it should close.
-static bool custom_picker(App *app, civue_rect anchor, uint32_t *color) {
+bool color_picker(App *app, civue_rect anchor, uint32_t *color) {
   const Look *k = &app->look;
   civue_ui *cui = civue_ui_current();
   float *hsv =
@@ -1293,7 +1291,7 @@ static void display_tab(App *app, RoleDraft *d, bool editable) {
     }
   }
 
-  if (*picking && editable && custom_picker(app, custom, &d->color)) {
+  if (*picking && editable && color_picker(app, custom, &d->color)) {
     *picking = false;
   }
 

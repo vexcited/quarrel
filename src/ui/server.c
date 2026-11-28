@@ -144,9 +144,13 @@ static uint32_t page_fields(ServerPage page) {
   }
 }
 
-static bool page_dirty(const ServerUi *ui, const Guild *g) {
+static bool page_dirty(App *app, const ServerUi *ui, const Guild *g) {
   if (ui->page == SERVER_ROLES) {
     return roles_dirty(ui, g);
+  }
+
+  if (ui->page == SERVER_TAG) {
+    return tag_dirty(app, ui);
   }
 
   return (draft_changes(&ui->draft, g) & page_fields(ui->page)) != 0;
@@ -239,6 +243,7 @@ static void forget_page(ServerUi *ui) {
   form_dropdown_close(&ui->dropdown);
   draft_clear(&ui->draft);
   roles_forget(ui);
+  tag_forget(ui);
   ui->community_open = false;
   ui->confirm = CONFIRM_NONE;
   ui->emoji_id = 0;
@@ -414,6 +419,7 @@ static NavChoice sidebar(App *app, ServerUi *ui, Guild *g) {
         pb(px(60)), pl(px(20)), pr(px(6))) {
       nav_header(k, g->name && *g->name ? g->name : "Server Settings", true);
       nav_page(app, ui, g, SERVER_PROFILE, "Server Profile", &choice);
+      nav_page(app, ui, g, SERVER_TAG, "Server Tag", &choice);
       nav_page(app, ui, g, SERVER_ENGAGEMENT, "Engagement", &choice);
       nav_page(app, ui, g, SERVER_BOOST, "Boost Perks", &choice);
 
@@ -2123,6 +2129,9 @@ static void page(App *app, ServerUi *ui, Guild *g, float wide) {
     case SERVER_PROFILE:
       profile_page(app, ui, g, wide);
       break;
+    case SERVER_TAG:
+      tag_page(app, ui, g, wide);
+      break;
     case SERVER_ENGAGEMENT:
       engagement_page(app, ui, g);
       break;
@@ -2204,7 +2213,7 @@ void server_settings(App *app) {
   }
 
   // the draft follows the guild until the user changes something.
-  if (page_has_draft(ui->page) && !page_dirty(ui, g) &&
+  if (page_has_draft(ui->page) && !page_dirty(app, ui, g) &&
       a->save.status != ADMIN_BUSY && !ui->community_open &&
       (!ui->draft.taken || ui->draft.stamp != g->version)) {
     draft_take(&ui->draft, g);
@@ -2220,14 +2229,17 @@ void server_settings(App *app) {
     else if (ui->page == SERVER_ROLES) {
       roles_forget(ui);
     }
+    else if (ui->page == SERVER_TAG) {
+      tag_forget(ui);
+    }
   }
 
   float width = cui->size.x, height = cui->size.y;
-  bool dirty = page_dirty(ui, g);
+  bool dirty = page_dirty(app, ui, g);
   bool busy = a->save.status == ADMIN_BUSY;
   bool modal = ui->community_open || ui->picker_open ||
                ui->confirm != CONFIRM_NONE || ui->dropdown.open != 0 ||
-               ui->role_menu != 0;
+               ui->role_menu != 0 || ui->tag_picking != 0;
   bool close = false;
   NavChoice nav = {.page = -1};
   civue_rect region = {};
@@ -2303,6 +2315,9 @@ void server_settings(App *app) {
     if (ui->page == SERVER_ROLES) {
       roles_forget(ui);
     }
+    else if (ui->page == SERVER_TAG) {
+      tag_forget(ui);
+    }
     else {
       draft_take(&ui->draft, g);
     }
@@ -2310,6 +2325,9 @@ void server_settings(App *app) {
   else if (bar == NOTICE_SAVE && dirty) {
     if (ui->page == SERVER_ROLES) {
       roles_save(app, ui, g);
+    }
+    else if (ui->page == SERVER_TAG) {
+      tag_save(app, ui);
     }
     else {
       draft_save(app, ui, g);

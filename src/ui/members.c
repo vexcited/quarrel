@@ -45,9 +45,12 @@ static void person(App *app, Snowflake guild_id, const User *user,
     avatar(app, user, guild_id, 32, !dimmed, k->chat);
 
     div(flex, flex_col, flex_1, min_w(0)) {
-      text(store_display_name(store, guild_id, user->id), truncate,
-           font_weight(medium), line_height(px(20)),
-           text_color(civue_alpha(ink, fade)));
+      div(flex, items_center, gap(1), min_w(0)) {
+        text(store_display_name(store, guild_id, user->id), truncate,
+             min_w(0), font_weight(medium), line_height(px(20)),
+             text_color(civue_alpha(ink, fade)));
+        tag_chip(app, user);
+      }
 
       if (user->activity && *user->activity && !dimmed) {
         text(user->activity, truncate, text_size(px(12)), line_height(px(16)),

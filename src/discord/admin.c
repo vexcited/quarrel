@@ -30,6 +30,8 @@ typedef enum : uint8_t {
   REQ_INVITES,
   REQ_REVOKE,
   REQ_EMOJI,
+  REQ_TAG,
+  REQ_SAVE_TAG,
 } RequestKind;
 
 // a request on its way, in the admin's list until it is answered or the
@@ -98,6 +100,9 @@ static void clear_lists(Admin *a) {
   a->invites_loading = a->invites_loaded = false;
   a->counts_loading = a->members_loading = false;
   a->members_role = 0;
+  free(a->tag.tag);
+  a->tag = (AdminTag){};
+  a->tag_loading = a->tag_loaded = false;
 }
 
 static void clear_ops(Admin *a) {
@@ -207,6 +212,7 @@ static AdminOp *op_of(Admin *a, RequestKind kind) {
   switch (kind) {
     case REQ_EDIT_GUILD:
     case REQ_EDIT_ROLE:
+    case REQ_SAVE_TAG:
       return &a->save;
     case REQ_LEAVE:
       return &a->leave;
@@ -453,6 +459,53 @@ static void put_invites(Session *s, Admin *a, const cima_json *json) {
   }
 }
 
+// "#rrggbb" as 0xrrggbb, TAG_TINT_NONE for anything else.
+static int32_t tint_of(const cima_json *v) {
+  const char *hex = json_or(v, nullptr);
+  char *end = nullptr;
+
+  if (hex == nullptr || hex[0] != '#' || strlen(hex) != 7) {
+    return TAG_TINT_NONE;
+  }
+
+  long color = strtol(hex + 1, &end, 16);
+
+  return *end == '\0' ? (int32_t)color : TAG_TINT_NONE;
+}
+
+// a profile as GET and PATCH /guilds/:id/profile answer it, into the admin
+// and the guild of the store.
+static void put_tag(Session *s, Admin *a, Guild *g, const cima_json *json,
+                    bool mine) {
+  if (json_type(json) != CIMA_JSON_OBJECT) {
+    return;
+  }
+
+  const char *tag = json_get_or(json, "tag", nullptr);
+  int64_t visibility = json_get_coerce(json, "visibility", (int64_t)0);
+
+  if (mine) {
+    str_set(&a->tag.tag, tag);
+    a->tag.badge = (uint8_t)json_get_coerce(json, "badge",
+                                            (int64_t)TAG_FREE_BADGE[0]);
+    a->tag.primary = tint_of(json_get(json, "badge_color_primary"));
+    a->tag.secondary = tint_of(json_get(json, "badge_color_secondary"));
+    a->tag.visible = visibility == 1 || visibility == 3;
+
+    if (a->tag.badge >= TAG_BADGES) {
+      a->tag.badge = TAG_FREE_BADGE[0];
+    }
+  }
+
+  if (g != nullptr) {
+    str_set(&g->tag, tag);
+    str_set(&g->tag_badge,
+            tag != nullptr ? json_get_or(json, "badge_hash", nullptr)
+                           : nullptr);
+    s->store->version++;
+  }
+}
+
 static void drop_ban(Admin *a, Snowflake user_id) {
   for (size_t i = 0; i < a->nbans; i++) {
     if (a->bans[i].user_id == user_id) {
@@ -589,6 +642,15 @@ static void take_answer(Session *s, Admin *a, Request *r,
         drop_invite(a, r->code);
       }
       break;
+    case REQ_TAG:
+    case REQ_SAVE_TAG:
+      put_tag(s, a, g, json, mine);
+
+      if (mine) {
+        a->tag_loading = false;
+        a->tag_loaded = true;
+      }
+      break;
     case REQ_LEAVE:
     case REQ_MOVE_CHANNELS:
     case REQ_EMOJI:
@@ -632,10 +694,16 @@ static void on_answer(void *ctx, const ApiResponse *res) {
     else if (r->kind == REQ_INVITES) {
       a->invites_loading = false;
     }
+    else if (r->kind == REQ_TAG) {
+      a->tag_loading = false;
+    }
   }
 
   if (current && res->ok) {
     op_done(s, op, r->id);
+  }
+  else if (current && r->kind == REQ_SAVE_TAG && res->status == 429) {
+    op_fail(s, op, "Too many server tag updates. Please try again later.");
   }
   else if (current) {
     op_fail(s, op, res->error.message);
@@ -1956,4 +2024,89 @@ char *admin_image_uri(const char *path, size_t most, char **error) {
   free(encoded);
   free(bytes);
   return uri;
+}
+
+/* ========================================================================== */
+/* the tag.                                                                   */
+/* ========================================================================== */
+
+void admin_fetch_tag(Session *s, Snowflake guild_id) {
+  Admin *a = admin_of(s, guild_id);
+  char path[64];
+
+  if (a->tag_loading) {
+    return;
+  }
+
+  if (can_send(s, nullptr)) {
+    a->tag_loading = true;
+    snprintf(path, sizeof path, "/guilds/%" PRIu64 "/profile", guild_id);
+    send(s, request_new(s, REQ_TAG, guild_id), "GET", path,
+         "/guilds/profile", nullptr);
+  }
+  else {
+    Guild *g = store_guild(s->store, guild_id);
+
+    str_set(&a->tag.tag, g != nullptr ? g->tag : nullptr);
+    a->tag.badge = TAG_FREE_BADGE[0];
+    a->tag.primary = a->tag.secondary = TAG_TINT_NONE;
+    a->tag_loaded = true;
+    changed(s);
+  }
+}
+
+static void write_tint(cima_json_writer *w, const char *key, int32_t tint) {
+  char hex[8];
+
+  if (tint == TAG_TINT_NONE) {
+    json_field(w, key, nullptr);
+    return;
+  }
+
+  snprintf(hex, sizeof hex, "#%06x", (unsigned)tint & 0xffffff);
+  json_field(w, key, hex);
+}
+
+void admin_save_tag(Session *s, Snowflake guild_id, const AdminTag *tag) {
+  Admin *a = admin_of(s, guild_id);
+  cima_json_writer w = {};
+  char path[64];
+
+  // what the client sends, its colors taken off with the tag.
+  json_begin_object(&w);
+
+  if (tag->tag == nullptr) {
+    json_field(&w, "tag", nullptr);
+  }
+  else {
+    json_field(&w, "tag", tag->tag);
+    json_field(&w, "badge", (int64_t)tag->badge);
+    write_tint(&w, "badge_color_primary", tag->primary);
+    write_tint(&w, "badge_color_secondary", tag->secondary);
+  }
+
+  json_end_object(&w);
+
+  if (can_send(s, &a->save)) {
+    snprintf(path, sizeof path, "/guilds/%" PRIu64 "/profile", guild_id);
+    send(s, request_new(s, REQ_SAVE_TAG, guild_id), "PATCH", path,
+         "/guilds/profile", cima_json_writer_text(&w));
+  }
+  else if (s->offline) {
+    Guild *g = store_guild(s->store, guild_id);
+
+    str_set(&a->tag.tag, tag->tag);
+    a->tag.badge = tag->badge;
+    a->tag.primary = tag->primary;
+    a->tag.secondary = tag->secondary;
+
+    if (g != nullptr) {
+      str_set(&g->tag, tag->tag);
+      s->store->version++;
+    }
+
+    offline_done(s, &a->save, 0);
+  }
+
+  cima_json_writer_dispose(&w);
 }

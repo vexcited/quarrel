@@ -295,8 +295,23 @@ void avatar(App *app, const User *user, Snowflake guild_id, float size,
   }
 }
 
-void tag_chip(App *app, const User *u) {
+void guild_tag_pill(App *app, const char *tag, const char *badge) {
   const Look *k = &app->look;
+
+  div(flex, items_center, gap(1), flex_shrink_0, h(px(18)), px(1), rounded(sm),
+      bg(k->hover)) {
+    if (badge && *badge) {
+      div(size(px(14)), flex_shrink_0) {
+        image_fill(app, badge, 0);
+      }
+    }
+
+    text(tag, text_size(px(12)), line_height(px(16)), font_weight(semibold),
+         text_color(k->text), whitespace_nowrap);
+  }
+}
+
+void tag_chip(App *app, const User *u) {
   char url[CDN_URL_MAX];
 
   if (!u->tag || !*u->tag) {
@@ -304,18 +319,14 @@ void tag_chip(App *app, const User *u) {
   }
 
   cdn_tag_badge(url, u->tag_guild_id, u->tag_badge, 32);
+  guild_tag_pill(app, u->tag, url);
+}
 
-  div(flex, items_center, gap(1), flex_shrink_0, h(px(18)), px(1), rounded(sm),
-      bg(k->hover)) {
-    if (*url) {
-      div(size(px(12)), flex_shrink_0) {
-        image_fill(app, url, 0);
-      }
-    }
+void mention_dot(const Look *k, civue_color under) {
+  civue_rect r = here();
 
-    text(u->tag, text_size(px(12)), line_height(px(16)), font_weight(semibold),
-         text_color(k->text), whitespace_nowrap);
-  }
+  fill(xywh(r.x1 - 5, r.y0 - 3, 10, 10), under, 5);
+  fill(xywh(r.x1 - 3, r.y0 - 1, 6, 6), k->danger, 3);
 }
 
 void mention_badge(const Look *k, uint32_t count) {

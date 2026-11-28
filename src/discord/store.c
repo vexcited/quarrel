@@ -555,12 +555,23 @@ User *store_put_user(Store *s, const cima_json *user) {
   const cima_json *tag = json_get(user, "primary_guild");
 
   if (tag != nullptr) {
-    bool worn = json_get_coerce(tag, "identity_enabled", false);
-
-    changed |= put_str(&u->tag, worn ? tag : nullptr, "tag");
-    changed |= put_str(&u->tag_badge, worn ? tag : nullptr, "badge");
-    u->tag_guild_id =
+    bool worn = json_type(tag) == CIMA_JSON_OBJECT &&
+                json_get_coerce(tag, "identity_enabled", false);
+    Snowflake guild_id =
       worn ? snowflake_of(json_get(tag, "identity_guild_id")) : 0;
+
+    if (worn) {
+      changed |= put_str(&u->tag, tag, "tag");
+      changed |= put_str(&u->tag_badge, tag, "badge");
+    }
+    else if (u->tag != nullptr || u->tag_badge != nullptr) {
+      str_set(&u->tag, nullptr);
+      str_set(&u->tag_badge, nullptr);
+      changed = true;
+    }
+
+    changed |= u->tag_guild_id != guild_id;
+    u->tag_guild_id = guild_id;
   }
 
   if (changed) {
@@ -2910,6 +2921,8 @@ static void free_guild(Store *s, Guild *g) {
   free(g->description);
   free(g->preferred_locale);
   free(g->vanity_code);
+  free(g->tag);
+  free(g->tag_badge);
   free_features(g);
   free(g);
 }
@@ -2938,6 +2951,17 @@ static void fill_guild(Guild *g, const cima_json *guild) {
   put_str(&g->preferred_locale, props, "preferred_locale");
   put_str(&g->vanity_code, props, "vanity_url_code");
   put_bool(&g->premium_progress_bar, props, "premium_progress_bar_enabled");
+
+  if ((v = json_get(props, "profile")) != nullptr) {
+    if (json_type(v) == CIMA_JSON_OBJECT) {
+      put_str(&g->tag, v, "tag");
+      put_str(&g->tag_badge, v, "badge");
+    }
+    else {
+      str_set(&g->tag, nullptr);
+      str_set(&g->tag_badge, nullptr);
+    }
+  }
 
   if ((v = json_get(props, "afk_timeout")) != nullptr) {
     g->afk_timeout = (uint32_t)snowflake_of(v);

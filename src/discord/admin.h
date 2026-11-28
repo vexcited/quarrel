@@ -2,6 +2,7 @@
 #define QUARREL_DISCORD_ADMIN_H
 
 #include "discord/session.h"
+#include "discord/tags.h"
 
 /* ========================================================================== */
 /* managing a guild: its settings, roles, channels, bans, invites and emojis, */
@@ -49,6 +50,17 @@ typedef struct {
   uint32_t count;
 } AdminRoleCount;
 
+// a guild's tag as its profile holds it.
+typedef struct {
+  // null when the tag is off.
+  char *tag;
+  uint8_t badge;
+  // 0xrrggbb, or TAG_TINT_NONE for the badge's own colors.
+  int32_t primary, secondary;
+  // the profile is seen from outside the guild, which the tag leads to.
+  bool visible;
+} AdminTag;
+
 typedef struct Admin {
   // the guild what is below belongs to.
   Snowflake guild_id;
@@ -83,6 +95,9 @@ typedef struct Admin {
   AdminInvite *invites;
   size_t ninvites;
   bool invites_loading, invites_loaded;
+
+  AdminTag tag;
+  bool tag_loading, tag_loaded;
 
   // bumped with every change of the fields above.
   uint64_t version;
@@ -148,6 +163,15 @@ void admin_edit_guild(Session *s, Snowflake guild_id, const GuildEdit *edit);
 // deletes the guild, which only its owner may. into `leave`.
 void admin_delete_guild(Session *s, Snowflake guild_id);
 void admin_leave_guild(Session *s, Snowflake guild_id);
+
+/* ========================================================================== */
+/* the tag.                                                                   */
+/* ========================================================================== */
+
+// the guild's profile, see `tag`.
+void admin_fetch_tag(Session *s, Snowflake guild_id);
+// sends the whole tag, a null `tag->tag` taking it off. into `save`.
+void admin_save_tag(Session *s, Snowflake guild_id, const AdminTag *tag);
 
 /* ========================================================================== */
 /* roles.                                                                     */

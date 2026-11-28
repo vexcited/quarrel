@@ -131,6 +131,7 @@ set(QUARREL_CORE_SOURCES
   src/discord/permissions.c
   src/discord/remote_auth.c
   src/discord/settings_proto.c
+  src/discord/tags.c
   src/discord/templates.c
   src/discord/session.c
   src/discord/store.c
@@ -317,6 +318,7 @@ add_executable(quarrel
   src/ui/shell.c
   src/ui/roles.c
   src/ui/server.c
+  src/ui/servertag.c
   src/ui/settings.c
   src/ui/sidebar.c
   src/ui/stage.c

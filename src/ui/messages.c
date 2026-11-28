@@ -1043,6 +1043,12 @@ static void header(App *app, const Channel *c, const Message *m) {
            text_color(author.color ? rgb(author.color) : k->strong));
     }
 
+    if (profiled && author.user->tag && *author.user->tag) {
+      div(self_center, flex_shrink_0) {
+        tag_chip(app, author.user);
+      }
+    }
+
     if (tagged) {
       div(self_center, flex_shrink_0, px(px(5)), rounded(sm), bg(k->primary)) {
         text("APP", text_size(px(12)), line_height(px(16)),

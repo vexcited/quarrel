@@ -18,6 +18,7 @@ void pick_image(App *app, char **path, bool *removed);
 
 typedef enum : uint8_t {
   SERVER_PROFILE,
+  SERVER_TAG,
   SERVER_ENGAGEMENT,
   SERVER_BOOST,
   SERVER_EMOJI,
@@ -152,6 +153,14 @@ typedef struct ServerUi {
   Snowflake emoji_id;
   char *emoji_name;
 
+  // the server tag as edited, taken from the guild's profile once it came,
+  // and the custom color being picked: 1 the primary, 2 the secondary.
+  bool tag_taken, tag_on;
+  char *tag_name;
+  uint8_t tag_badge;
+  int32_t tag_primary, tag_secondary;
+  uint8_t tag_picking;
+
   CreateChannel create;
   // the channel whose menu is open, where it opened, and the one edited.
   Snowflake menu_channel;
@@ -184,6 +193,16 @@ bool server_can_manage(App *app, const Guild *g);
 void server_leave_ask(App *app, Snowflake guild_id);
 
 // the page of roles, in roles.c.
+// the popout of a custom color: saturation and value over a square, the
+// hue along a bar, the hex under them. true once it should close.
+bool color_picker(App *app, civue_rect anchor, uint32_t *color);
+
+// the server tag page, in servertag.c.
+void tag_page(App *app, ServerUi *ui, Guild *g, float wide);
+void tag_forget(ServerUi *ui);
+bool tag_dirty(App *app, const ServerUi *ui);
+void tag_save(App *app, ServerUi *ui);
+
 void roles_page(App *app, ServerUi *ui, Guild *g);
 // the dialogs of that page, drawn over the settings.
 void roles_dialogs(App *app, ServerUi *ui, Guild *g);

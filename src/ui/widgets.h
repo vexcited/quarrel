@@ -29,8 +29,12 @@ void avatar(App *app, const User *user, Snowflake guild_id, float size,
             bool status, civue_color ring);
 void status_dot(UserStatus status, civue_rect r, const Look *k,
                 civue_color ring);
+// a guild's tag with the image of its badge, none for null.
+void guild_tag_pill(App *app, const char *tag, const char *badge);
 // the tag of the guild the user wears, with its badge. nothing without one.
 void tag_chip(App *app, const User *u);
+// a red dot at the corner of the open node, cut out of `under`.
+void mention_dot(const Look *k, civue_color under);
 // the red count of mentions, nothing for 0.
 void mention_badge(const Look *k, uint32_t count);
 // every mention waiting in the store.
