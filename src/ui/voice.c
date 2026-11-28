@@ -149,9 +149,9 @@ void voice_panel(App *app) {
     snprintf(detail, sizeof detail, "%.0f ms", voice_latency(s->voice) * 1000);
   }
 
-  div(key(id("voice-panel")), flex, flex_col, gap(2), flex_shrink_0, mx(2),
-      mb(2), p(2), rounded(xl), bg(k->surface), border(1),
-      border_color(k->border), text_size(px(14)), line_height(px(18))) {
+  div(key(id("voice-panel")), flex, flex_col, gap(2), flex_shrink_0, p(2),
+      rounded(px(PANEL_RADIUS)), bg(k->chat), border(1),
+      border_color(k->frame_border), text_size(px(14)), line_height(px(18))) {
     div(flex, items_center, gap(2), min_w(0), px(1)) {
       div(flex, flex_col, flex_1, min_w(0)) {
         text(status, truncate, font_weight(semibold), text_color(color));

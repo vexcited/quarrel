@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <math.h>
 #include <stdcountof.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,6 +15,33 @@ constexpr float BANNER_HEIGHT = 84;
 constexpr float PROFILE_AVATAR = 64;
 constexpr float ROW_HEIGHT = 48;
 constexpr float STATUS_HEIGHT = 32;
+constexpr float PANEL_HEIGHT = 56;
+constexpr float PANEL_AVATAR = 32;
+// a button of the panel, and the arrow beside it that opens its menu.
+constexpr float PANEL_BUTTON = 32;
+constexpr float PANEL_ARROW = 16;
+// how long the line under the name takes to roll to the username.
+constexpr float ROLL_SECONDS = .22f;
+
+static const struct {
+  UserStatus status;
+  const char *label;
+} statuses[] = {
+  {STATUS_ONLINE, "Online"},
+  {STATUS_IDLE, "Idle"},
+  {STATUS_DND, "Do Not Disturb"},
+  {STATUS_OFFLINE, "Invisible"},
+};
+
+static const char *status_label(UserStatus status) {
+  for (size_t i = 0; i < countof(statuses); i++) {
+    if (statuses[i].status == status) {
+      return statuses[i].label;
+    }
+  }
+
+  return "Online";
+}
 
 static const char *account_name(const SessionAccount *a) {
   return a->global_name ? a->global_name
@@ -367,16 +395,6 @@ void account_switcher(App *app, civue_rect anchor) {
     return;
   }
 
-  static const struct {
-    UserStatus status;
-    const char *label;
-  } statuses[] = {
-    {STATUS_ONLINE, "Online"},
-    {STATUS_IDLE, "Idle"},
-    {STATUS_DND, "Do Not Disturb"},
-    {STATUS_OFFLINE, "Invisible"},
-  };
-
   const Look *k = &app->look;
   civue_ui *ui = civue_ui_current();
   Session *session = app->session;
@@ -386,13 +404,15 @@ void account_switcher(App *app, civue_rect anchor) {
   civue_rect card = {}, spans = {};
   Snowflake chosen = 0;
   bool add = false, leave = false;
+  civue_id at = id("accounts");
+  float top = fmaxf((float)anchor.y0 - 8 - (float)last_size(at).y, 8);
 
   overlay_room();
   session_fetch_profile(session);
 
   overlay() {
-    div(key(id("accounts")), flex, flex_col, left(px(anchor.x0)),
-        top(px(anchor.y1 + 6)), w(px(SWITCHER_WIDTH)), rounded(xl),
+    div(key(at), flex, flex_col, left(px(anchor.x0)), top(px(top)),
+        w(px(SWITCHER_WIDTH)), rounded(xl),
         bg(k->popover), border(1), border_color(k->border_strong), shadow(lg),
         overflow_hidden) {
       card = here();
@@ -528,5 +548,325 @@ void account_choices(App *app) {
 
   if (chosen) {
     roster_switch(roster, chosen);
+  }
+}
+
+// `top` over `under`, as one color.
+static civue_color over(civue_color top, civue_color under) {
+  float a = top.a;
+
+  return (civue_color){top.r * a + under.r * (1 - a),
+                       top.g * a + under.g * (1 - a),
+                       top.b * a + under.b * (1 - a), under.a};
+}
+
+// the colors of nameplates as discord names them, the dark theme's.
+static const struct {
+  const char *name;
+  uint32_t dark;
+} PALETTES[] = {
+  {"crimson", 0x900007}, {"berry", 0x893a99},  {"sky", 0x0080b7},
+  {"teal", 0x086460},    {"forest", 0x2d5401}, {"bubble_gum", 0xdc3e97},
+  {"violet", 0x730bc8},  {"cobalt", 0x0131c2}, {"clover", 0x047b20},
+  {"lemon", 0xf6cd12},   {"white", 0xffffff},  {"black", 0x000000},
+};
+
+// the color of the nameplate the account wears, clear for none.
+static civue_color plate_color(const User *self) {
+  for (size_t i = 0; self && self->nameplate && self->nameplate_palette &&
+                     i < countof(PALETTES);
+       i++) {
+    if (!strcmp(self->nameplate_palette, PALETTES[i].name)) {
+      return rgb(PALETTES[i].dark);
+    }
+  }
+
+  return CIVUE_CLEAR;
+}
+
+// how much of the nameplate's color is at `x`, 0 to 1 across the panel: a
+// tenth at its left, two fifths at its right.
+static float plate_alpha(civue_rect panel, double x) {
+  float t = (float)((x - panel.x0) / fmax(civue_rect_w(panel), 1));
+
+  return .1f + .3f * fminf(fmaxf(t, 0), 1);
+}
+
+// the nameplate behind the panel, as discord's: its color across it, and
+// its picture at the right, faint, moving while the pointer is on the panel.
+static void nameplate(App *app, const User *self, civue_color tint,
+                      bool hovered) {
+  civue_ui *ui = civue_ui_current();
+  bool moves = hovered && ui->window_focused && !ui->reduce_motion;
+  char url[CDN_URL_MAX];
+
+  div(absolute, left(0), top(0), right(0), bottom(0)) {
+    civue_rect r = here();
+    uint32_t pixels = (uint32_t)(civue_rect_h(r) * 6 * ui->scale);
+    civue_image_info image = {};
+
+    // civue draws no gradient: thin columns of it.
+    for (double x = r.x0; tint.a > 0 && x < r.x1; x += 2) {
+      fill(civue_rect_from(x, r.y0, fmin(x + 2, r.x1), r.y1),
+           civue_alpha(tint, plate_alpha(r, x)), 0);
+    }
+
+    if (moves) {
+      cdn_nameplate(url, self->nameplate, true);
+      image = civue_images_get_animated(app->images, ui, url, pixels);
+    }
+
+    if (image.state != CIVUE_IMAGE_READY) {
+      cdn_nameplate(url, self->nameplate, false);
+      image = civue_images_get(app->images, ui, url, pixels);
+    }
+
+    if (image.state == CIVUE_IMAGE_READY && image.width && image.height) {
+      double h = civue_rect_h(r), w = h * image.width / image.height;
+
+      civue_image(ui, image.texture, xywh(r.x1 - w, r.y0, w, h),
+                  (float[4]){0, 0, 1, 1}, .4f, 0, false);
+    }
+  }
+}
+
+// what the account says under its name: the status it wrote, else what it
+// does, else how it shows.
+static void status_line(App *app, const User *self) {
+  const Store *store = app->session->store;
+  char doing[256];
+  const char *words = status_label(store->self_status);
+
+  if (self && self->status_text) {
+    words = self->status_text;
+  }
+  else if (self && self->nactivities && store->self_status != STATUS_OFFLINE) {
+    words = activity_status_text(&self->activities[0], doing, sizeof doing);
+  }
+
+  div(flex, items_center, gap(1), min_w(0), h(px(16))) {
+    if (self && self->status_emoji) {
+      emoji_node(app, self->status_emoji_id, self->status_emoji, 14);
+    }
+
+    text(words, min_w(0), truncate);
+  }
+}
+
+// who is signed in, pressed for the accounts. the line under the name rolls
+// to the username while the pointer is on the panel, as discord's.
+static void account_chip(App *app, civue_color ground, bool rolled) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  const User *self = app->session->store->self;
+  civue_id id = id("account-chip");
+  bool open = app->popover == POPOVER_ACCOUNTS;
+  float roll = civue_animate(ui, civue_ids(id, "roll"), rolled ? 1 : 0,
+                             ui->reduce_motion ? 0 : ROLL_SECONDS);
+  civue_rect anchor = {};
+
+  div(key(id), flex, items_center, gap(2), flex_1, min_w(0), h(px(42)), pl(1),
+      pr(2), rounded(lg), style(.bg = open ? k->hover : CIVUE_CLEAR),
+      hover(bg(k->hover)), cursor_pointer) {
+    civue_button_state state = button();
+    civue_color under =
+      open || state.response.hovered ? over(k->hover, ground) : ground;
+
+    anchor = here();
+
+    if (state.activated) {
+      app_toggle(app, POPOVER_ACCOUNTS);
+    }
+
+    div(relative, flex_shrink_0) {
+      avatar(app, self, 0, PANEL_AVATAR, true, under);
+
+      // another account has something waiting.
+      if (accounts_waiting(app)) {
+        mention_dot(k, under);
+      }
+    }
+
+    div(flex, flex_col, gap(px(2)), flex_1, min_w(0)) {
+      text(store_user_name(self), min_w(0), truncate, text_size(px(16)),
+           line_height(px(18)), font_weight(medium), text_color(k->strong));
+
+      // the status goes up and out as the username comes up from under it.
+      div(relative, h(px(16)), min_w(0), overflow_hidden, text_size(px(12)),
+          line_height(px(16)), font_weight(medium), text_color(k->subtle)) {
+        div(absolute, left(0), right(0), top(px(-17 * roll))) {
+          faded(1 - roll) {
+            status_line(app, self);
+          }
+        }
+
+        div(absolute, left(0), right(0), top(px(17 * (1 - roll)))) {
+          faded(roll) {
+            text(self ? self->username : "", min_w(0), truncate);
+          }
+        }
+      }
+    }
+  }
+
+  account_switcher(app, anchor);
+}
+
+// how the buttons of the panel look over what is under them.
+typedef struct {
+  // over a nameplate, of its color.
+  civue_color plate;
+  bool on_plate;
+} Ground;
+
+// a button of the panel. `corners` rounds its left, right or both sides,
+// `lit` tints it as the other half of its pair is pointed at, `off` makes it
+// red. true when pressed, `right` when pressed with the other button.
+static bool panel_button(App *app, civue_id id, civue_icon glyph_icon,
+                         float width, float glyph_size, const Ground *g,
+                         int corners, bool lit, bool off, bool open,
+                         const char *label, bool *right) {
+  const Look *k = &app->look;
+  float radius = 8;
+  civue_color rest = open ? k->hover : lit ? civue_alpha(k->hover, .5f)
+                                           : CIVUE_CLEAR;
+  civue_color hovered = k->hover;
+  civue_color color = off ? k->danger : k->subtle;
+  bool pressed = false;
+
+  if (g->on_plate) {
+    rest = open ? civue_alpha(g->plate, .2f) : CIVUE_CLEAR;
+    hovered = civue_alpha(g->plate, .2f);
+    color = off ? k->danger : civue_alpha(rgb(0xffffff), .9f);
+  }
+
+  // discord's red glow on what is turned off.
+  if (off) {
+    rest = g->on_plate ? rgba(0x00000038) : civue_alpha(k->danger, .12f);
+    hovered = g->on_plate ? rgba(0x00000054) : civue_alpha(k->danger, .24f);
+  }
+
+  div(key(id), flex, items_center, justify_center, flex_shrink_0, w(px(width)),
+      h(px(PANEL_BUTTON)),
+      style(.radius = {corners & 1 ? civue_px(radius) : civue_px(0),
+                       corners & 2 ? civue_px(radius) : civue_px(0),
+                       corners & 2 ? civue_px(radius) : civue_px(0),
+                       corners & 1 ? civue_px(radius) : civue_px(0)},
+            .bg = rest),
+      hover(bg(hovered)), cursor_pointer) {
+    civue_button_state state = button();
+
+    pressed = state.activated;
+    *right |= state.response.right_clicked;
+    glyph(glyph_icon, glyph_size, color);
+
+    if (label) {
+      hint(app, id, &state.response, label, CIVUE_TOOLTIP_ABOVE);
+    }
+  }
+
+  return pressed;
+}
+
+// the microphone or the sound and the arrow of its menu, as one: turned off
+// in red. true when the button was pressed, the pair's rect in `anchor`.
+static bool audio_pair(App *app, AudioKind kind, bool off, const Ground *g,
+                       civue_rect *anchor) {
+  civue_ui *ui = civue_ui_current();
+  bool input = kind == AUDIO_INPUTS;
+  Popover popover = input ? POPOVER_AUDIO_INPUT : POPOVER_AUDIO_OUTPUT;
+  civue_id id = id_at(id("panel-audio"), kind);
+  bool open = app->popover == popover;
+  bool pressed = false, toggle = false, right = false;
+  civue_icon glyph_icon =
+    input ? off ? CIVUE_ICON(mingcute, mic_off_fill)
+                : CIVUE_ICON(mingcute, mic_fill)
+    : off ? CIVUE_ICON(mingcute, headphone_off_fill)
+          : CIVUE_ICON(mingcute, headphone_fill);
+  const char *label = input ? off ? "Unmute" : "Mute"
+                      : off ? "Undeafen"
+                            : "Deafen";
+  civue_icon arrow = open ? CIVUE_ICON(mingcute, up_fill)
+                          : CIVUE_ICON(mingcute, down_fill);
+
+  div(flex, items_center, gap(px(1)), flex_shrink_0) {
+    *anchor = here();
+
+    // the other half is tinted while one is pointed at.
+    bool lit = ui->input.has_mouse &&
+               civue_rect_contains(*anchor, ui->input.mouse) &&
+               !civue_under_overlay(ui, ui->input.mouse);
+
+    pressed = panel_button(app, id_at(id, 1), glyph_icon, PANEL_BUTTON, 20, g,
+                           1, lit, off, false, open ? nullptr : label, &right);
+    toggle = panel_button(app, id_at(id, 2), arrow, PANEL_ARROW, 16, g, 2,
+                          lit, off, open, nullptr, &right);
+  }
+
+  // the other button on the pair opens its menu too.
+  if (toggle || right) {
+    app_toggle(app, popover);
+
+    if (app->popover == popover) {
+      devices_list(app);
+    }
+  }
+
+  return pressed;
+}
+
+void user_panel(App *app) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  Session *s = app->session;
+  const User *self = s->store->self;
+  bool muted = s->voice_mute || s->voice_deaf;
+  civue_color tint = plate_color(self);
+  Ground g = {.plate = tint, .on_plate = tint.a > 0};
+  civue_rect input = {}, output = {};
+  bool cog = false, right = false;
+
+  div(key(id("user-panel")), relative, flex, items_center, gap(2),
+      flex_shrink_0, h(px(PANEL_HEIGHT)), px(2), rounded(px(PANEL_RADIUS)),
+      bg(k->chat), border(1), border_color(k->frame_border), overflow_hidden) {
+    civue_rect r = here();
+    bool hovered = ui->input.has_mouse &&
+                   civue_rect_contains(r, ui->input.mouse) &&
+                   !civue_under_overlay(ui, ui->input.mouse);
+    // what is under the avatar, its status cut out of it.
+    civue_color ground =
+      g.on_plate
+        ? over(civue_alpha(tint, plate_alpha(r, r.x0 + 28)), k->chat)
+        : k->chat;
+
+    if (g.on_plate) {
+      nameplate(app, self, tint, hovered);
+    }
+
+    account_chip(app, ground, hovered);
+
+    div(flex, items_center, gap(2), flex_shrink_0) {
+      if (audio_pair(app, AUDIO_INPUTS, muted, &g, &input)) {
+        session_voice_mute(s, !muted);
+      }
+
+      if (audio_pair(app, AUDIO_OUTPUTS, s->voice_deaf, &g, &output)) {
+        session_voice_deafen(s, !s->voice_deaf);
+      }
+
+      cog = panel_button(app, id("panel-settings"),
+                         CIVUE_ICON(mingcute, settings_3_fill), PANEL_BUTTON,
+                         20, &g, 3, false, false, app->settings_open,
+                         "User Settings", &right);
+    }
+  }
+
+  audio_menu(app, input, AUDIO_INPUTS);
+  audio_menu(app, output, AUDIO_OUTPUTS);
+
+  // in a call, its settings first.
+  if (cog) {
+    settings_show(app, s->voice_channel_id ? SETTINGS_VOICE
+                                           : SETTINGS_APPEARANCE);
   }
 }

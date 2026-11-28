@@ -6,18 +6,33 @@
 void login_screen(App *app);
 void connecting_screen(App *app);
 
-void top_bar(App *app);
-// under it: the guilds' switcher, then the way to the friends or what the
-// open guild offers.
-void place_bar(App *app);
+// down the window's side: the direct messages, then the servers and the
+// folders in the user's order. a folder pressed slides its servers in.
+void server_rail(App *app);
+// beside the rail: the open guild's channels, or the direct messages.
+void sidebar_card(App *app);
+// how the link to discord goes, floating at the foot of the open node while
+// it is down for more than a blink.
+void link_toast(App *app);
+// the places to go after what is typed, over the window while
+// `app->launcher_open`.
+void launcher(App *app);
+// command k opens the launcher, and its keys go to it while it shows. before
+// anything else of the frame takes them.
+void launcher_keys(App *app);
+// opens the launcher, kept to the channels of `guild_id`, or to the direct
+// messages for 0.
+void launcher_show(App *app, Snowflake guild_id);
+// the name of the folder the guild is in. false when it is in none.
+bool guild_folder_name(App *app, Snowflake guild_id, char *out, size_t cap);
+// a key of a shortcut as the keyboard's cap, after the command key's when
+// `command`.
+void keycap(const Look *k, bool command, const char *label);
 // the first letter of each word, what discord shows for a guild without an
 // icon.
 void guild_acronym(const char *name, char *out, size_t cap);
 // the guild's icon or its acronym over the open node, `size` points square.
 void guild_icon(App *app, const Guild *guild, float size, bool lit);
-// the guilds under `anchor`, while the app shows POPOVER_GUILDS. a press on
-// `anchor` is left to what opened it.
-void guild_switcher(App *app, civue_rect anchor);
 // the dialog creating or joining a server while the app shows
 // POPOVER_NEW_GUILD.
 void new_guild(App *app);
@@ -34,11 +49,19 @@ void invite_card(App *app, civue_rect anchor);
 // shows POPOVER_NEW_DM.
 void new_dm(App *app, civue_rect anchor);
 void channel_list(App *app, Guild *guild);
+// what stands before a channel's name: a hash, a speaker, a bubble...
+[[gnu::pure]] civue_icon channel_icon(const Channel *c);
 // who is in the voice channel, under its row. nothing for an empty one.
 void voice_members(App *app, const Channel *c);
-// the call the account is in, at the foot of the sidebar: how it goes and
+// the call the account is in, over the account's panel: how it goes and
 // the microphone, the sound and the way out. nothing outside a call.
 void voice_panel(App *app);
+// the account's panel at the foot of the sidebar, as discord's: who is
+// signed in, the microphone and the sound with their menus, the settings.
+void user_panel(App *app);
+// the menu of the microphone or of the sound over `anchor`, while the app
+// shows its popover: the device, how loud, and the voice settings.
+void audio_menu(App *app, civue_rect anchor, AudioKind kind);
 // joins a voice channel, after asking when that leaves a call and the
 // user wants to be asked.
 void voice_join(App *app, Snowflake channel_id);
@@ -64,16 +87,19 @@ float volume_slider(App *app, civue_id id, float value, float most,
 void level_bars(App *app, float level, int bars);
 // the settings over the whole window, while `app->settings_open`.
 void settings_dialog(App *app);
+// opens the settings on `page`.
+void settings_show(App *app, SettingsPage page);
+// the direct messages, the latest first, in what is left of the open node.
 void private_list(App *app);
-// the saved accounts, the status and the way out under `anchor`, while
+// the saved accounts, the status and the way out over `anchor`, while
 // the app shows POPOVER_ACCOUNTS. a press on `anchor` is left to what opened
 // it.
 void account_switcher(App *app, civue_rect anchor);
 // the mentions waiting in the accounts that are not shown.
 uint32_t accounts_waiting(App *app);
-// what waits to be read and what mentions the user, under `anchor`, while
-// the app shows POPOVER_INBOX. a press on `anchor` is left to what opened it.
-void inbox(App *app, civue_rect anchor);
+// the button opening what waits to be read and what mentions the user, at
+// the end of a page's header.
+void inbox_button(App *app);
 // what the session last told of something the user did, at the foot of the
 // window for a moment.
 void notice_toast(App *app);

@@ -1053,6 +1053,15 @@ static void page(App *app, bool narrow, bool stacked, float tops[PARTS]) {
   }
 }
 
+void settings_show(App *app, SettingsPage page) {
+  app->popover = POPOVER_NONE;
+  app->settings_open = true;
+  app->settings_page = page;
+  app->settings_part = 0;
+  app->settings_select = -1;
+  devices_list(app);
+}
+
 static void close_settings(App *app) {
   app->settings_open = false;
   app->settings_select = -1;

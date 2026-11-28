@@ -219,19 +219,6 @@ static void banner_url(const Profile *p, uint32_t size, char *url) {
   }
 }
 
-static void avatar_url(App *app, const User *u, Snowflake guild_id,
-                       uint32_t size, char *url) {
-  const Guild *guild = store_guild(app->session->store, guild_id);
-  const Member *member = guild ? store_member(guild, u->id) : nullptr;
-
-  if (member && member->avatar) {
-    cdn_member_avatar(url, guild_id, u->id, member->avatar, size);
-  }
-  else {
-    cdn_avatar(url, u->id, u->avatar, u->discriminator, size);
-  }
-}
-
 // the banner's color without an image: the theme's or the accent, else the
 // color most of the avatar is.
 static civue_color banner_ground(App *app, const User *u, const Profile *p,
@@ -1122,7 +1109,7 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
         civue_button_state state = button();
 
         message = state.activated;
-        icon(mingcute, chat_3_fill, size(px(16)));
+        icon(ph, chat_circle_fill, size(px(16)));
         hint(app, id("modal-message"), &state.response, "Message",
              CIVUE_TOOLTIP_ABOVE);
       }
@@ -1137,7 +1124,7 @@ static void modal_buttons(App *app, const User *u, const Profile *p,
                 .cursor = CIVUE_CURSOR_POINTER),
           hover(bg(self ? civue_alpha(primary, .5f) : lit))) {
         message = button().activated && !self;
-        icon(mingcute, chat_3_fill, size(px(16)));
+        icon(ph, chat_circle_fill, size(px(16)));
         text("Message");
       }
 

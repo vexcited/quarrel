@@ -38,20 +38,9 @@ static void settle_hover(App *app, civue_ui *ui) {
 }
 
 static void sidebar(App *app) {
-  Guild *guild = app_guild(app);
-
-  div(flex, flex_col, flex_shrink_0, w(px(app->sidebar_width)), h(full)) {
-    top_bar(app);
-    place_bar(app);
-
-    if (guild) {
-      channel_list(app, guild);
-    }
-    else {
-      private_list(app);
-    }
-
-    voice_panel(app);
+  div(flex, flex_shrink_0, w(px(RAIL_WIDTH + app->sidebar_width)), h(full)) {
+    server_rail(app);
+    sidebar_card(app);
   }
 }
 
@@ -59,11 +48,12 @@ static void sidebar(App *app) {
 // width back. the width is kept once the edge is let go.
 static void sidebar_handle(App *app) {
   civue_ui *ui = civue_ui_current();
-  float edge = app->sidebar_width;
+  float edge = RAIL_WIDTH + app->sidebar_width;
+  // in the gap between the sidebar's card and the chat.
   civue_response grip = civue_interact(
-    ui, id("sidebar-handle"), xywh(edge - 3, TOP_BAR_HEIGHT, 6, ui->size.y),
+    ui, id("sidebar-handle"), xywh(edge - 7, 0, 6, ui->size.y),
     CIVUE_SENSE_DRAG);
-  float width = edge;
+  float width = app->sidebar_width;
 
   if (grip.hovered || grip.dragging) {
     civue_set_cursor(ui, CIVUE_CURSOR_RESIZE_H);
@@ -73,7 +63,7 @@ static void sidebar_handle(App *app) {
     width = SIDEBAR_WIDTH;
   }
   else if (grip.dragging && ui->input.has_mouse) {
-    width = ui->input.mouse.x;
+    width = ui->input.mouse.x + 4 - RAIL_WIDTH;
   }
 
   width = width < SIDEBAR_MIN ? SIDEBAR_MIN : width;
@@ -91,14 +81,6 @@ static void sidebar_handle(App *app) {
     platform_pref_set(SIDEBAR_KEY, digits);
   }
 }
-
-// windows 11 rounds its windows by 8 points, and the panel's corners follow
-// them there.
-#ifdef _WIN32
-constexpr float PANEL_RADIUS = 8;
-#else
-constexpr float PANEL_RADIUS = 12;
-#endif
 
 // where the window's buttons, at the end of the title bar as on windows, cut
 // into the panel: as far from them as the panel is from the window's edge.
@@ -163,6 +145,8 @@ static void paint_notch(App *app) {
 static void shell(App *app) {
   const Look *k = &app->look;
   Channel *channel = app_channel(app);
+
+  launcher_keys(app);
 
   div(size(full), flex, bg(k->frame), text_color(k->text), text_size(px(16)),
       line_height(px(22))) {
@@ -249,6 +233,7 @@ static void frame(void *ctx, civue_ui *ui) {
       hub_dialogs(app);
       authorize_dialog(app);
       media_viewer(app);
+      launcher(app);
       notice_toast(app);
       break;
     case SESSION_CONNECTING:
@@ -395,7 +380,7 @@ int main() {
   free(app.friends_search);
   free(app.friend_tag);
   free(app.friend_note);
-  free(app.dm_search);
+  free(app.launcher_query);
   free(app.pick_search);
   free(app.guild_name);
   free(app.guild_icon);
@@ -425,6 +410,7 @@ int main() {
   free(app.hub_search);
   free(app.nick);
   free(app.hide_muted.v);
+  free(app.visits.v);
   free(app.picks.v);
   platform_timer_cancel(app.friends_tick);
   free(app.last_channels.v);

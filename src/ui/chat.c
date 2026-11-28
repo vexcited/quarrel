@@ -156,7 +156,7 @@ static void chat_header(App *app, Channel *c) {
     if (channel_is_voice(c) &&
         icon_button(app, id("call-toggle"),
                     app->voice_chat ? CIVUE_ICON(mingcute, volume_fill)
-                                    : CIVUE_ICON(mingcute, chat_3_fill),
+                                    : CIVUE_ICON(ph, chat_circle_fill),
                     32, 20, app->voice_chat ? "Show Call" : "Show Chat")) {
       app->voice_chat = !app->voice_chat;
     }

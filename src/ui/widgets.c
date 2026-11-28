@@ -75,12 +75,11 @@ void glyph(civue_icon icon, float size, civue_color color) {
                                     .has_text_color = true));
 }
 
-bool image_fill(App *app, const char *url, float radius) {
+bool image_fill_at(App *app, const char *url, float radius, float side) {
   civue_ui *ui = civue_ui_current();
   civue_rect r = here();
-  double side = fmax(civue_rect_w(r), civue_rect_h(r));
 
-  if (side <= 0) {
+  if (side <= 0 || civue_rect_w(r) <= 0 || civue_rect_h(r) <= 0) {
     return false;
   }
 
@@ -93,6 +92,13 @@ bool image_fill(App *app, const char *url, float radius) {
 
   civue_image(ui, image.texture, r, (float[4]){0, 0, 1, 1}, 1, radius, false);
   return true;
+}
+
+bool image_fill(App *app, const char *url, float radius) {
+  civue_rect r = here();
+
+  return image_fill_at(app, url, radius,
+                       (float)fmax(civue_rect_w(r), civue_rect_h(r)));
 }
 
 bool sticker_fill(App *app, Snowflake sticker_id, uint8_t format, bool animated,
@@ -247,27 +253,41 @@ void status_dot(UserStatus status, civue_rect r, const Look *k,
   }
 }
 
+static const Member *member_of(App *app, const User *user,
+                               Snowflake guild_id) {
+  const Guild *guild =
+    guild_id ? store_guild(app->session->store, guild_id) : nullptr;
+
+  return guild ? store_member(guild, user->id) : nullptr;
+}
+
+void avatar_url(App *app, const User *user, Snowflake guild_id,
+                uint32_t pixels, char *out) {
+  const Member *member = user ? member_of(app, user, guild_id) : nullptr;
+
+  out[0] = 0;
+
+  if (member && member->avatar) {
+    cdn_member_avatar(out, guild_id, user->id, member->avatar, pixels);
+  }
+  else if (user) {
+    cdn_avatar(out, user->id, user->avatar, user->discriminator, pixels);
+  }
+}
+
 void avatar(App *app, const User *user, Snowflake guild_id, float size,
             bool status, civue_color ring) {
   char url[CDN_URL_MAX] = "", frame[CDN_URL_MAX] = "";
-  uint32_t pixels = (uint32_t)(size * 2);
+
+  avatar_url(app, user, guild_id, (uint32_t)(size * 2), url);
 
   if (user) {
-    const Guild *guild =
-      guild_id ? store_guild(app->session->store, guild_id) : nullptr;
-    const Member *member = guild ? store_member(guild, user->id) : nullptr;
+    const Member *member = member_of(app, user, guild_id);
     const char *worn =
       member && member->decoration ? member->decoration : user->decoration;
 
     // discord draws it a fifth wider than the avatar it frames.
     cdn_avatar_decoration(frame, worn, (uint32_t)(size * 1.2f * 2));
-
-    if (member && member->avatar) {
-      cdn_member_avatar(url, guild_id, user->id, member->avatar, pixels);
-    }
-    else {
-      cdn_avatar(url, user->id, user->avatar, user->discriminator, pixels);
-    }
   }
 
   div(w(px(size)), h(px(size)), flex_shrink_0, rounded(full),
@@ -340,7 +360,7 @@ void mention_badge(const Look *k, uint32_t count) {
   div(flex, items_center, justify_center, flex_shrink_0, h(4), min_w(4), px(1),
       rounded(full), bg(k->danger)) {
     text(label, text_size(px(12)), line_height(px(16)), font_weight(bold),
-         text_color(k->on_danger));
+         tabular_nums, text_color(k->on_danger));
   }
 }
 
@@ -629,6 +649,9 @@ void window_handle(civue_id id) {
 
 void header_end(App *app) {
   civue_rect bar = here();
+
+  inbox_button(app);
+
   float room = (float)(bar.x1 - app->notch.x0);
 
   if (app->notch.y1 > bar.y0 && room > 0) {

@@ -17,20 +17,35 @@ typedef struct {
   hcaptcha_status was;
 } Captcha;
 
-constexpr float SIDEBAR_WIDTH = 300;
-constexpr float SIDEBAR_MIN = 240;
-constexpr float SIDEBAR_MAX = 440;
-constexpr float MEMBER_LIST_WIDTH = 264;
 constexpr float TOP_BAR_HEIGHT = 38;
+// the rail of servers, then the card of what is open, as wide as the user
+// made it with the room around it. on macos the window's buttons sit over
+// the rail, which is as wide as them with their margin on both sides and
+// starts under them. the card beside it goes up to the window's top.
+#ifdef __APPLE__
+constexpr float RAIL_WIDTH = 84;
+constexpr float RAIL_TOP = TOP_BAR_HEIGHT;
+#else
+constexpr float RAIL_WIDTH = 72;
+constexpr float RAIL_TOP = 4;
+#endif
+constexpr float SIDEBAR_WIDTH = 268;
+constexpr float SIDEBAR_MIN = 216;
+constexpr float SIDEBAR_MAX = 428;
+// windows 11 rounds its windows by 8 points, and the panels' corners follow
+// them there.
+#ifdef _WIN32
+constexpr float PANEL_RADIUS = 8;
+#else
+constexpr float PANEL_RADIUS = 12;
+#endif
+constexpr float MEMBER_LIST_WIDTH = 264;
 constexpr float HEADER_HEIGHT = 48;
 // where what a message says starts, its avatar before it.
 constexpr float MESSAGE_GUTTER = 72;
 // the room a list of messages leaves under its last one, where the composer
 // says who types.
 constexpr float MESSAGE_FOOT = 24;
-// a list takes its scroll once it was laid out, a frame after it opened.
-constexpr uint8_t GUILDS_SETTLE = 3;
-
 // the channel a guild was last left on.
 typedef struct {
   Snowflake guild_id, channel_id;
@@ -99,7 +114,6 @@ typedef enum : uint8_t {
 typedef enum : uint8_t {
   POPOVER_NONE,
   POPOVER_ACCOUNTS,
-  POPOVER_GUILDS,
   POPOVER_INBOX,
   POPOVER_GUILD_MENU,
   POPOVER_INVITE,
@@ -110,6 +124,9 @@ typedef enum : uint8_t {
   POPOVER_FORWARD,
   POPOVER_VOICE_SOUND,
   POPOVER_VOICE_CAMERA,
+  // the menus of the microphone and of the sound on the account's panel.
+  POPOVER_AUDIO_INPUT,
+  POPOVER_AUDIO_OUTPUT,
   POPOVER_GIFS,
   POPOVER_STICKERS,
   POPOVER_STICKER_INFO,
@@ -198,18 +215,6 @@ typedef struct {
   civue_rect status_menu_row;
   // the tags the user may wear are listed under the accounts' card.
   bool tag_menu_open;
-  // the guilds' switcher: the frames left to settle it since it opened.
-  uint8_t guilds_fresh;
-  // where the switcher's card starts, and how much of its list the card
-  // is too short to show.
-  float guilds_top, guilds_hidden;
-  // scrolling still makes the card taller.
-  bool guilds_grows;
-  // when the pointer was last over its arrows, down then up, 0 when not.
-  double guilds_arrow[2];
-  // where the pointer was as it opened. its arrows wait for it to move.
-  civue_vec2 guilds_mouse;
-  bool guilds_armed;
   // something is drawn over the window's buttons, and they are hidden for it.
   bool covers_buttons, buttons_hidden;
   // where the window's buttons cut into the panel's top right corner, as they
@@ -227,6 +232,25 @@ typedef struct {
   PlatformTimer *notice_timer;
   // how wide the user made the sidebar.
   float sidebar_width;
+  // the folder the rail is in, 0 at its top, and the one it shows while it
+  // slides out of it.
+  Snowflake rail_folder, rail_shown;
+  // the guild open when the rail last looked, and the frames left to bring
+  // one opened elsewhere in view.
+  Snowflake rail_guild;
+  uint8_t rail_reveal;
+  // how many times the rail snapped to a folder, for its slide to start
+  // anew where it is.
+  uint32_t rail_snaps;
+  // the channels opened, the latest last.
+  Ids visits;
+  // the launcher: what it lists and the row picked. it keeps to the
+  // channels of `launcher_guild` when `launcher_scoped`.
+  bool launcher_open, launcher_scoped;
+  uint8_t launcher_kind;
+  Snowflake launcher_guild;
+  char *launcher_query;
+  int32_t launcher_pick;
 
   // the guild whose channels show, 0 for the direct messages.
   Snowflake guild_id;
@@ -353,8 +377,6 @@ typedef struct {
   // redraws it while a counter of elapsed time shows.
   FriendsTab friends_tab;
   char *friends_search;
-  // what the search over the direct messages holds.
-  char *dm_search;
   PlatformTimer *friends_tick;
   // the add friend form: the username and the note typed, whether it may be
   // sent, whether its field had the focus last frame, and the challenge

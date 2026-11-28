@@ -439,6 +439,96 @@ static void sound_menu(App *app, civue_rect anchor) {
   dismiss(app, card, side_list(app, card), anchor);
 }
 
+void audio_menu(App *app, civue_rect anchor, AudioKind kind) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  bool input = kind == AUDIO_INPUTS;
+  civue_rect card = {};
+  bool let_go = false, more = false;
+
+  if (app->popover != (input ? POPOVER_AUDIO_INPUT : POPOVER_AUDIO_OUTPUT)) {
+    return;
+  }
+
+  devices_follow(app);
+
+  civue_rect room = overlay_room();
+  float left = fminf((float)anchor.x0, (float)room.x1 - MENU_WIDTH);
+
+  overlay() {
+    div(key(id_at(id("audio-menu"), kind)), flex, flex_col, left(px(left)),
+        bottom(px(ui->size.y - anchor.y0 + 8)), w(px(MENU_WIDTH)), p(2),
+        rounded(xl), bg(k->popover), border(1),
+        border_color(k->border_strong), shadow(lg), text_size(px(14)),
+        line_height(px(18))) {
+      card = here();
+
+      device_row(app, kind, input ? "Input Device" : "Output Device");
+      separator(k);
+
+      if (input) {
+        static const char *const PROFILE_NAMES[PROFILES] = {
+          [PROFILE_ISOLATION] = "Voice Isolation",
+          [PROFILE_STUDIO] = "Studio",
+          [PROFILE_CUSTOM] = "Custom",
+        };
+        VoiceProfile now = devices_profile();
+
+        heading(k, "Input Profile");
+
+        for (int i = 0; i < PROFILES; i++) {
+          if (radio_row(app, id_at(id("panel-profile"), i), PROFILE_NAMES[i],
+                        nullptr, now == i)) {
+            devices_set_profile((VoiceProfile)i);
+          }
+        }
+
+        separator(k);
+        heading(k, "Input Volume");
+        devices_set_input_volume(volume_slider(app, id("panel-input-volume"),
+                                               devices_input_volume(), 1,
+                                               &let_go));
+
+        // the microphone is only heard in a call.
+        if (app->session->voice) {
+          heading(k, "Input Level");
+          level_meter(app);
+        }
+      }
+      else {
+        heading(k, "Output Volume");
+        devices_set_output_volume(volume_slider(app,
+                                                id("panel-output-volume"),
+                                                devices_output_volume(), 2,
+                                                &let_go));
+      }
+
+      separator(k);
+
+      div(key(id("audio-settings")), flex, items_center, gap(2),
+          flex_shrink_0, h(10), px(2), rounded(lg), hover(bg(k->hover)),
+          cursor_pointer) {
+        more = button().activated;
+
+        text("Voice Settings", flex_1, min_w(0), font_weight(medium),
+             text_color(k->strong));
+        icon(mingcute, settings_3_fill, size(4), flex_shrink_0,
+             text_color(k->subtle));
+      }
+    }
+  }
+
+  if (let_go) {
+    devices_save_volumes();
+  }
+
+  dismiss(app, card, side_list(app, card), anchor);
+
+  if (more) {
+    settings_show(app, SETTINGS_VOICE);
+  }
+}
+
 static void camera_menu(App *app, civue_rect anchor) {
   const Look *k = &app->look;
   civue_ui *ui = civue_ui_current();

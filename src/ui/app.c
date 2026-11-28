@@ -40,6 +40,34 @@ static LastChannel *last_of(App *app, Snowflake guild_id) {
   return last;
 }
 
+// how many places the launcher remembers.
+constexpr uint32_t VISITS = 32;
+
+// a place opened again moves to the end, and the oldest one leaves for a
+// new one once there is no room.
+static void visit(App *app, Snowflake channel_id) {
+  Ids *v = &app->visits;
+  uint32_t at = 0;
+
+  while (at < v->len && v->v[at] != channel_id) {
+    at++;
+  }
+
+  if (at == v->len && v->len == VISITS) {
+    at = 0;
+  }
+  else if (at == v->len) {
+    ids_toggle(v, channel_id);
+    return;
+  }
+
+  for (uint32_t i = at + 1; i < v->len; i++) {
+    v->v[i - 1] = v->v[i];
+  }
+
+  v->v[v->len - 1] = channel_id;
+}
+
 static void drop(char **text) {
   free(*text);
   *text = nullptr;
@@ -103,6 +131,12 @@ void app_reset(App *app) {
   app->popover = POPOVER_NONE;
   app->guild_id = 0;
   app->last_channels.len = 0;
+  app->visits.len = 0;
+  app->rail_folder = 0;
+  app->rail_shown = 0;
+  app->rail_guild = 0;
+  app->rail_reveal = 0;
+  app->launcher_open = false;
   app->revealed.len = 0;
   app->hide_muted.len = 0;
   app->picks.len = 0;
@@ -124,7 +158,7 @@ void app_reset(App *app) {
   drop(&app->friends_search);
   drop(&app->friend_tag);
   drop(&app->friend_note);
-  drop(&app->dm_search);
+  drop(&app->launcher_query);
   drop(&app->pick_search);
   drop(&app->guild_name);
   drop(&app->guild_icon);
@@ -239,6 +273,11 @@ void app_select_channel(App *app, Snowflake channel_id) {
 
   app->guild_id = channel ? channel->guild_id : 0;
   last_of(app, app->guild_id)->channel_id = channel_id;
+
+  if (channel_id) {
+    visit(app, channel_id);
+  }
+
   app->focus_composer = channel_id != 0;
 
   session_select_channel(app->session, channel_id);

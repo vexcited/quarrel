@@ -315,6 +315,8 @@ add_executable(quarrel
   src/ui/media.c
   src/ui/messages.c
   src/ui/profile.c
+  src/ui/rail.c
+  src/ui/launcher.c
   src/ui/shell.c
   src/ui/roles.c
   src/ui/server.c

@@ -186,7 +186,7 @@ static void friend_row(App *app, const Friend *f) {
       }
     }
 
-    icon(mingcute, chat_3_fill, size(5), flex_shrink_0, mr(2),
+    icon(ph, chat_circle_fill, size(5), flex_shrink_0, mr(2),
          text_color(k->subtle));
   }
 }
@@ -853,6 +853,7 @@ void friends_page(App *app) {
       tab(app, FRIENDS_IMPLICIT, "Implicit");
       add_friend_tab(app);
 
+      div(flex_1) {}
       header_end(app);
     }
 

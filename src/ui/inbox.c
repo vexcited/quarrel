@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <math.h>
 #include <stdcountof.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,7 +91,7 @@ static void place_label(App *app, const Guild *guild) {
       }
     }
     else {
-      icon(mingcute, chat_3_fill, size(4), flex_shrink_0,
+      icon(ph, chat_circle_fill, size(4), flex_shrink_0,
            text_color(k->subtle));
     }
 
@@ -621,7 +622,7 @@ static void bookmarks(App *app, Snowflake *chosen) {
   }
 }
 
-void inbox(App *app, civue_rect anchor) {
+static void inbox(App *app, civue_rect anchor) {
   if (app->popover != POPOVER_INBOX) {
     return;
   }
@@ -631,7 +632,8 @@ void inbox(App *app, civue_rect anchor) {
   float top = (float)anchor.y1 + 6;
   float room = (float)overlay_room().y1 - top;
   float height = INBOX_HEIGHT < room ? INBOX_HEIGHT : room;
-  civue_rect card = xywh(anchor.x0, top, INBOX_WIDTH, height);
+  float left = fmaxf((float)anchor.x1 - INBOX_WIDTH, 8);
+  civue_rect card = xywh(left, top, INBOX_WIDTH, height);
   Snowflake chosen = 0;
 
   overlay() {
@@ -681,4 +683,40 @@ void inbox(App *app, civue_rect anchor) {
     app->popover = POPOVER_NONE;
     app_select_channel(app, chosen);
   }
+}
+
+void inbox_button(App *app) {
+  const Look *k = &app->look;
+  civue_id id = id("inbox-button");
+  bool open = app->popover == POPOVER_INBOX;
+  civue_rect anchor = {};
+
+  div(key(id), flex, items_center, justify_center, flex_shrink_0, size(8),
+      rounded(lg), text_color(open ? k->strong : k->subtle),
+      style(.bg = open ? k->hover : CIVUE_CLEAR),
+      hover(bg(k->hover), text_color(k->strong)), active(bg(k->pressed)),
+      cursor_pointer) {
+    civue_button_state state = button();
+
+    anchor = here();
+
+    if (state.activated) {
+      app_toggle(app, POPOVER_INBOX);
+      app->inbox_asked = false;
+    }
+
+    div(relative, size(5)) {
+      icon(mingcute, inbox_fill, size(5));
+
+      if (mentions_of(app->session->store)) {
+        mention_dot(k, k->chat);
+      }
+    }
+
+    if (!open) {
+      hint(app, id, &state.response, "Inbox", CIVUE_TOOLTIP_BELOW);
+    }
+  }
+
+  inbox(app, anchor);
 }

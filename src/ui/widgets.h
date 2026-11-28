@@ -8,6 +8,9 @@ void glyph(civue_icon icon, float size, civue_color color);
 // the image at `url` over the open node, nothing while it loads. false until
 // it shows.
 bool image_fill(App *app, const char *url, float radius);
+// the same, loaded `side` points square however big the node is, for a node
+// that grows and shrinks without loading it again at each size.
+bool image_fill_at(App *app, const char *url, float radius, float side);
 // the same, the middle of the image cut to the node's shape.
 bool image_cover(App *app, const char *url, float radius);
 // a guild's sticker inside the open node, whole whatever its shape: every
@@ -23,6 +26,10 @@ void emoji_node(App *app, Snowflake emoji_id, const char *name, float size);
 // a guild's emoji over `r`, every frame of one that moves while the window
 // has the user's attention, as the client plays them. false until it shows.
 bool emoji_image(App *app, Snowflake emoji_id, bool animated, civue_rect r);
+// the url of a user's picture, theirs in the guild when they set one, empty
+// without a user. `out` holds CDN_URL_MAX.
+void avatar_url(App *app, const User *user, Snowflake guild_id,
+                uint32_t pixels, char *out);
 // a round avatar node, with the user's status at its corner over `ring` when
 // `status` is set.
 void avatar(App *app, const User *user, Snowflake guild_id, float size,
@@ -49,8 +56,8 @@ void hint(App *app, civue_id id, const civue_response *resp, const char *label,
 // the open node moves the window when pressed where nothing of it answers,
 // and zooms it on a double click.
 void window_handle(civue_id id);
-// room at the end of a page's header, the open node, for the window's buttons
-// where they cut into it. its last child.
+// the inbox at the end of a page's header, the open node, then room for the
+// window's buttons where they cut into it. its last children.
 void header_end(App *app);
 // a square button holding an icon, true when pressed.
 bool icon_button(App *app, civue_id id, civue_icon icon, float size,
