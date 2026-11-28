@@ -368,6 +368,7 @@ int main() {
 
   captcha_drop(&app.captcha);
   captcha_drop(&app.friend_captcha);
+  captcha_drop(&app.join_captcha);
 
   media_free(&app);
   gif_players_free(&app);
@@ -397,6 +398,9 @@ int main() {
   free(app.dm_search);
   free(app.pick_search);
   free(app.guild_name);
+  free(app.guild_icon);
+  free(app.guild_icon_error);
+  free(app.guild_invite);
   free(app.menu_search);
   free(app.forum_search);
   free(app.post_title);

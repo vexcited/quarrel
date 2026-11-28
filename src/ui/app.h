@@ -45,6 +45,14 @@ typedef enum : uint8_t {
 
 typedef CIVUE_VEC(Snowflake) Ids;
 
+// the steps of the dialog adding a server.
+typedef enum : uint8_t {
+  NEW_GUILD_START,
+  NEW_GUILD_INTENT,
+  NEW_GUILD_CUSTOMIZE,
+  NEW_GUILD_JOIN,
+} NewGuildStep;
+
 // what opens under a button, one at a time.
 typedef enum : uint8_t {
   POPOVER_NONE,
@@ -306,8 +314,13 @@ typedef struct {
   // the new conversation: what its search holds and the friends picked.
   char *pick_search;
   Ids picks;
-  // the name typed for a new guild.
-  char *guild_name;
+  // the dialog adding a server: its step, the template, name and icon file
+  // of a new one, the invite typed to join one and the challenge discord
+  // asked for.
+  NewGuildStep new_guild_step;
+  uint8_t new_guild_template;
+  char *guild_name, *guild_icon, *guild_icon_error, *guild_invite;
+  Captcha join_captcha;
   // the invite's link was copied since it opened.
   bool invite_copied;
 

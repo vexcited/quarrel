@@ -1299,6 +1299,8 @@ static void clear_profile(Session *s) {
   s->status_timed = 0;
 }
 
+static void clear_join(Session *s);
+
 static void clear_invite(Session *s) {
   free(s->invite_code);
   free(s->invite_error);
@@ -1314,6 +1316,8 @@ static void clear_invite(Session *s) {
   free(s->tag_error);
   s->tag_error = nullptr;
   s->tag_wearing = false;
+  clear_join(s);
+  s->joined = false;
 }
 
 static void clear_forum(Session *s);
@@ -4038,8 +4042,10 @@ static void on_guild_created(void *ctx, const ApiResponse *res) {
   changed(s);
 }
 
-void session_create_guild(Session *s, const char *name) {
-  if (s->guild_creating || name == nullptr || name[0] == '\0') {
+void session_create_guild(Session *s, const char *name, const char *icon,
+                          size_t template_index) {
+  if (s->guild_creating || name == nullptr || name[0] == '\0' ||
+      template_index >= guild_template_count) {
     return;
   }
 
@@ -4051,7 +4057,8 @@ void session_create_guild(Session *s, const char *name) {
   }
   else {
     s->guild_creating = true;
-    api_create_guild(s->api, name, on_guild_created, call_new(s, 0, 0));
+    api_create_guild(s->api, name, icon, template_index, on_guild_created,
+                     call_new(s, 0, 0));
   }
 
   changed(s);
@@ -4430,6 +4437,266 @@ void session_create_invite(Session *s, Snowflake guild_id) {
   }
 
   changed(s);
+}
+
+/* ========================================================================== */
+/* joining by invite.                                                         */
+/* ========================================================================== */
+
+static void clear_join_captcha(Session *s) {
+  SessionCaptcha *c = &s->join_captcha;
+
+  free(c->service);
+  free(c->sitekey);
+  free(c->rqdata);
+  free(c->session_id);
+  free(c->rqtoken);
+  *c = (SessionCaptcha){};
+}
+
+static void clear_join(Session *s) {
+  clear_join_captcha(s);
+  str_set(&s->join_code, nullptr);
+  str_set(&s->join_error, nullptr);
+  s->join_context[0] = 0;
+  s->joining = false;
+}
+
+static const char *const INVITE_HOSTS[] = {
+  "discord.gg/",
+  "discord.com/invite/",
+  "discordapp.com/invite/",
+  "ptb.discord.com/invite/",
+  "canary.discord.com/invite/",
+};
+
+// the code of an invite typed as the client's join dialog takes it: alone,
+// or at the end of a link. null for anything else.
+static char *invite_code_of(const char *typed) {
+  char *text = trimmed(typed);
+  defer free(text);
+  const char *at = text;
+  bool linked = false;
+
+  if (!strncasecmp(at, "https://", 8)) {
+    at += 8;
+  }
+  else if (!strncasecmp(at, "http://", 7)) {
+    at += 7;
+  }
+
+  if (!strncasecmp(at, "www.", 4)) {
+    at += 4;
+  }
+
+  for (size_t i = 0; i < countof(INVITE_HOSTS) && !linked; i++) {
+    size_t len = strlen(INVITE_HOSTS[i]);
+
+    if (!strncasecmp(at, INVITE_HOSTS[i], len)) {
+      at += len;
+      linked = true;
+    }
+  }
+
+  if (!linked && at != text) {
+    return nullptr;
+  }
+
+  size_t len = 0;
+
+  while ((at[len] >= 'a' && at[len] <= 'z') ||
+         (at[len] >= 'A' && at[len] <= 'Z') ||
+         (at[len] >= '0' && at[len] <= '9') || at[len] == '-') {
+    len++;
+  }
+
+  bool ends = at[len] == 0 ||
+              (linked && (at[len] == '/' || at[len] == '?' || at[len] == '#'));
+
+  return len && ends ? str_dup_n(at, len) : nullptr;
+}
+
+static void join_fail(Session *s, const ApiResponse *res) {
+  s->joining = false;
+  str_set(&s->join_error,
+          res->status == 404 || res->error.code == 10006
+            ? "The invite is invalid or has expired."
+            : res->error.message);
+  changed(s);
+}
+
+static void on_invite_accepted(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (s->join_code == nullptr) {
+    return;
+  }
+
+  if (res->captcha != nullptr) {
+    clear_join_captcha(s);
+    s->join_captcha = (SessionCaptcha){
+      .service = str_dup(res->captcha->service),
+      .sitekey = str_dup(res->captcha->sitekey),
+      .rqdata = str_dup(res->captcha->rqdata),
+      .session_id = str_dup(res->captcha->session_id),
+      .rqtoken = str_dup(res->captcha->rqtoken),
+      .serve_invisible = res->captcha->serve_invisible,
+    };
+    s->joining = false;
+    changed(s);
+    return;
+  }
+
+  if (!res->ok) {
+    join_fail(s, res);
+    return;
+  }
+
+  // the guild itself comes through the gateway's GUILD_CREATE, or is there
+  // already for a member.
+  Snowflake guild_id = snowflake_of(json_get(json_get(res->json, "guild"),
+                                             "id"));
+
+  clear_join(s);
+  s->guild_created = guild_id;
+  s->joined = true;
+  changed(s);
+}
+
+static void accept_invite(Session *s, const ApiCaptchaSolution *captcha) {
+  char path[160];
+  cima_json_writer w = {};
+  const char *session_id =
+    s->gateway != nullptr ? gateway_session_id(s->gateway) : nullptr;
+
+  json_begin_object(&w);
+
+  if (session_id != nullptr) {
+    json_field(&w, "session_id", session_id);
+  }
+
+  json_end_object(&w);
+  snprintf(path, sizeof path, "/invites/%s", s->join_code);
+  s->joining = true;
+  api_request(s->api,
+              &(ApiRequest){.method = "POST",
+                            .path = path,
+                            .route = "/invites/:code",
+                            .body = cima_json_writer_text(&w),
+                            .captcha = captcha,
+                            .context = s->join_context[0] ? s->join_context
+                                                       : nullptr},
+              on_invite_accepted, call_new(s, 0, 0));
+  cima_json_writer_dispose(&w);
+}
+
+static void on_invite_resolved(void *ctx, const ApiResponse *res) {
+  Call *call = ctx;
+
+  if (call_stale(call)) {
+    return;
+  }
+
+  Session *s = call->s;
+
+  call_end(call);
+
+  if (s->join_code == nullptr) {
+    return;
+  }
+
+  if (!res->ok) {
+    join_fail(s, res);
+    return;
+  }
+
+  // where the client says the join comes from: its dialog, with what the
+  // invite leads to.
+  const cima_json *channel = json_get(res->json, "channel");
+  Snowflake guild_id = snowflake_of(json_get(json_get(res->json, "guild"),
+                                             "id"));
+  Snowflake channel_id = snowflake_of(json_get(channel, "id"));
+  char guild[21], room[21];
+
+  snowflake_format(guild_id, guild);
+  snowflake_format(channel_id, room);
+  snprintf(s->join_context, sizeof s->join_context,
+           "{\"location\":\"Join Guild\",\"location_guild_id\":\"%s\","
+           "\"location_channel_id\":\"%s\",\"location_channel_type\":%d}",
+           guild, room, (int)json_get_or(channel, "type", 0));
+  accept_invite(s, nullptr);
+}
+
+void session_join_invite(Session *s, const char *invite) {
+  if (s->joining || invite == nullptr) {
+    return;
+  }
+
+  clear_join(s);
+  s->join_code = invite_code_of(invite);
+
+  if (s->join_code == nullptr) {
+    str_set(&s->join_error, "Please enter a valid invite link or invite code.");
+  }
+  else if (!online(s)) {
+    str_set(&s->join_error, "Joining a server needs a connection.");
+    str_set(&s->join_code, nullptr);
+  }
+  else {
+    char path[192];
+
+    snprintf(path, sizeof path,
+             "/invites/%s?inputValue=%s&with_counts=true"
+             "&with_expiration=true",
+             s->join_code, s->join_code);
+    s->joining = true;
+    api_request(s->api,
+                &(ApiRequest){.method = "GET",
+                              .path = path,
+                              .route = "/invites/:code"},
+                on_invite_resolved, call_new(s, 0, 0));
+  }
+
+  changed(s);
+}
+
+void session_join_invite_captcha(Session *s, const char *solution) {
+  if (s->join_captcha.service == nullptr || s->join_code == nullptr ||
+      solution == nullptr || !online(s)) {
+    return;
+  }
+
+  ApiCaptchaSolution solved = {
+    .key = solution,
+    .session_id = s->join_captcha.session_id,
+    .rqtoken = s->join_captcha.rqtoken,
+  };
+
+  accept_invite(s, &solved);
+  clear_join_captcha(s);
+  changed(s);
+}
+
+void session_new_guild_clear(Session *s) {
+  if (s->joining || s->guild_creating) {
+    return;
+  }
+
+  if (s->join_error != nullptr || s->join_captcha.service != nullptr ||
+      s->joined || s->guild_error != nullptr) {
+    clear_join(s);
+    s->joined = false;
+    str_set(&s->guild_error, nullptr);
+    changed(s);
+  }
 }
 
 void session_set_status(Session *s, UserStatus status, bool invisible,

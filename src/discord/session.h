@@ -354,13 +354,25 @@ struct Session {
   char *invite_code, *invite_error;
   bool invite_loading;
   // the guild session_create_guild asked for: on its way, why it failed, or
-  // its id once discord made it. the ui takes the id and zeroes it.
+  // its id once discord made it, or once session_join_invite joined it. the
+  // ui takes the id and zeroes it.
   bool guild_creating;
   char *guild_error;
   Snowflake guild_created;
   // the tag session_wear_tag puts on: on its way, or why it failed.
   bool tag_wearing;
   char *tag_error;
+  // the invite session_join_invite follows: its code, on its way, why it
+  // failed, and a challenge discord asks for, service null for none.
+  char *join_code;
+  bool joining;
+  char *join_error;
+  SessionCaptcha join_captcha;
+  // the join went through, for the ui to close its dialog and zero.
+  bool joined;
+  // what the join sends in X-Context-Properties once the invite resolved,
+  // empty before.
+  char join_context[192];
   // the friend request session_add_friend sent: on its way, then what to
   // tell of it, `friend_sent` saying whether it went through. a challenge
   // discord asks for waits in `friend_captcha`, service null for none.
@@ -668,10 +680,18 @@ void session_open_dm(Session *s, Snowflake user_id);
 // the same with several users: a new group dm, selected once it exists. one
 // user alone opens their dm.
 void session_open_group(Session *s, const Snowflake *user_ids, size_t count);
-// creates a guild named `name`, see `guild_created`.
-void session_create_guild(Session *s, const char *name);
+// creates a guild named `name` from one of `guild_templates`, its icon the
+// data uri `icon` or none for null. see `guild_created`.
+void session_create_guild(Session *s, const char *name, const char *icon,
+                          size_t template_index);
 // wears the tag of a guild, or none for 0. see `tag_wearing`.
 void session_wear_tag(Session *s, Snowflake guild_id);
+// joins the guild of an invite, its code or a link to it. see `joining`.
+void session_join_invite(Session *s, const char *invite);
+// the token of the challenge the join is held back by.
+void session_join_invite_captcha(Session *s, const char *solution);
+// forgets why the last creation or join failed, and any challenge.
+void session_new_guild_clear(Session *s);
 // a friend request to a username, or a legacy "name#0000" tag, with a note
 // of at most 120 characters, null or empty for none. see `friend_adding`.
 void session_add_friend(Session *s, const char *tag, const char *note);

@@ -126,6 +126,10 @@ void app_reset(App *app) {
   drop(&app->dm_search);
   drop(&app->pick_search);
   drop(&app->guild_name);
+  drop(&app->guild_icon);
+  drop(&app->guild_icon_error);
+  drop(&app->guild_invite);
+  app->new_guild_step = NEW_GUILD_START;
   drop(&app->menu_search);
   drop(&app->upload_name);
   drop(&app->upload_alt);
@@ -156,6 +160,7 @@ void app_reset(App *app) {
   app->friend_ready = false;
 
   captcha_drop(&app->friend_captcha);
+  captcha_drop(&app->join_captcha);
 
   drop(&app->directory_field);
   drop(&app->directory_query);

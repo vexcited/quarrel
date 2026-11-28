@@ -12,6 +12,7 @@
 #include <sys/utsname.h>
 #endif
 
+#include "discord/templates.h"
 #include "http.h"
 #include "platform/platform.h"
 
@@ -1583,23 +1584,40 @@ void api_create_invite(Api *api, Snowflake channel_id, uint32_t max_age,
   cima_json_writer_dispose(&w);
 }
 
-void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx) {
+void api_create_guild(Api *api, const char *name, const char *icon,
+                      size_t template_index, ApiDone done, void *ctx) {
   cima_json_writer w = {};
 
-  // what the client sends for "Create My Own", the code being the template
-  // its new servers start from.
   json_begin_object(&w);
   json_field(&w, "name", name);
-  json_field(&w, "icon", nullptr);
-  json_key(&w, "channels"), json_begin_array(&w), json_end_array(&w);
-  json_field(&w, "system_channel_id", nullptr);
-  json_field(&w, "guild_template_code", "2TffvPucqHkN");
+
+  if (icon != nullptr) {
+    json_field(&w, "icon", icon);
+  }
+  else {
+    json_field(&w, "icon", nullptr);
+  }
+
   json_end_object(&w);
 
-  ApiRequest req = {
-    .method = "POST", .path = "/guilds", .body = cima_json_writer_text(&w)};
-  api_request(api, &req, done, ctx);
+  // the name and icon, then the template's own fields.
+  const char *head = cima_json_writer_text(&w);
+  const char *rest = guild_templates[template_index].body;
+  size_t len = strlen(head);
+  char *body = malloc(len + strlen(rest) + 1);
+
+  if (body == nullptr) {
+    cilo_oom(len + strlen(rest) + 1);
+  }
+
+  memcpy(body, head, len - 1);
+  body[len - 1] = ',';
+  strcpy(body + len, rest);
   cima_json_writer_dispose(&w);
+
+  ApiRequest req = {.method = "POST", .path = "/guilds", .body = body};
+  api_request(api, &req, done, ctx);
+  free(body);
 }
 
 void api_send_friend_request(Api *api, const char *username,

@@ -1,1 +1,3 @@
-Taken from <https://archive.org/details/discord-sound-files-2024-12-25>.
+Mostly taken from <https://discord.com/app/assets/> and archives found online.
+
+Copyright Discord Inc.

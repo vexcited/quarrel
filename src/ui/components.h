@@ -18,9 +18,9 @@ void guild_icon(App *app, const Guild *guild, float size, bool lit);
 // the guilds under `anchor`, while the app shows POPOVER_GUILDS. a press on
 // `anchor` is left to what opened it.
 void guild_switcher(App *app, civue_rect anchor);
-// a name for a new guild, under `anchor`, while the app shows
+// the dialog creating or joining a server while the app shows
 // POPOVER_NEW_GUILD.
-void new_guild(App *app, civue_rect anchor);
+void new_guild(App *app);
 // the guild's banner, which scrolls with its channels. nothing when it has
 // none.
 void guild_banner(App *app, const Guild *guild);

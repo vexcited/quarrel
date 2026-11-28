@@ -276,8 +276,10 @@ void api_open_dm(Api *api, Snowflake user_id, ApiDone done, void *ctx);
 // creates a group dm with these users. the answer is the channel.
 void api_open_group(Api *api, const Snowflake *user_ids, size_t count,
                     ApiDone done, void *ctx);
-// creates a guild from discord's default template. the answer is the guild.
-void api_create_guild(Api *api, const char *name, ApiDone done, void *ctx);
+// creates a guild from one of `guild_templates`, `icon` a data uri or null.
+// the answer is the guild.
+void api_create_guild(Api *api, const char *name, const char *icon,
+                      size_t template_index, ApiDone done, void *ctx);
 
 /* ========================================================================== */
 /* relationships.                                                             */

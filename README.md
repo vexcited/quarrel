@@ -55,4 +55,4 @@ Quarrel is licensed under the [GPL-3.0](LICENSE).
 
 - The Unicode emoji are [Twemoji](https://github.com/jdecked/twemoji), its graphics licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - The sounds of the Fluxer pack are [Fluxer](https://github.com/fluxerapp/fluxer)'s, copyright Fluxer Platform AB, licensed under the [AGPL-3.0](assets/fluxer/LICENSE). See [assets/fluxer](assets/fluxer/README.md).
-- The sounds of the Discord pack are Discord's, see [assets/discord](assets/discord/README.md).
+- Discord's name and logo are trademarks of Discord Inc. Its sounds, server template icons and server tag badges are copyright Discord Inc., see [assets/discord](assets/discord/README.md). Quarrel is not affiliated with or endorsed by Discord.
