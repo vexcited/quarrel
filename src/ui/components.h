@@ -248,6 +248,8 @@ void discovery_gradient(const Look *k, civue_rect r);
 // the servers anyone may find, in place of the friends while the app is
 // `exploring`.
 void explore_page(App *app);
+// the ways around it, in place of the conversations in the sidebar.
+void explore_nav(App *app);
 // shows them.
 void explore_open(App *app);
 // opens the server asked for from the page once it came, and stops looking

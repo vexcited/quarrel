@@ -410,6 +410,7 @@ int main() {
   free(app.directory_field);
   free(app.directory_query);
   free(app.explore_field);
+  free(app.explore_language_search);
   apps_ui_free(&app);
   authorize_free(&app);
   free(app.new_server_name);

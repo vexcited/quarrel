@@ -1,5 +1,6 @@
 #include "components.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdcountof.h>
 #include <stdio.h>
@@ -12,86 +13,65 @@
 #include "explore.h"
 #include "widgets.h"
 
-// discord's sizes for its discovery.
-constexpr float CARD_HEIGHT = 320;
-constexpr float CARD_MIN = 280;
-constexpr float SPLASH_HEIGHT = 146;
-constexpr float ICON_SIZE = 48;
-constexpr float SEARCH_WIDTH = 240;
+// sizes after fluxer's cards: a splash, a round icon cut into it, the
+// name, four lines of description and the counts under a line.
+constexpr float CARD_HEIGHT = 336;
+constexpr float CARD_MIN = 300;
+constexpr float SPLASH_HEIGHT = 120;
+constexpr float ICON_SIZE = 64;
+constexpr float ICON_RING = 4;
+constexpr float DESCRIPTION_LINE = 20;
+constexpr float SEARCH_WIDTH = 220;
+constexpr float LANGUAGES_WIDTH = 300;
 // the next results are asked for this close to the end of the list.
 constexpr float MORE_AT = 240;
-// the tab after discord's lists: the hubs the user is in.
-constexpr uint8_t EXPLORE_HUBS = DISCOVERY_TABS;
 
-// what each tab says, as the client words it. its banners are in capitals.
-static const struct {
-  const char *label, *title, *about, *heading;
-} TABS[] = {
-  [DISCOVERY_FEATURED] = {"Home", "FIND YOUR COMMUNITY ON DISCORD",
-                          "From gaming, to music, to learning, there's a "
-                          "place for you.",
-                          "Featured Servers"},
-  [DISCOVERY_GAMING] = {"Gaming", "GAMING",
-                        "Get updates, connect with developers, and chat with "
-                        "other players.",
-                        "Popular Gaming Servers"},
-  [DISCOVERY_MUSIC] = {"Music", "MUSIC",
-                       "Get updates, connect with artists, and chat with "
-                       "other music fans.",
-                       "Popular Music Servers"},
-  [DISCOVERY_ENTERTAINMENT] = {"Entertainment", "ENTERTAINMENT",
-                               "Connect with your favorite creators and their "
-                               "fans.",
-                               "Popular Entertainment Servers"},
-  [DISCOVERY_TECH] = {"Science & Tech", "SCIENCE & TECH",
-                      "Connect with developers, aficionados, and technology "
-                      "brands.",
-                      "Popular Science & Tech Servers"},
-  [DISCOVERY_EDUCATION] = {"Education", "EDUCATION",
-                           "Connect with students, teachers, and learning "
-                           "centers.",
-                           "Popular Education Servers"},
-  [EXPLORE_HUBS] = {"Student Hubs", "JOIN THE STUDENT HUB FOR YOUR SCHOOL",
-                    "Meet classmates from your school, discover communities, "
-                    "and share your servers.",
-                    "Your Hubs"},
+// the client's tabs, as pills over the cards.
+static const char *const TABS[DISCOVERY_TABS] = {
+  [DISCOVERY_FEATURED] = "Featured",
+  [DISCOVERY_GAMING] = "Gaming",
+  [DISCOVERY_MUSIC] = "Music",
+  [DISCOVERY_ENTERTAINMENT] = "Entertainment",
+  [DISCOVERY_TECH] = "Science & Tech",
+  [DISCOVERY_EDUCATION] = "Education",
 };
 
-// the languages the client offers a search, by the code discord takes.
+// the languages the client offers a search, by the code discord takes,
+// and as their speakers write them.
 static const struct {
-  const char *code, *name;
+  const char *code, *name, *native;
 } LANGUAGES[] = {
-  {"", "All Languages"},
-  {"en-US", "English"},
-  {"bg", "Bulgarian"},
-  {"zh-CN", "Chinese, Simplified"},
-  {"zh-TW", "Chinese, Traditional"},
-  {"hr", "Croatian"},
-  {"cs", "Czech"},
-  {"da", "Danish"},
-  {"nl", "Dutch"},
-  {"fi", "Finnish"},
-  {"fr", "French"},
-  {"de", "German"},
-  {"el", "Greek"},
-  {"hi", "Hindi"},
-  {"hu", "Hungarian"},
-  {"it", "Italian"},
-  {"ja", "Japanese"},
-  {"ko", "Korean"},
-  {"lt", "Lithuanian"},
-  {"no", "Norwegian"},
-  {"pl", "Polish"},
-  {"pt-BR", "Portuguese, Brazilian"},
-  {"ro", "Romanian"},
-  {"ru", "Russian"},
-  {"es-ES", "Spanish"},
-  {"es-419", "Spanish, LATAM"},
-  {"sv-SE", "Swedish"},
-  {"th", "Thai"},
-  {"tr", "Turkish"},
-  {"uk", "Ukrainian"},
-  {"vi", "Vietnamese"},
+  {"", "All languages", nullptr},
+  {"bg", "Bulgarian", "Български"},
+  {"zh-CN", "Chinese, Simplified", "简体中文"},
+  {"zh-TW", "Chinese, Traditional", "繁體中文"},
+  {"hr", "Croatian", "Hrvatski"},
+  {"cs", "Czech", "Čeština"},
+  {"da", "Danish", "Dansk"},
+  {"nl", "Dutch", "Nederlands"},
+  {"en-US", "English", nullptr},
+  {"fi", "Finnish", "Suomi"},
+  {"fr", "French", "Français"},
+  {"de", "German", "Deutsch"},
+  {"el", "Greek", "Ελληνικά"},
+  {"hi", "Hindi", "हिन्दी"},
+  {"hu", "Hungarian", "Magyar"},
+  {"it", "Italian", "Italiano"},
+  {"ja", "Japanese", "日本語"},
+  {"ko", "Korean", "한국어"},
+  {"lt", "Lithuanian", "Lietuvių"},
+  {"no", "Norwegian", "Norsk"},
+  {"pl", "Polish", "Polski"},
+  {"pt-BR", "Portuguese, Brazilian", "Português do Brasil"},
+  {"ro", "Romanian", "Română"},
+  {"ru", "Russian", "Русский"},
+  {"es-ES", "Spanish", "Español"},
+  {"es-419", "Spanish, LATAM", "Español, LATAM"},
+  {"sv-SE", "Swedish", "Svenska"},
+  {"th", "Thai", "ไทย"},
+  {"tr", "Turkish", "Türkçe"},
+  {"uk", "Ukrainian", "Українська"},
+  {"vi", "Vietnamese", "Tiếng Việt"},
 };
 
 // what a card shows of a server, discoverable or one of the store's.
@@ -101,6 +81,39 @@ typedef struct {
   uint32_t member_count, presence_count;
   bool counted, verified, partnered;
 } Card;
+
+static bool blank(const char *s) {
+  while (s && *s == ' ') {
+    s++;
+  }
+
+  return !s || !*s;
+}
+
+static void drop(char **text) {
+  free(*text);
+  *text = nullptr;
+}
+
+// whether `words` are in `text`, the case of ascii letters aside.
+static bool has_words(const char *text, const char *words) {
+  size_t len = strlen(words);
+
+  for (; text && *text; text++) {
+    size_t i = 0;
+
+    while (i < len && tolower((unsigned char)text[i]) ==
+                        tolower((unsigned char)words[i])) {
+      i++;
+    }
+
+    if (i == len) {
+      return true;
+    }
+  }
+
+  return len == 0;
+}
 
 /* ========================================================================== */
 /* pieces.                                                                    */
@@ -145,10 +158,10 @@ void explore_spinner(civue_color color, float size) {
 }
 
 static void count_dot(const Look *k, civue_color color, const char *label) {
-  div(flex, items_center, min_w(0), mr(4)) {
-    div(size(2), mr(1), flex_shrink_0, rounded(full), bg(color)) {}
-    text(label, min_w(0), truncate, text_size(px(12)), line_height(px(16)),
-         text_color(k->text));
+  div(flex, items_center, gap(px(6)), min_w(0)) {
+    div(size(2), flex_shrink_0, rounded(full), bg(color)) {}
+    text(label, min_w(0), truncate, text_size(px(13)), line_height(px(16)),
+         font_weight(medium), text_color(k->subtle));
   }
 }
 
@@ -221,8 +234,7 @@ static bool outlined(const Look *k, civue_id id, const char *label,
   div(key(id), flex, items_center, gap(1), flex_shrink_0, h(6), px(2),
       rounded(md), border(1), border_color(k->on_primary),
       hover(bg(civue_alpha(k->on_primary, .15f))),
-      active(bg(civue_alpha(k->on_primary, .25f))),
-      font_weight(medium),
+      active(bg(civue_alpha(k->on_primary, .25f))), font_weight(medium),
       style(.cursor = enabled ? CIVUE_CURSOR_POINTER : CIVUE_CURSOR_DEFAULT,
             .has_cursor = true)) {
     pressed = button().activated && enabled;
@@ -291,7 +303,7 @@ static void card_icon(App *app, const Card *c) {
 
   cdn_guild_icon(url, c->id, c->icon, (uint32_t)(ICON_SIZE * 2));
 
-  if (*url && image_fill(app, url, ICON_SIZE * .3f)) {
+  if (*url && image_fill(app, url, ICON_SIZE / 2)) {
     return;
   }
 
@@ -301,11 +313,11 @@ static void card_icon(App *app, const Card *c) {
 
   // a long name's letters are made small enough to stay in.
   size_t letters = strlen(acronym);
-  float size = letters > 4 ? 9 : letters > 2 ? 12 : 16;
+  float size = letters > 4 ? 14 : letters > 2 ? 18 : 24;
 
-  fill(here(), k->surface_high, ICON_SIZE * .3f);
-  text(acronym, text_size(px(size)), font_weight(medium), text_color(k->text),
-       whitespace_nowrap);
+  fill(here(), k->surface_high, ICON_SIZE / 2);
+  text(acronym, text_size(px(size)), font_weight(semibold),
+       text_color(k->strong), whitespace_nowrap);
 }
 
 static void server_card(App *app, const Card *c) {
@@ -315,7 +327,7 @@ static void server_card(App *app, const Card *c) {
   char url[CDN_URL_MAX], online[48], members[48], count[24];
 
   div(key(id_at(id("explore-card"), c->id)), relative, flex, flex_col,
-      h(px(CARD_HEIGHT)), min_w(0), rounded(lg), border(1),
+      h(px(CARD_HEIGHT)), min_w(0), rounded(xl), border(1),
       border_color(k->border), bg(k->surface),
       hover(border_color(k->border_strong)), overflow_hidden,
       style(.cursor = opening ? CIVUE_CURSOR_DEFAULT : CIVUE_CURSOR_POINTER,
@@ -324,56 +336,57 @@ static void server_card(App *app, const Card *c) {
       explore_open_guild(app, c->id, PREVIEW_FROM_DISCOVERY);
     }
 
-    div(flex_shrink_0, h(px(SPLASH_HEIGHT)), bg(k->hover)) {
-      cdn_discovery_splash(url, c->id, c->splash, 600);
+    div(flex_shrink_0, h(px(SPLASH_HEIGHT)), bg(k->surface_high)) {
+      cdn_discovery_splash(url, c->id, c->splash, 1024);
 
       if (*url) {
         image_cover(app, url, 0);
       }
     }
 
-    // the icon sits 26 points under the picture, in a mask of the card's
-    // color.
-    div(absolute, left(px(12)), top(px(SPLASH_HEIGHT + 26 - ICON_SIZE - 8)),
-        size(px(ICON_SIZE + 8)), p(1), rounded(px(18)), bg(k->surface)) {
-      div(flex, items_center, justify_center, size(full), rounded(px(14)),
+    // half of the icon hangs over the splash, in a ring of the card's color.
+    div(absolute, left(px(16)),
+        top(px(SPLASH_HEIGHT - ICON_SIZE / 2 - ICON_RING)),
+        size(px(ICON_SIZE + ICON_RING * 2)), p(px(ICON_RING)), rounded(full),
+        bg(k->surface)) {
+      div(flex, items_center, justify_center, size(full), rounded(full),
           overflow_hidden) {
         card_icon(app, c);
       }
     }
 
-    div(flex, flex_col, flex_1, min_h(0), pt(px(28)), px(4), pb(4)) {
+    div(flex, flex_col, flex_1, min_h(0), pt(px(ICON_SIZE / 2 + 12)), px(4)) {
       div(flex, items_center, gap(1), flex_shrink_0, min_w(0)) {
         if (c->verified) {
-          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->positive);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 18, k->positive);
         }
         else if (c->partnered) {
-          glyph(CIVUE_ICON(mingcute, certificate_fill), 16, k->accent_text);
+          glyph(CIVUE_ICON(mingcute, certificate_fill), 18, k->accent_text);
         }
 
-        text(c->name ? c->name : "", min_w(0), truncate, text_size(px(16)),
-             line_height(px(20)), font_weight(semibold), text_color(k->strong));
+        text(c->name ? c->name : "", min_w(0), truncate, text_size(px(17)),
+             line_height(px(22)), font_weight(bold), text_color(k->strong));
       }
 
-      // three lines of it at most.
-      div(flex_shrink_0, max_h(px(54)), mt(1), overflow_hidden) {
+      // four lines of it at most.
+      div(flex_shrink_0, max_h(px(DESCRIPTION_LINE * 4)), mt(2),
+          overflow_hidden) {
         text(c->description ? c->description : "", text_size(px(14)),
-             line_height(px(18)), text_color(k->text));
+             line_height(px(DESCRIPTION_LINE)), text_color(k->text));
       }
+    }
 
-      div(flex_1, min_h(4)) {}
+    if (c->counted) {
+      explore_count(c->presence_count, count, sizeof count);
+      snprintf(online, sizeof online, "%s online", count);
+      explore_count(c->member_count, count, sizeof count);
+      snprintf(members, sizeof members, "%s member%s", count,
+               c->member_count == 1 ? "" : "s");
 
-      if (c->counted) {
-        explore_count(c->presence_count, count, sizeof count);
-        snprintf(online, sizeof online, "%s Online", count);
-        explore_count(c->member_count, count, sizeof count);
-        snprintf(members, sizeof members, "%s Member%s", count,
-                 c->member_count == 1 ? "" : "s");
-
-        div(flex, items_center, flex_shrink_0, min_w(0)) {
-          count_dot(k, k->online, online);
-          count_dot(k, k->offline, members);
-        }
+      div(flex, items_center, gap(4), flex_shrink_0, h(11), px(4), border_t(1),
+          border_color(k->border)) {
+        count_dot(k, k->online, online);
+        count_dot(k, k->offline, members);
       }
     }
 
@@ -426,10 +439,10 @@ void explore_keep_width(civue_id list) {
   }
 }
 
-// cards as many to a row as fit, discord's grid.
+// cards as many to a row as fit.
 static void card_grid(App *app, civue_id list, const DiscoveryList *guilds) {
   div(key(list), grid, grid_cols(explore_columns(list, CARD_MIN)), gap(4),
-      py(4), w(full)) {
+      w(full)) {
     explore_keep_width(list);
 
     for (size_t i = 0; i < guilds->nguilds; i++) {
@@ -441,12 +454,63 @@ static void card_grid(App *app, civue_id list, const DiscoveryList *guilds) {
 }
 
 /* ========================================================================== */
-/* the header, its tabs and its search.                                       */
+/* the sidebar's ways around the page.                                        */
+/* ========================================================================== */
+
+static void nav_row(App *app, civue_id id, civue_icon glyph_icon,
+                    const char *label, ExploreMode mode) {
+  const Look *k = &app->look;
+  bool on = app->explore_mode == mode;
+
+  div(key(id), flex, items_center, gap(3), flex_shrink_0, h(10), mx(2), px(2),
+      rounded(lg), text_size(px(14)), line_height(px(18)),
+      text_color(on ? k->strong : k->subtle),
+      style(.bg = on ? k->selected : CIVUE_CLEAR),
+      hover(bg(on ? k->selected : k->hover), text_color(k->strong)),
+      cursor_pointer) {
+    if (button().activated) {
+      app->explore_mode = mode;
+    }
+
+    div(flex, items_center, justify_center, size(8), flex_shrink_0) {
+      glyph(glyph_icon, 20, on ? k->strong : k->subtle);
+    }
+
+    text(label, flex_1, min_w(0), truncate, font_weight(semibold));
+  }
+}
+
+void explore_nav(App *app) {
+  const Look *k = &app->look;
+
+  div(flex, items_center, gap(2), flex_shrink_0, h(12), pl(3), pr(2)) {
+    window_handle(id("explore-nav-head"));
+
+    div(flex, items_center, justify_center, size(6), flex_shrink_0, rounded(md),
+        bg(civue_alpha(k->primary, .2f))) {
+      glyph(CIVUE_ICON(mingcute, compass_fill), 14, k->primary);
+    }
+
+    text("Explore", min_w(0), truncate, text_size(px(15)), line_height(px(20)),
+         font_weight(semibold), text_color(k->strong));
+  }
+
+  div(flex, flex_col, gap(px(2)), flex_shrink_0) {
+    nav_row(app, id("explore-nav-servers"), CIVUE_ICON(mingcute, group_3_fill),
+            "Servers", EXPLORE_SERVERS);
+    nav_row(app, id("explore-nav-apps"), CIVUE_ICON(mingcute, app_window_fill),
+            "Apps", EXPLORE_APPS);
+    nav_row(app, id("explore-nav-hubs"), CIVUE_ICON(mingcute, mortarboard_fill),
+            "Student Hubs", EXPLORE_HUBS);
+  }
+}
+
+/* ========================================================================== */
+/* the header: its pills, its search and the language of a search.            */
 /* ========================================================================== */
 
 static void end_search(App *app, Discovery *d) {
-  free(app->explore_field);
-  app->explore_field = nullptr;
+  drop(&app->explore_field);
   discovery_search(d, nullptr);
 
   if (app->popover == POPOVER_EXPLORE_LANGUAGE) {
@@ -454,169 +518,307 @@ static void end_search(App *app, Discovery *d) {
   }
 }
 
-bool explore_search(App *app, civue_id id, char **field) {
+ExploreSearch explore_search(App *app, civue_id id, char **field, bool active) {
   const Look *k = &app->look;
-  civue_field_look look = field_look(k);
-  bool submitted = false;
+  civue_id input = id_in(id, "field");
+  bool focused = civue_ui_current()->focus == input;
+  ExploreSearch asked = EXPLORE_SEARCH_NONE;
 
-  look.pad = 10;
+  div(key(id), flex, items_center, gap(2), flex_shrink_0, w(px(SEARCH_WIDTH)),
+      h(9), pl(3), pr(1), rounded(lg), bg(k->field), border(1),
+      border_color(focused ? k->ring : k->border_strong), text_size(px(14)),
+      line_height(px(18))) {
+    icon(mingcute, search_fill, size(4), flex_shrink_0, text_color(k->faint));
 
-  div(key(id), relative, flex_shrink_0, w(px(SEARCH_WIDTH)), h(8),
-      text_size(px(14)), line_height(px(18))) {
-    submitted = text_field(field, "Search", look).submitted;
+    div(key(input), flex_1, min_w(0), h(full)) {
+      civue_field_look look = {
+        .editing = {.text = k->strong},
+        .idle = {.text = k->text},
+        .hovered = {.text = k->text},
+        .placeholder = k->faint,
+        .selection = k->selection,
+      };
 
-    civue_rect r = here();
-    civue_icon_centered(
-      civue_ui_current(), CIVUE_ICON(mingcute, search_fill),
-      xywh((float)r.x1 - 30, (float)r.y0, 24, (float)civue_rect_h(r)), 16,
-      k->faint);
+      // discord searches on enter, never as the user types.
+      if (text_field(field, "Search", look).submitted) {
+        asked = !blank(*field) ? EXPLORE_SEARCH_SUBMIT
+                : active       ? EXPLORE_SEARCH_CLEAR
+                               : EXPLORE_SEARCH_NONE;
+      }
+    }
+
+    if ((active || !blank(*field)) &&
+        icon_button(app, id_in(id, "clear"), CIVUE_ICON(mingcute, close_fill),
+                    26, 14, "Clear")) {
+      drop(field);
+      asked = EXPLORE_SEARCH_CLEAR;
+    }
   }
 
-  // discord searches on enter, never as the user types, and an empty field
-  // searches nothing.
-  const char *words = *field;
-
-  while (words && *words == ' ') {
-    words++;
-  }
-
-  return submitted && words && *words;
+  return asked;
 }
 
-static bool mode_tab(App *app, civue_id id, const char *label, bool on) {
+bool explore_pill(App *app, civue_id id, const char *label, int64_t count,
+                  bool on) {
   const Look *k = &app->look;
   bool pressed = false;
+  char found[24];
 
-  div(key(id), flex, items_center, flex_shrink_0, h(8), px(3), rounded(lg),
-      style(.bg = on ? k->selected : CIVUE_CLEAR),
-      hover(bg(on ? k->selected : k->hover)), font_weight(semibold),
+  div(key(id), flex, items_center, gap(2), flex_shrink_0, h(9), px(3),
+      rounded(lg), style(.bg = on ? k->selected : CIVUE_CLEAR),
+      hover(bg(on ? k->selected : k->hover), text_color(k->strong)),
+      text_size(px(14)), line_height(px(18)), font_weight(semibold),
       text_color(on ? k->strong : k->subtle), cursor_pointer) {
     pressed = button().activated && !on;
     text(label, whitespace_nowrap);
+
+    if (count >= 0) {
+      explore_count((uint32_t)count, found, sizeof found);
+      text(found, whitespace_nowrap, text_size(px(12)), line_height(px(16)),
+           font_weight(medium), text_color(k->faint));
+    }
   }
 
   return pressed;
 }
 
-void explore_modes(App *app) {
-  const Look *k = &app->look;
-
-  icon(mingcute, compass_fill, size(5), flex_shrink_0, mr(1), text_color(k->faint));
-
-  if (mode_tab(app, id("explore-mode-servers"), "Servers",
-               app->explore_mode == EXPLORE_SERVERS)) {
-    app->explore_mode = EXPLORE_SERVERS;
-  }
-
-  if (mode_tab(app, id("explore-mode-apps"), "Apps",
-               app->explore_mode == EXPLORE_APPS)) {
-    app->explore_mode = EXPLORE_APPS;
-  }
-
-  div(flex_1, min_w(0)) {}
+void explore_heading(const Look *k, const char *label) {
+  text(label, flex_shrink_0, mb(4), text_size(px(18)), line_height(px(22)),
+       font_weight(bold), text_color(k->strong));
 }
 
-static void header(App *app, Discovery *d) {
-  const Look *k = &app->look;
+static const char *category_name(const Discovery *d, int32_t id) {
+  const char *name =
+    id == DISCOVERY_ALL ? "All" : discovery_category_name(d, id);
 
-  div(flex, items_center, gap(2), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
-      border_b(1), border_color(k->border)) {
-    window_handle(id("explore-header"));
+  return name ? name : "";
+}
 
-    if (d->query) {
-      char title[160];
+static const char *language_name(const Discovery *d) {
+  for (size_t i = 0; i < countof(LANGUAGES); i++) {
+    if (strcmp(LANGUAGES[i].code, d->language) == 0) {
+      return LANGUAGES[i].name;
+    }
+  }
 
-      snprintf(title, sizeof title, "Search results for \"%s\"", d->query);
+  return LANGUAGES[0].name;
+}
 
-      if (icon_button(app, id("explore-back"), CIVUE_ICON(mingcute, arrow_left_fill),
-                      32, 20, "Back")) {
-        end_search(app, d);
+// the client's tabs, or the categories a search found its servers in.
+static void pills(App *app, Discovery *d) {
+  civue_ui *ui = civue_ui_current();
+
+  explore_pills(app, id("explore-pills")) {
+    if (d->query && !d->ncounts) {
+      explore_pill(app, id("explore-category-all"), "All", -1, true);
+    }
+
+    for (size_t i = 0; d->query && i < d->ncounts; i++) {
+      const DiscoveryCount *c = &d->counts[i];
+
+      if (explore_pill(
+            app, id_at(id("explore-category"), (uint64_t)(c->id + 2)),
+            category_name(d, c->id), c->count, d->category == c->id)) {
+        discovery_search_category(d, c->id);
+        civue_set_scroll_y(ui, id("explore-results"), 0);
       }
-
-      text(title, flex_1, min_w(0), truncate, font_weight(semibold),
-           text_color(k->strong));
-    }
-    else {
-      explore_modes(app);
     }
 
-    // the hubs are no part of what discord searches.
-    if ((d->query || app->explore_tab != EXPLORE_HUBS) &&
-        explore_search(app, id("explore-search"), &app->explore_field)) {
-      discovery_search(d, app->explore_field);
-      civue_set_scroll_y(civue_ui_current(), id("explore-results"), 0);
-    }
-
-    header_end(app);
-  }
-}
-
-void explore_banner(const Look *k, const char *title, const char *second,
-                    const char *about) {
-  div(key(id("explore-banner")), relative, flex, flex_col, justify_center,
-      flex_shrink_0, min_h(px(200)), px(8), py(8), rounded(lg),
-      overflow_hidden) {
-    discovery_gradient(k, here());
-
-    text(title, max_w(px(740)), text_size(px(32)), line_height(px(38)),
-         font_weight(extrabold), text_color(k->strong));
-
-    if (second) {
-      text(second, max_w(px(740)), text_size(px(32)), line_height(px(38)),
-           font_weight(extrabold), text_color(k->strong));
-    }
-
-    text(about, max_w(px(600)), mt(3), text_size(px(16)), line_height(px(20)),
-         font_weight(medium), text_color(k->strong));
-  }
-}
-
-static void banner(const Look *k, uint8_t tab) {
-  explore_banner(k, TABS[tab].title, nullptr, TABS[tab].about);
-}
-
-bool explore_tab(App *app, civue_id id, const char *label, bool on) {
-  const Look *k = &app->look;
-  bool pressed = false;
-
-  div(key(id), relative, flex_shrink_0, mr(8), pb(4), text_size(px(16)),
-      line_height(px(20)), font_weight(medium),
-      text_color(on ? k->strong : k->subtle),
-      hover(text_color(on ? k->strong : k->text)), cursor_pointer) {
-    pressed = button().activated;
-    text(label, whitespace_nowrap);
-
-    if (on) {
-      civue_rect r = here();
-      fill(xywh((float)r.x0, (float)r.y1, (float)civue_rect_w(r), 2), k->primary,
-           1);
-    }
-  }
-
-  return pressed;
-}
-
-static void tabs(App *app) {
-  const Look *k = &app->look;
-
-  div(key(id("explore-tabs")), flex, flex_wrap, flex_shrink_0, mt(5),
-      border_b(2), border_color(k->border)) {
-    for (uint8_t i = 0; i <= EXPLORE_HUBS; i++) {
-      if (explore_tab(app, id_at(id("explore-tab"), i), TABS[i].label,
-                      app->explore_tab == i)) {
+    for (uint8_t i = 0; !d->query && i < DISCOVERY_TABS; i++) {
+      if (explore_pill(app, id_at(id("explore-tab"), i), TABS[i], -1,
+                       app->explore_tab == i)) {
         app->explore_tab = i;
       }
     }
   }
 }
 
-void explore_heading(const Look *k, const char *label) {
-  text(label, mt(5), text_size(px(20)), line_height(px(24)),
-       font_weight(semibold), text_color(k->strong));
+// what keeps a search to a language, as fluxer's.
+static void language_button(App *app, Discovery *d) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  civue_id id = id("explore-language");
+  bool open = app->popover == POPOVER_EXPLORE_LANGUAGE;
+  bool kept = *d->language != 0;
+
+  div(key(id), relative, flex, items_center, justify_center, size(9),
+      flex_shrink_0, rounded(lg),
+      text_color(open || kept ? k->strong : k->subtle),
+      style(.bg = open ? k->hover : CIVUE_CLEAR),
+      hover(bg(k->hover), text_color(k->strong)), cursor_pointer) {
+    civue_button_state state = button();
+    civue_rect r = here();
+
+    app->explore_anchor = r;
+
+    if (state.activated) {
+      app_toggle(app, POPOVER_EXPLORE_LANGUAGE);
+      drop(&app->explore_language_search);
+
+      if (app->popover == POPOVER_EXPLORE_LANGUAGE) {
+        ui->focus = id("explore-language-search");
+      }
+    }
+
+    icon(mingcute, translate_2_fill, size(5));
+
+    if (kept) {
+      fill(xywh((float)r.x1 - 10, (float)r.y0 + 5, 6, 6), k->primary, 3);
+    }
+
+    if (!open) {
+      hint(app, id, &state.response, language_name(d), CIVUE_TOOLTIP_BELOW);
+    }
+  }
+}
+
+static void header(App *app, Discovery *d) {
+  const Look *k = &app->look;
+
+  div(flex, items_center, gap(3), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
+      border_b(1), border_color(k->border)) {
+    window_handle(id("explore-header"));
+
+    if (app->explore_mode == EXPLORE_HUBS) {
+      icon(mingcute, mortarboard_fill, size(5), flex_shrink_0,
+           text_color(k->faint));
+      text("Student Hubs", flex_1, min_w(0), truncate, font_weight(semibold),
+           text_color(k->strong));
+    }
+    else {
+      pills(app, d);
+
+      switch (explore_search(app, id("explore-search"), &app->explore_field,
+                             d->query != nullptr)) {
+        case EXPLORE_SEARCH_SUBMIT:
+          discovery_search(d, app->explore_field);
+          civue_set_scroll_y(civue_ui_current(), id("explore-results"), 0);
+          break;
+        case EXPLORE_SEARCH_CLEAR:
+          end_search(app, d);
+          break;
+        case EXPLORE_SEARCH_NONE:
+          break;
+      }
+
+      // discord keeps only a search to a language.
+      if (d->query) {
+        language_button(app, d);
+      }
+    }
+
+    header_end(app);
+  }
+}
+
+// the languages under their button, found by either of their names.
+static void language_menu(App *app, Discovery *d) {
+  if (app->popover != POPOVER_EXPLORE_LANGUAGE) {
+    drop(&app->explore_language_search);
+    return;
+  }
+
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  civue_id field = id("explore-language-search");
+  civue_rect anchor = app->explore_anchor, room = overlay_room(), card = {};
+  float left = fmaxf((float)room.x0 + 8, (float)anchor.x1 - LANGUAGES_WIDTH);
+  float top = (float)anchor.y1 + 6;
+  float list = fminf(380, (float)room.y1 - top - 72);
+  const char *words = app->explore_language_search;
+  size_t shown = 0;
+
+  while (words && *words == ' ') {
+    words++;
+  }
+
+  overlay() {
+    div(key(id("explore-languages")), flex, flex_col, left(px(left)),
+        top(px(top)), w(px(LANGUAGES_WIDTH)), p(2), rounded(xl), bg(k->popover),
+        border(1), border_color(k->border_strong), shadow(lg),
+        text_size(px(14)), line_height(px(18)), text_color(k->text)) {
+      card = here();
+
+      div(flex, items_center, gap(2), flex_shrink_0, h(9), pl(3), pr(2), mb(2),
+          rounded(lg), bg(k->field), border(1),
+          border_color(ui->focus == field ? k->ring : k->border_strong)) {
+        icon(mingcute, search_fill, size(4), flex_shrink_0,
+             text_color(k->faint));
+
+        div(key(field), flex_1, min_w(0), h(full)) {
+          civue_field_look look = {
+            .editing = {.text = k->strong},
+            .idle = {.text = k->text},
+            .hovered = {.text = k->text},
+            .placeholder = k->faint,
+            .selection = k->selection,
+          };
+
+          text_field(&app->explore_language_search, "Search", look);
+        }
+      }
+
+      div(flex, flex_col, gap(px(2)), max_h(px(list)), overflow_y_scroll,
+          scrollbars(&app->thin_bars)) {
+        for (size_t i = 0; i < countof(LANGUAGES); i++) {
+          bool on = strcmp(LANGUAGES[i].code, d->language) == 0;
+          char label[96];
+
+          if (words && !has_words(LANGUAGES[i].name, words) &&
+              !has_words(LANGUAGES[i].native, words)) {
+            continue;
+          }
+
+          if (LANGUAGES[i].native) {
+            snprintf(label, sizeof label, "%s (%s)", LANGUAGES[i].name,
+                     LANGUAGES[i].native);
+          }
+          else {
+            snprintf(label, sizeof label, "%s", LANGUAGES[i].name);
+          }
+
+          shown++;
+
+          div(key(id_at(id("explore-language-row"), i)), flex, items_center,
+              gap(2), flex_shrink_0, h(9), px(2), rounded(md),
+              hover(bg(k->hover)), cursor_pointer) {
+            if (button().activated) {
+              discovery_search_language(d, LANGUAGES[i].code);
+              civue_set_scroll_y(ui, id("explore-results"), 0);
+              app->popover = POPOVER_NONE;
+            }
+
+            text(label, flex_1, min_w(0), truncate, font_weight(medium),
+                 text_color(k->strong));
+
+            if (on) {
+              div(flex, items_center, justify_center, size(5), flex_shrink_0,
+                  rounded(full), bg(k->primary)) {
+                glyph(CIVUE_ICON(mingcute, check_fill), 12, k->on_primary);
+              }
+            }
+          }
+        }
+
+        if (!shown) {
+          text("No language goes by that name.", px(2), py(2),
+               text_color(k->subtle));
+        }
+      }
+    }
+  }
+
+  bool outside = ui->input.pressed[0] && ui->input.has_mouse &&
+                 !civue_rect_contains(card, ui->input.mouse) &&
+                 !civue_rect_contains(anchor, ui->input.mouse);
+
+  if (outside || civue_key_pressed(ui, CIVUE_KEY_ESCAPE)) {
+    app->popover = POPOVER_NONE;
+  }
 }
 
 /* ========================================================================== */
-/* the tabs.                                                                  */
+/* the pages.                                                                 */
 /* ========================================================================== */
 
 static void listing(App *app, Discovery *d, DiscoveryTab which) {
@@ -625,12 +827,8 @@ static void listing(App *app, Discovery *d, DiscoveryTab which) {
 
   discovery_fetch(d, which);
 
-  banner(k, which);
-  tabs(app);
-  explore_heading(k, TABS[which].heading);
-
   if (list->nguilds) {
-    card_grid(app, id("explore-grid"), list);
+    card_grid(app, id_at(id("explore-grid"), which), list);
   }
   else if (list->error) {
     if (explore_trouble(app, id("explore-retry"), list->error, !d->offline)) {
@@ -643,8 +841,7 @@ static void listing(App *app, Discovery *d, DiscoveryTab which) {
     }
   }
   else {
-    text("Discord has no server to show here for now.", mt(4),
-         text_color(k->subtle));
+    text("Discord has no server to show here for now.", text_color(k->subtle));
   }
 }
 
@@ -653,7 +850,7 @@ static void hub_card(App *app, bool member) {
   const Look *k = &app->look;
 
   div(key(id("explore-hub-join")), flex, flex_col, h(px(CARD_HEIGHT)), min_w(0),
-      p(4), rounded(lg), border(1), border_color(k->border), bg(k->surface)) {
+      p(4), rounded(xl), border(1), border_color(k->border), bg(k->surface)) {
     div(flex, items_center, justify_center, size(12), flex_shrink_0,
         rounded(full), bg(k->primary)) {
       glyph(CIVUE_ICON(mingcute, mortarboard_fill), 24, k->on_primary);
@@ -662,12 +859,13 @@ static void hub_card(App *app, bool member) {
     text(member ? "Attend multiple schools?"
                 : "Find study groups, clubs, and friends in the Student Hub "
                   "for your school!",
-         mt(4), text_size(px(18)), line_height(px(22)), font_weight(semibold),
+         mt(4), text_size(px(17)), line_height(px(22)), font_weight(bold),
          text_color(k->strong));
     text(member ? "Join the Student Hub for any school you're attending."
                 : "Meet classmates from your school, discover communities, "
                   "and share your servers, all in one place.",
-         mt(2), text_size(px(14)), line_height(px(18)), text_color(k->text));
+         mt(2), text_size(px(14)), line_height(px(DESCRIPTION_LINE)),
+         text_color(k->text));
 
     div(flex_1, min_h(4)) {}
 
@@ -698,15 +896,12 @@ static void hubs(App *app) {
     }
   }
 
-  banner(k, EXPLORE_HUBS);
-  tabs(app);
-
   if (member) {
-    explore_heading(k, TABS[EXPLORE_HUBS].heading);
+    explore_heading(k, "Your Hubs");
   }
 
   div(key(list), grid, grid_cols(explore_columns(list, CARD_MIN)), gap(4),
-      py(4), w(full)) {
+      w(full)) {
     explore_keep_width(list);
 
     for (size_t i = 0; i < count; i++) {
@@ -729,152 +924,13 @@ static void hubs(App *app) {
     hub_card(app, member != 0);
   }
 
-  div(flex, flex_col, gap(1), mt(4), pt(4), border_t(1),
+  div(flex, flex_col, gap(1), mt(6), pt(4), border_t(1),
       border_color(k->border), text_size(px(14)), line_height(px(18)),
       font_weight(medium), text_color(k->subtle)) {
     text("Hubs are not affiliated with or managed by schools.");
     text("Servers listed in the school's Student Hub are run by students. "
          "Users do not need to be a member of a Student Hub to be invited to "
          "join a server listed there.");
-  }
-}
-
-/* ========================================================================== */
-/* a search: what it found, and the categories and the language it may keep  */
-/* to.                                                                        */
-/* ========================================================================== */
-
-static const char *category_name(const Discovery *d, int32_t id) {
-  const char *name =
-    id == DISCOVERY_ALL ? "All" : discovery_category_name(d, id);
-
-  return name ? name : "";
-}
-
-static const char *language_name(const Discovery *d) {
-  for (size_t i = 0; i < countof(LANGUAGES); i++) {
-    if (strcmp(LANGUAGES[i].code, d->language) == 0) {
-      return LANGUAGES[i].name;
-    }
-  }
-
-  return LANGUAGES[0].name;
-}
-
-// the languages, under the button that opened them.
-static void language_menu(App *app, Discovery *d) {
-  if (app->popover != POPOVER_EXPLORE_LANGUAGE) {
-    return;
-  }
-
-  const Look *k = &app->look;
-  civue_ui *ui = civue_ui_current();
-  civue_rect anchor = app->explore_anchor, room = overlay_room(), card = {};
-  float width = (float)civue_rect_w(anchor);
-  float top = (float)anchor.y1 + 4;
-  float height = fminf(360, (float)room.y1 - top);
-
-  overlay() {
-    div(key(id("explore-languages")), flex, flex_col, left(px(anchor.x0)),
-        top(px(top)), w(px(width)), max_h(px(height)), p(1), rounded(lg),
-        bg(k->popover), border(1), border_color(k->border_strong),
-        shadow(lg), overflow_y_scroll, scrollbars(&app->thin_bars),
-        text_size(px(14)), line_height(px(18)), text_color(k->text)) {
-      card = here();
-
-      for (size_t i = 0; i < countof(LANGUAGES); i++) {
-        bool on = strcmp(LANGUAGES[i].code, d->language) == 0;
-
-        div(key(id_at(id("explore-language"), i)), flex, items_center,
-            flex_shrink_0, h(8), px(2), rounded(md),
-            style(.bg = on ? k->selected : CIVUE_CLEAR),
-            hover(bg(on ? k->selected : k->hover)), cursor_pointer) {
-          if (button().activated) {
-            discovery_search_language(d, LANGUAGES[i].code);
-            civue_set_scroll_y(ui, id("explore-results"), 0);
-            app->popover = POPOVER_NONE;
-          }
-
-          text(LANGUAGES[i].name, flex_1, min_w(0), truncate,
-               text_color(on ? k->strong : k->text));
-
-          if (on) {
-            icon(mingcute, check_fill, size(4), flex_shrink_0, text_color(k->strong));
-          }
-        }
-      }
-    }
-  }
-
-  bool outside = ui->input.pressed[0] && ui->input.has_mouse &&
-                 !civue_rect_contains(card, ui->input.mouse) &&
-                 !civue_rect_contains(anchor, ui->input.mouse);
-
-  if (outside || civue_key_pressed(ui, CIVUE_KEY_ESCAPE)) {
-    app->popover = POPOVER_NONE;
-  }
-}
-
-bool explore_filter(App *app, civue_id id, const char *name, uint32_t count,
-                    bool on) {
-  const Look *k = &app->look;
-  bool pressed = false;
-  char found[24];
-
-  explore_count(count, found, sizeof found);
-
-  div(key(id), flex, items_center, flex_shrink_0, p(2), rounded(md),
-      style(.bg = on ? k->selected : CIVUE_CLEAR),
-      hover(bg(on ? k->selected : k->hover)), cursor_pointer) {
-    pressed = button().activated;
-    text(name, flex_1, min_w(0), truncate, font_weight(medium),
-         text_color(k->strong));
-    text(found, flex_shrink_0, ml(2), text_color(k->muted));
-  }
-
-  return pressed;
-}
-
-static void filters(App *app, Discovery *d) {
-  const Look *k = &app->look;
-  bool open = app->popover == POPOVER_EXPLORE_LANGUAGE;
-
-  div(flex, flex_col, flex_shrink_0, w(px(EXPLORE_FILTERS_WIDTH)), h(full),
-      py(6), pr(4), text_size(px(14)), line_height(px(18))) {
-    div(key(id("explore-language-select")), flex, items_center, gap(2),
-        flex_shrink_0, h(9), px(3), mb(4), rounded(lg), bg(k->input), border(1),
-        border_color(open ? k->ring : k->border_strong), cursor_pointer) {
-      if (button().activated) {
-        app_toggle(app, POPOVER_EXPLORE_LANGUAGE);
-      }
-
-      app->explore_anchor = here();
-
-      text(language_name(d), flex_1, min_w(0), truncate, text_color(k->text));
-
-      if (open) {
-        icon(mingcute, up_fill, size(4), flex_shrink_0, text_color(k->faint));
-      }
-      else {
-        icon(mingcute, down_fill, size(4), flex_shrink_0,
-             text_color(k->faint));
-      }
-    }
-
-    div(flex, flex_col, gap(px(2)), flex_1, min_h(0), overflow_y_scroll,
-        scrollbars(&app->thin_bars)) {
-      for (size_t i = 0; i < d->ncounts; i++) {
-        const DiscoveryCount *c = &d->counts[i];
-        bool on = d->category == c->id;
-
-        if (explore_filter(app,
-                           id_at(id("explore-category"), (uint64_t)(c->id + 2)),
-                           category_name(d, c->id), c->count, on)) {
-          discovery_search_category(d, c->id);
-          civue_set_scroll_y(civue_ui_current(), id("explore-results"), 0);
-        }
-      }
-    }
   }
 }
 
@@ -890,8 +946,8 @@ bool explore_nothing(App *app, civue_id id, const char *category) {
     snprintf(title, sizeof title, "No results found in %s", category);
   }
 
-  div(flex, flex_col, items_center, justify_center, gap(2), my(4),
-      min_h(px(400)), p(4), rounded(lg), bg(k->surface)) {
+  div(flex, flex_col, items_center, justify_center, gap(2), min_h(px(400)),
+      p(4), rounded(xl), border(1), border_color(k->border)) {
     text(title, text_center, text_size(px(24)), line_height(px(30)),
          font_weight(semibold), text_color(k->strong));
 
@@ -940,42 +996,38 @@ static void results(App *app, Discovery *d) {
 
   *drawn = list->nguilds;
 
-  div(flex, flex_1, min_h(0)) {
-    div(key(scroll), flex_1, min_w(0), h(full), overflow_y_scroll,
-        scrollbars(&app->bars), px(6), py(2)) {
-      div(key(inner), flex, flex_col, w(full), max_w(px(EXPLORE_PAGE_MAX)),
-          mx(auto)) {
-        if (list->nguilds) {
-          card_grid(app, id("explore-found"), list);
-        }
+  div(key(scroll), flex_1, min_h(0), overflow_y_scroll, scrollbars(&app->bars),
+      p(6)) {
+    div(key(inner), flex, flex_col, w(full), max_w(px(EXPLORE_PAGE_MAX)),
+        mx(auto)) {
+      if (list->nguilds) {
+        card_grid(app, id("explore-found"), list);
+      }
 
-        if (list->loading) {
-          div(flex, items_center, justify_center, flex_shrink_0, h(px(120))) {
-            explore_spinner(k->subtle, 32);
-          }
+      if (list->loading) {
+        div(flex, items_center, justify_center, flex_shrink_0, h(px(120))) {
+          explore_spinner(k->subtle, 32);
         }
-        else if (list->error) {
-          if (explore_trouble(app, id("explore-search-retry"), list->error,
-                              !d->offline && !list->nguilds)) {
-            // the same words again, which a failure lets through.
-            char *words = str_dup(d->query);
+      }
+      else if (list->error) {
+        if (explore_trouble(app, id("explore-search-retry"), list->error,
+                            !d->offline && !list->nguilds)) {
+          // the same words again, which a failure lets through.
+          char *words = str_dup(d->query);
 
-            discovery_search(d, words);
-            free(words);
-          }
+          discovery_search(d, words);
+          free(words);
         }
-        else if (!list->nguilds) {
-          bool all = d->category == DISCOVERY_ALL;
+      }
+      else if (!list->nguilds) {
+        bool all = d->category == DISCOVERY_ALL;
 
-          if (explore_nothing(app, id("explore-all"),
-                              all ? nullptr : category_name(d, d->category))) {
-            discovery_search_category(d, DISCOVERY_ALL);
-          }
+        if (explore_nothing(app, id("explore-all"),
+                            all ? nullptr : category_name(d, d->category))) {
+          discovery_search_category(d, DISCOVERY_ALL);
         }
       }
     }
-
-    filters(app, d);
   }
 }
 
@@ -986,20 +1038,21 @@ void explore_page(App *app) {
   }
 
   Discovery *d = session_discovery(app->session);
-  uint8_t which = app->explore_tab <= EXPLORE_HUBS ? app->explore_tab : 0;
+  bool hub = app->explore_mode == EXPLORE_HUBS;
+  uint8_t which = app->explore_tab < DISCOVERY_TABS ? app->explore_tab : 0;
 
   div(flex, flex_col, flex_1, min_w(0), h(full)) {
     header(app, d);
 
-    if (d->query) {
+    if (d->query && !hub) {
       results(app, d);
     }
     else {
-      div(key(id_at(id("explore-scroll"), which)), flex_1, min_h(0),
-          overflow_y_scroll, scrollbars(&app->bars), p(6)) {
+      div(key(id_at(id("explore-scroll"), hub ? DISCOVERY_TABS : which)),
+          flex_1, min_h(0), overflow_y_scroll, scrollbars(&app->bars), p(6)) {
         div(flex, flex_col, w(full), max_w(px(EXPLORE_PAGE_MAX)), mx(auto),
             min_w(px(320))) {
-          if (which == EXPLORE_HUBS) {
+          if (hub) {
             hubs(app);
           }
           else {

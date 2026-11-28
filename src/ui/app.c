@@ -165,6 +165,7 @@ void app_reset(App *app) {
   drop(&app->directory_field);
   drop(&app->directory_query);
   drop(&app->explore_field);
+  drop(&app->explore_language_search);
   drop(&app->new_server_name);
   drop(&app->entry_description);
   drop(&app->hub_email);

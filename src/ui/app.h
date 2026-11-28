@@ -362,12 +362,13 @@ typedef struct {
   Snowflake directory_join;
 
   // the servers anyone may find show in place of the friends: the tab, a
-  // DiscoveryTab or the hubs after them, what the search field holds, and
-  // the button its languages open under.
+  // DiscoveryTab, what the search field holds, the button its languages
+  // open under and what finds one of them.
   bool exploring;
   uint8_t explore_tab;
   char *explore_field;
   civue_rect explore_anchor;
+  char *explore_language_search;
   // what the page lists, an ExploreMode, and what its applications keep,
   // see apps.c.
   uint8_t explore_mode;

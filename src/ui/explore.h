@@ -12,12 +12,19 @@
 typedef enum : uint8_t {
   EXPLORE_SERVERS,
   EXPLORE_APPS,
+  EXPLORE_HUBS,
 } ExploreMode;
+
+// what the header's search field asked for.
+typedef enum : uint8_t {
+  EXPLORE_SEARCH_NONE,
+  EXPLORE_SEARCH_SUBMIT,
+  EXPLORE_SEARCH_CLEAR,
+} ExploreSearch;
 
 // discord's sizes for its discovery.
 constexpr float EXPLORE_GUTTER = 16;
 constexpr float EXPLORE_PAGE_MAX = 1300;
-constexpr float EXPLORE_FILTERS_WIDTH = 186;
 
 // "1,234", as discord writes counts.
 void explore_count(uint32_t n, char *out, size_t cap);
@@ -34,21 +41,20 @@ float explore_width(civue_id list);
 uint16_t explore_columns(civue_id list, float least);
 void explore_keep_width(civue_id list);
 
-// the header's choice between the servers and the applications.
-void explore_modes(App *app);
-// the header's search field over `*field`. true when enter was pressed
-// over words.
-bool explore_search(App *app, civue_id id, char **field);
-// the banner of a tab, its title in capitals over one line or two.
-void explore_banner(const Look *k, const char *title, const char *second,
-                    const char *about);
-// a tab under the banner, true when pressed. call inside explore_tabs.
-bool explore_tab(App *app, civue_id id, const char *label, bool on);
+// the header's search field over `*field`, with the way to clear it while
+// it holds words or `active` is set. enter over words submits them, enter
+// over nothing clears.
+ExploreSearch explore_search(App *app, civue_id id, char **field, bool active);
+// a choice of the header's row, with how many it holds when `count` is
+// not negative. true when pressed while off.
+bool explore_pill(App *app, civue_id id, const char *label, int64_t count,
+                  bool on);
+// the row the pills go in, filling the header's room and scrolled sideways
+// when they need more.
+#define explore_pills(app, row)                                        \
+  div(key(row), flex, items_center, gap(1), flex_1, min_w(0), h(full), \
+      overflow_x_scroll, overflow_y_hidden, scrollbars(&(app)->thin_bars))
 void explore_heading(const Look *k, const char *label);
-// a category a search may keep to and how many it found there. true when
-// pressed.
-bool explore_filter(App *app, civue_id id, const char *name, uint32_t count,
-                    bool on);
 // a search found nothing, in `category` when not null. true when the way
 // back to every category was pressed.
 bool explore_nothing(App *app, civue_id id, const char *category);

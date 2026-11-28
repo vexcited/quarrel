@@ -33,18 +33,6 @@ constexpr uint32_t SIMILAR_SHOWN = 3;
 // the mark that a link was copied stays this long.
 constexpr double COPIED_FOR = 2;
 
-// what each category says of itself, as the client words it.
-static const struct {
-  int32_t id;
-  const char *about;
-} ABOUT[] = {
-  {4, "Watch videos, listen to music, and share moments together."},
-  {6, "Jump into solo puzzles, party games, competitive showdowns, and more."},
-  {8, "Build, manage, and grow a thriving community."},
-  {9, "Gather, spark conversations, and build connections."},
-  {10, "Add convenience, organization, and productivity to your hangouts."},
-};
-
 // the languages discord's client speaks, the ones an application's page
 // lists.
 static const struct {
@@ -101,8 +89,8 @@ static const struct {
 };
 
 typedef struct ExploreApps {
-  // the tab under the banner, APPS_ALL for what discord features, and the
-  // page of its list.
+  // the pill on, APPS_ALL for what discord features, and the page of its
+  // list.
   int32_t tab;
   uint32_t page;
   // what the search field holds, the words searched, null for none, the
@@ -334,7 +322,7 @@ static void app_card(App *app, Apps *a, const DirectoryApp *d, civue_id key,
   float tall = floorf(width * 9 / 16);
 
   div(key(key), relative, flex, flex_col, min_w(0), h(px(tall + CARD_TEXT)),
-      rounded(lg), border(1), border_color(k->border), bg(k->surface),
+      rounded(xl), border(1), border_color(k->border), bg(k->surface),
       hover(border_color(k->border_strong)), overflow_hidden, cursor_pointer) {
     if (button().activated) {
       open_app(st, d->id);
@@ -486,80 +474,104 @@ static void app_grid(App *app, Apps *a, civue_id list, const AppList *apps,
 }
 
 /* ========================================================================== */
-/* the header and the tabs.                                                   */
+/* the header: its pills and its search.                                      */
 /* ========================================================================== */
+
+static uint32_t counted(const Apps *a, int32_t id) {
+  for (size_t i = 0; i < a->ncounts; i++) {
+    if (a->counts[i].id == id) {
+      return a->counts[i].count;
+    }
+  }
+
+  return 0;
+}
+
+static void keep_to(ExploreApps *st, int32_t id) {
+  st->category = id;
+  st->found_page = 1;
+  civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
+}
+
+// what discord features and its categories, or the categories a search
+// found applications in.
+static void pills(App *app, const Apps *a) {
+  ExploreApps *st = state_of(app);
+
+  explore_pills(app, id("apps-pills")) {
+    if (st->query) {
+      if (explore_pill(app, id("apps-count-all"), "All",
+                       a->ncounts ? (int64_t)counted(a, APPS_ALL) : -1,
+                       st->category == APPS_ALL)) {
+        keep_to(st, APPS_ALL);
+      }
+    }
+    else if (explore_pill(app, id("apps-tab-featured"), "Featured", -1,
+                          st->tab == APPS_ALL)) {
+      st->tab = APPS_ALL;
+    }
+
+    for (size_t i = 0; i < a->ncategories; i++) {
+      const AppCategory *c = &a->categories[i];
+      uint32_t count = counted(a, c->id);
+
+      if (st->query && count &&
+          explore_pill(app, id_at(id("apps-count"), (uint64_t)c->id), c->name,
+                       count, st->category == c->id)) {
+        keep_to(st, c->id);
+      }
+
+      if (!st->query &&
+          explore_pill(app, id_at(id("apps-tab"), (uint64_t)c->id), c->name, -1,
+                       st->tab == c->id)) {
+        st->tab = c->id;
+        st->page = 1;
+      }
+    }
+  }
+}
 
 static void header(App *app, Apps *a) {
   const Look *k = &app->look;
   ExploreApps *st = state_of(app);
   Snowflake open = st->ntrail ? st->trail[st->ntrail - 1] : 0;
 
-  div(flex, items_center, gap(2), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
+  div(flex, items_center, gap(3), flex_shrink_0, h(px(HEADER_HEIGHT)), px(4),
       border_b(1), border_color(k->border)) {
     window_handle(id("apps-header"));
 
     if (open) {
       const AppPage *page = apps_open(a, open);
 
-      if (icon_button(app, id("apps-back"), CIVUE_ICON(mingcute, arrow_left_fill), 32,
-                      20, "Back")) {
+      if (icon_button(app, id("apps-back"),
+                      CIVUE_ICON(mingcute, arrow_left_fill), 32, 20, "Back")) {
         close_app(st);
       }
 
       text(page->loaded ? page->app.name : "", flex_1, min_w(0), truncate,
            font_weight(semibold), text_color(k->strong));
-      return;
-    }
-
-    if (st->query) {
-      char title[160];
-
-      snprintf(title, sizeof title, "Search results for \"%s\"", st->query);
-
-      if (icon_button(app, id("apps-back"), CIVUE_ICON(mingcute, arrow_left_fill), 32,
-                      20, "Back")) {
-        end_search(st);
-      }
-
-      text(title, flex_1, min_w(0), truncate, font_weight(semibold),
-           text_color(k->strong));
     }
     else {
-      explore_modes(app);
-    }
+      pills(app, a);
 
-    // discord searches every category from the first page on.
-    if (explore_search(app, id("apps-search"), &st->field)) {
-      str_set(&st->query, st->field);
-      st->category = APPS_ALL;
-      st->found_page = 1;
-      civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
+      // discord searches every category from the first page on.
+      switch (explore_search(app, id("apps-search"), &st->field,
+                             st->query != nullptr)) {
+        case EXPLORE_SEARCH_SUBMIT:
+          str_set(&st->query, st->field);
+          st->category = APPS_ALL;
+          st->found_page = 1;
+          civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
+          break;
+        case EXPLORE_SEARCH_CLEAR:
+          end_search(st);
+          break;
+        case EXPLORE_SEARCH_NONE:
+          break;
+      }
     }
 
     header_end(app);
-  }
-}
-
-static void tabs(App *app, const Apps *a) {
-  const Look *k = &app->look;
-  ExploreApps *st = state_of(app);
-
-  div(key(id("apps-tabs")), flex, flex_wrap, flex_shrink_0, mt(5), border_b(2),
-      border_color(k->border)) {
-    if (explore_tab(app, id("apps-tab-featured"), "Featured",
-                    st->tab == APPS_ALL)) {
-      st->tab = APPS_ALL;
-    }
-
-    for (size_t i = 0; i < a->ncategories; i++) {
-      const AppCategory *c = &a->categories[i];
-
-      if (explore_tab(app, id_at(id("apps-tab"), (uint64_t)c->id), c->name,
-                      st->tab == c->id)) {
-        st->tab = c->id;
-        st->page = 1;
-      }
-    }
   }
 }
 
@@ -572,34 +584,33 @@ static void featured(App *app, Apps *a) {
 
   apps_fetch_collections(a, false);
 
-  explore_banner(k, "FIND THINGS TO", "DO TOGETHER",
-                 "Bring the fun to your hangouts with apps for games, music, "
-                 "creative tools, and more.");
-  tabs(app, a);
-
   if (a->ncollections) {
-    for (size_t i = 0; i < a->ncollections; i++) {
-      const AppCollection *c = &a->collections[i];
-      civue_id list = id_at(id("apps-collection"), i);
-      // the client's rows hold four cards from a wide window on, two from
-      // a narrow one, else one.
-      float room = explore_width(list);
-      uint16_t columns = room >= 820 ? 4 : room >= 420 ? 2 : 1;
-      float width =
-        (room - (float)(columns - 1) * EXPLORE_GUTTER) / (float)columns;
+    div(flex, flex_col, gap(8), w(full)) {
+      for (size_t i = 0; i < a->ncollections; i++) {
+        const AppCollection *c = &a->collections[i];
+        civue_id list = id_at(id("apps-collection"), i);
+        // the client's rows hold four cards from a wide window on, two from
+        // a narrow one, else one.
+        float room = explore_width(list);
+        uint16_t columns = room >= 820 ? 4 : room >= 420 ? 2 : 1;
+        float width =
+          (room - (float)(columns - 1) * EXPLORE_GUTTER) / (float)columns;
 
-      if (!c->napps) {
-        continue;
-      }
+        if (!c->napps) {
+          continue;
+        }
 
-      explore_heading(k, c->title);
+        div(flex, flex_col, w(full)) {
+          explore_heading(k, c->title);
 
-      div(key(list), grid, grid_cols(columns), gap(4), py(4), w(full)) {
-        explore_keep_width(list);
+          div(key(list), grid, grid_cols(columns), gap(4), w(full)) {
+            explore_keep_width(list);
 
-        for (size_t j = 0; j < c->napps; j++) {
-          app_card(app, a, &c->apps[j], id_at(list, c->apps[j].id), width,
-                   true);
+            for (size_t j = 0; j < c->napps; j++) {
+              app_card(app, a, &c->apps[j], id_at(list, c->apps[j].id), width,
+                       true);
+            }
+          }
         }
       }
     }
@@ -621,30 +632,10 @@ static void category(App *app, Apps *a) {
   const Look *k = &app->look;
   ExploreApps *st = state_of(app);
   const AppList *list = &a->list;
-  const char *name = apps_category_name(a, st->tab);
-  const char *about = "";
-
-  for (size_t i = 0; i < countof(ABOUT); i++) {
-    if (ABOUT[i].id == st->tab) {
-      about = ABOUT[i].about;
-    }
-  }
 
   apps_show(a, nullptr, st->tab, st->page);
 
-  char title[96];
-  size_t len = 0;
-
-  // the banner's titles are in capitals.
-  for (const char *c = name ? name : ""; *c && len + 1 < sizeof title; c++) {
-    title[len++] = *c >= 'a' && *c <= 'z' ? (char)(*c - 32) : *c;
-  }
-
-  title[len] = 0;
-  explore_banner(k, title, nullptr, about);
-  tabs(app, a);
-
-  div(flex, flex_col, pt(4), w(full)) {
+  div(flex, flex_col, w(full)) {
     if (list->napps) {
       app_grid(app, a, id("apps-list"), list, false);
     }
@@ -675,24 +666,8 @@ static void category(App *app, Apps *a) {
 }
 
 /* ========================================================================== */
-/* a search: what it found, and the categories it may keep to.                */
+/* what a search found.                                                       */
 /* ========================================================================== */
-
-static uint32_t counted(const Apps *a, int32_t id) {
-  for (size_t i = 0; i < a->ncounts; i++) {
-    if (a->counts[i].id == id) {
-      return a->counts[i].count;
-    }
-  }
-
-  return 0;
-}
-
-static void keep_to(ExploreApps *st, int32_t id) {
-  st->category = id;
-  st->found_page = 1;
-  civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
-}
 
 static void found(App *app, Apps *a) {
   const Look *k = &app->look;
@@ -701,67 +676,42 @@ static void found(App *app, Apps *a) {
 
   apps_show(a, st->query, st->category, st->found_page);
 
-  div(flex, flex_1, min_h(0)) {
-    div(key(id("apps-found")), flex_1, min_w(0), h(full), overflow_y_scroll,
-        scrollbars(&app->bars), px(6), py(6)) {
-      div(flex, flex_col, w(full), max_w(px(EXPLORE_PAGE_MAX)), mx(auto)) {
-        if (list->napps) {
-          app_grid(app, a, id("apps-results"), list, true);
-        }
+  div(key(id("apps-found")), flex_1, min_h(0), overflow_y_scroll,
+      scrollbars(&app->bars), p(6)) {
+    div(flex, flex_col, w(full), max_w(px(EXPLORE_PAGE_MAX)), mx(auto)) {
+      if (list->napps) {
+        app_grid(app, a, id("apps-results"), list, true);
+      }
 
-        if (list->loading) {
-          div(flex, items_center, justify_center, flex_shrink_0, h(px(120))) {
-            explore_spinner(k->subtle, 32);
-          }
-        }
-        else if (list->error) {
-          if (explore_trouble(app, id("apps-found-retry"), list->error,
-                              !a->offline)) {
-            apps_reload(a);
-          }
-        }
-        else if (!list->napps) {
-          bool all = st->category == APPS_ALL;
-          const char *name = apps_category_name(a, st->category);
-
-          if (explore_nothing(app, id("apps-all"),
-                              all    ? nullptr
-                              : name ? name
-                                     : "")) {
-            keep_to(st, APPS_ALL);
-          }
-        }
-
-        uint32_t asked =
-          pager(app, id("apps-found-pager"), st->found_page, list->pages);
-
-        if (asked) {
-          st->found_page = asked;
-          civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
+      if (list->loading) {
+        div(flex, items_center, justify_center, flex_shrink_0, h(px(120))) {
+          explore_spinner(k->subtle, 32);
         }
       }
-    }
+      else if (list->error) {
+        if (explore_trouble(app, id("apps-found-retry"), list->error,
+                            !a->offline)) {
+          apps_reload(a);
+        }
+      }
+      else if (!list->napps) {
+        bool all = st->category == APPS_ALL;
+        const char *name = apps_category_name(a, st->category);
 
-    // every category at once, then the ones the words were found in.
-    div(flex, flex_col, gap(px(2)), flex_shrink_0, w(px(EXPLORE_FILTERS_WIDTH)),
-        h(full), py(6), pr(4), text_size(px(14)), line_height(px(18)),
-        overflow_y_scroll, scrollbars(&app->thin_bars)) {
-      if (a->ncounts) {
-        if (explore_filter(app, id("apps-count-all"), "All",
-                           counted(a, APPS_ALL), st->category == APPS_ALL)) {
+        if (explore_nothing(app, id("apps-all"),
+                            all    ? nullptr
+                            : name ? name
+                                   : "")) {
           keep_to(st, APPS_ALL);
         }
       }
 
-      for (size_t i = 0; a->ncounts && i < a->ncategories; i++) {
-        const AppCategory *c = &a->categories[i];
-        uint32_t count = counted(a, c->id);
+      uint32_t asked =
+        pager(app, id("apps-found-pager"), st->found_page, list->pages);
 
-        if (count &&
-            explore_filter(app, id_at(id("apps-count"), (uint64_t)c->id),
-                           c->name, count, st->category == c->id)) {
-          keep_to(st, c->id);
-        }
+      if (asked) {
+        st->found_page = asked;
+        civue_set_scroll_y(civue_ui_current(), id("apps-found"), 0);
       }
     }
   }
