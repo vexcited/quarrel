@@ -235,8 +235,6 @@ target_link_libraries(quarrel_core PUBLIC
   civue::civue cilo::cilo cima::cima cinc::cinc ciphon::curl ciren::ciren)
 target_compile_options(quarrel_core PRIVATE ${QUARREL_C2Y} -Wall -Wextra)
 
-# twemoji's svgs, which discord draws its unicode emoji with, kept in the
-# binary: discord.com/assets serves them only while the web client lives.
 FetchContent_Declare(twemoji
   URL https://github.com/jdecked/twemoji/archive/refs/tags/v17.0.3.tar.gz
   URL_HASH SHA256=a0855654b633045ae2337537e77f1bb4361162f7fcd910e613eaab1d6d9c5fca)
@@ -244,8 +242,6 @@ FetchContent_MakeAvailable(twemoji)
 
 file(GLOB twemoji_svgs RELATIVE ${twemoji_SOURCE_DIR}/assets/svg
   ${twemoji_SOURCE_DIR}/assets/svg/*.svg)
-# sorted as strcmp sorts their names, for a bsearch. one after the other,
-# the like ones close, they pack to a tenth in a single zstd frame.
 list(TRANSFORM twemoji_svgs REPLACE "\\.svg$" "")
 list(SORT twemoji_svgs)
 set(twemoji_packed ${CMAKE_CURRENT_BINARY_DIR}/twemoji.zst)
