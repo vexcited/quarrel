@@ -10,6 +10,7 @@
 
 #include "discord/emoji.h"
 #include "discord/fakestickers.h"
+#include "media.h"
 #include "widgets.h"
 
 constexpr float MENU_WIDTH = 248;
@@ -62,8 +63,21 @@ void message_popover(App *app, Popover popover, const Message *m,
   app->menu_anchor = anchor;
   app->menu_armed = false;
   app->menu_focus = true;
+  app->menu_at_pointer = false;
   free(app->menu_search);
   app->menu_search = nullptr;
+}
+
+void message_menu_at(App *app, const Message *m, civue_vec2 at) {
+  message_popover(app, POPOVER_MESSAGE_MENU, m, xywh(at.x, at.y, 0, 0));
+  app->popover = POPOVER_MESSAGE_MENU;
+  app->menu_at_pointer = true;
+  free(app->menu_link);
+  app->menu_link = app->context_link;
+  app->context_link = nullptr;
+  image_ref_drop(&app->menu_image);
+  app->menu_image = app->context_image;
+  app->context_image = (ImageRef){};
 }
 
 static void separator(const Look *k) {
@@ -82,6 +96,18 @@ static civue_rect card_at(civue_rect anchor, float width, float height) {
   }
 
   top = fmaxf(fminf(top, (float)room.y1 - height), (float)room.y0);
+  return xywh(left, top, width, height);
+}
+
+// a card opened by a right click: its top left at the pointer, moved in
+// where there is no room.
+static civue_rect point_card(civue_rect anchor, float width, float height) {
+  civue_rect room = overlay_room();
+  float left = fminf((float)anchor.x0, (float)room.x1 - width);
+  float top = fminf((float)anchor.y0, (float)room.y1 - height);
+
+  left = fmaxf(left, (float)room.x0);
+  top = fmaxf(top, (float)room.y0);
   return xywh(left, top, width, height);
 }
 
@@ -145,16 +171,34 @@ static void menu(App *app, const Channel *c, const Message *m) {
   ReactionPick picks[4];
   size_t npicks = reacts ? quick_reactions(app, c, picks, countof(picks)) : 0;
 
+  // what a right click was over: the words selected, a picture, a link.
+  bool pointed = app->menu_at_pointer;
+  bool selected = pointed && selection_on(app);
+  const ImageRef *image =
+    pointed && app->menu_image.url ? &app->menu_image : nullptr;
+  const char *link = pointed ? app->menu_link : nullptr;
+  size_t extras = selected + (image ? (image->video ? 3 : 4) : 0) +
+                  (link ? 2 : 0);
+
   size_t rows = reacts + (own && plain) + (writes && plain) + plain + has_text +
-                (sticker != 0) + pins + bookmarks + 3 + removable;
-  float height = 2 + 8 + (float)rows * 40 + 3 * 9 + (npicks ? 52 : 0);
-  civue_rect card = card_at(app->menu_anchor, MENU_WIDTH, height);
+                (sticker != 0) + pins + bookmarks + 3 + removable + extras;
+  float height = 2 + 8 + (float)rows * 40 + (extras ? 4 : 3) * 9 +
+                 (npicks ? 52 : 0);
+  civue_rect card = pointed ? point_card(app->menu_anchor, MENU_WIDTH, height)
+                            : card_at(app->menu_anchor, MENU_WIDTH, height);
   civue_id base = id("message-menu");
   int picked = -1;
 
   enum {
     NOTHING,
     REACT,
+    COPY_SELECTION,
+    COPY_IMAGE,
+    SAVE_IMAGE,
+    COPY_IMAGE_LINK,
+    OPEN_IMAGE_LINK,
+    COPY_LINK_UNDER,
+    OPEN_LINK_UNDER,
     EDIT,
     REPLY,
     FORWARD,
@@ -193,6 +237,35 @@ static void menu(App *app, const Channel *c, const Message *m) {
             }
           }
         }
+      }
+
+      if (selected) {
+        ROW(COPY_SELECTION, CIVUE_ICON(mingcute, copy_2_fill), "Copy",
+            k->text);
+      }
+
+      if (image && !image->video) {
+        ROW(COPY_IMAGE, CIVUE_ICON(mingcute, pic_fill), "Copy Image", k->text);
+      }
+
+      if (image) {
+        ROW(SAVE_IMAGE, CIVUE_ICON(mingcute, download_2_fill),
+            image->video ? "Save Video" : "Save Image", k->text);
+        ROW(COPY_IMAGE_LINK, CIVUE_ICON(mingcute, link_fill),
+            image->video ? "Copy Video Link" : "Copy Image Link", k->text);
+        ROW(OPEN_IMAGE_LINK, CIVUE_ICON(mingcute, external_link_fill),
+            image->video ? "Open Video Link" : "Open Image Link", k->text);
+      }
+
+      if (link) {
+        ROW(COPY_LINK_UNDER, CIVUE_ICON(mingcute, link_fill), "Copy Link",
+            k->text);
+        ROW(OPEN_LINK_UNDER, CIVUE_ICON(mingcute, external_link_fill),
+            "Open Link", k->text);
+      }
+
+      if (extras) {
+        separator(k);
       }
 
       if (reacts) {
@@ -275,6 +348,34 @@ static void menu(App *app, const Channel *c, const Message *m) {
     case REACT:
       message_popover(app, POPOVER_REACT, m, anchor);
       return;
+
+    case COPY_SELECTION:
+      selection_copy(app, c);
+      break;
+
+    case COPY_IMAGE:
+      media_copy_image(image);
+      break;
+
+    case SAVE_IMAGE:
+      media_save_image(image);
+      break;
+
+    case COPY_IMAGE_LINK:
+      civue_clipboard_set_text(image->url, strlen(image->url));
+      break;
+
+    case OPEN_IMAGE_LINK:
+      civue_open_url(image->url);
+      break;
+
+    case COPY_LINK_UNDER:
+      civue_clipboard_set_text(link, strlen(link));
+      break;
+
+    case OPEN_LINK_UNDER:
+      civue_open_url(link);
+      break;
 
     case FORWARD:
       message_popover(app, POPOVER_FORWARD, m, anchor);

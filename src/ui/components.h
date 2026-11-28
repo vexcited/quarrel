@@ -200,6 +200,10 @@ void react_with(App *app, const Message *m, ReactionPick pick);
 void message_popover(App *app, Popover popover, const Message *m,
                      civue_rect anchor);
 [[gnu::pure]] bool message_popover_open(const App *app, const Message *m);
+// the menu of a right click at `at`, with what this frame put under it.
+void message_menu_at(App *app, const Message *m, civue_vec2 at);
+// puts the words selected in the channel's messages on the clipboard.
+void selection_copy(App *app, const Channel *c);
 // what is open for a message of the channel: POPOVER_MESSAGE_MENU,
 // POPOVER_REACT or POPOVER_FORWARD.
 void message_popovers(App *app, Channel *c);

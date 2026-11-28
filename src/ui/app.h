@@ -45,6 +45,48 @@ typedef enum : uint8_t {
 
 typedef CIVUE_VEC(Snowflake) Ids;
 
+// a byte of what the words of a message read as once drawn, mentions by
+// their names and custom emoji by theirs between colons.
+typedef struct {
+  Snowflake message;
+  uint32_t at;
+} TextPlace;
+
+// a media a menu offers to copy or save: its file, what the media proxy
+// serves of it, and its name, all owned. none while `url` is null. a video
+// is saved, never copied.
+typedef struct {
+  char *url, *proxy_url, *filename;
+  bool video;
+} ImageRef;
+
+// what the words nearest to the pointer say of it in a frame: the place
+// under it and the bytes of the selection's unit there, a word or a
+// paragraph being taken whole. `pressed` when the press went down on them,
+// `extends` when it moves an end of the selection, shift being held.
+typedef struct {
+  bool found, pressed, extends;
+  civue_text_unit unit;
+  TextPlace at;
+  uint32_t from, to;
+} TextOffer;
+
+// from where the press went down to where the pointer went, none while the
+// channel is 0 or both places are one. `version` changes with either. both
+// move once a frame, from `offer`, every message drawing the same ones.
+typedef struct {
+  Snowflake channel_id;
+  TextPlace anchor, focus;
+  bool dragging;
+  uint64_t version;
+  // the press it grows from, a civue_text_grip over many texts: the unit it
+  // picked, where it went down and the unit's bytes there.
+  civue_text_unit unit;
+  TextPlace base;
+  uint32_t base_from, base_to;
+  TextOffer offer;
+} TextSelection;
+
 // the steps of the dialog adding a server.
 typedef enum : uint8_t {
   NEW_GUILD_START,
@@ -294,6 +336,18 @@ typedef struct {
   char *menu_search;
   // its row that deletes was pressed once, and its search is to be focused.
   bool menu_armed, menu_focus;
+  // a right click opened it at the pointer, over a link or an image of the
+  // message, which it offers too.
+  bool menu_at_pointer;
+  char *menu_link;
+  ImageRef menu_image;
+  // what was under a right click in a message this frame, set by its nodes
+  // for the message to take.
+  char *context_link;
+  ImageRef context_image;
+
+  // the words dragged over in the messages of a channel.
+  TextSelection selection;
 
   // the friends page: its tab, what its search holds, and the timer that
   // redraws it while a counter of elapsed time shows.

@@ -2,6 +2,7 @@
 #include "authorize.h"
 #include "complete.h"
 #include "explore.h"
+#include "media.h"
 #include "widgets.h"
 
 #include <stdlib.h>
@@ -131,6 +132,11 @@ void app_reset(App *app) {
   drop(&app->guild_invite);
   app->new_guild_step = NEW_GUILD_START;
   drop(&app->menu_search);
+  drop(&app->menu_link);
+  image_ref_drop(&app->menu_image);
+  drop(&app->context_link);
+  image_ref_drop(&app->context_image);
+  app->selection = (TextSelection){};
   drop(&app->upload_name);
   drop(&app->upload_alt);
   app->upload_editing = 0;

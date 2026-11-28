@@ -402,6 +402,10 @@ int main() {
   free(app.guild_icon_error);
   free(app.guild_invite);
   free(app.menu_search);
+  free(app.menu_link);
+  image_ref_drop(&app.menu_image);
+  free(app.context_link);
+  image_ref_drop(&app.context_image);
   free(app.forum_search);
   free(app.post_title);
   free(app.post_body);

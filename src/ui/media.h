@@ -53,6 +53,14 @@ void media_mosaic(App *app, civue_id box, Snowflake message_id,
 // a player not drawn for a while is let go.
 [[nodiscard]] uint64_t media_live(App *app, Snowflake message_id);
 
+// what `item` is copied and saved from.
+void image_ref_set(ImageRef *ref, const MediaItem *item);
+void image_ref_drop(ImageRef *ref);
+// fetches a picture, then puts it on the clipboard as png.
+void media_copy_image(const ImageRef *ref);
+// asks where to save the media, then fetches it there.
+void media_save_image(const ImageRef *ref);
+
 // whether the viewer is open, the keys going to it.
 [[nodiscard]] bool media_viewing(App *app);
 // the media opened over the window, while one is. once a frame, last.

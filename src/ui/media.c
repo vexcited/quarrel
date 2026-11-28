@@ -9,6 +9,7 @@
 #include <civue/dsl.h>
 
 #include "discord/cdn.h"
+#include "http.h"
 #include "widgets.h"
 
 /* ========================================================================== */
@@ -59,6 +60,9 @@ struct Media {
   civue_vec2 pan;
   // how many times it opened, to come in each time.
   uint32_t opens;
+  // the menu a right click opened over the media, and where.
+  bool menu_open;
+  civue_vec2 menu_at;
 };
 
 static struct Media *media_of(App *app) {
@@ -450,6 +454,113 @@ static bool controls_shown(civue_id id, civue_rect r, const civue_video_info *v,
 }
 
 /* ========================================================================== */
+/* pictures copied and saved, fetched again from the cdn as they were sent.   */
+/* ========================================================================== */
+
+constexpr size_t SAVE_MOST = 512u << 20;
+
+void image_ref_set(ImageRef *ref, const MediaItem *item) {
+  str_set(&ref->url, item->url);
+  str_set(&ref->proxy_url, item->proxy_url);
+  str_set(&ref->filename, item->filename);
+  ref->video = item->kind != MEDIA_IMAGE;
+}
+
+void image_ref_drop(ImageRef *ref) {
+  free(ref->url);
+  free(ref->proxy_url);
+  free(ref->filename);
+  *ref = (ImageRef){};
+}
+
+// where the picture is fetched from: the proxy's copy of what an embed links
+// to, the cdn's of an attachment.
+static const char *source_of(const ImageRef *ref) {
+  return ref->filename || !ref->proxy_url ? ref->url : ref->proxy_url;
+}
+
+// the file is written to `path`, or put on the clipboard when it is null.
+static void fetched(void *ctx, const HttpResponse *res) {
+  char *path = ctx;
+
+  if (res->status == 200 && res->body_len) {
+    if (!path) {
+      civue_clipboard_set_image((const uint8_t *)res->body, res->body_len);
+    }
+    else {
+      FILE *file = fopen(path, "wb");
+
+      if (file) {
+        fwrite(res->body, 1, res->body_len, file);
+        fclose(file);
+      }
+    }
+  }
+
+  free(path);
+}
+
+static void fetch_to(const ImageRef *ref, char *path) {
+  const char *url = source_of(ref);
+
+  if (!url) {
+    free(path);
+    return;
+  }
+
+  http_send(&(HttpRequest){.url = url, .max_response_len = SAVE_MOST},
+            fetched, path);
+}
+
+void media_copy_image(const ImageRef *ref) {
+  fetch_to(ref, nullptr);
+}
+
+// its attachment's name, else the last part of its url.
+static void name_of(const ImageRef *ref, char *out, size_t cap) {
+  const char *url = ref->url ? ref->url : "";
+  const char *end = url + strcspn(url, "?#");
+  const char *start = end;
+
+  while (start > url && start[-1] != '/') {
+    start--;
+  }
+
+  if (ref->filename && *ref->filename) {
+    snprintf(out, cap, "%s", ref->filename);
+  }
+  else if (end > start) {
+    snprintf(out, cap, "%.*s", (int)(end - start), start);
+  }
+  else {
+    snprintf(out, cap, "image");
+  }
+}
+
+static void save_picked(char *path, void *ctx) {
+  char *url = ctx;
+
+  if (path) {
+    http_send(&(HttpRequest){.url = url, .max_response_len = SAVE_MOST},
+              fetched, path);
+  }
+
+  free(url);
+}
+
+void media_save_image(const ImageRef *ref) {
+  const char *url = source_of(ref);
+  char name[256];
+
+  if (!url) {
+    return;
+  }
+
+  name_of(ref, name, sizeof name);
+  save_file_later(name, save_picked, strdup(url));
+}
+
+/* ========================================================================== */
 /* the viewer's state.                                                        */
 /* ========================================================================== */
 
@@ -468,6 +579,7 @@ static void viewer_close(App *app) {
   m->held = nullptr;
   m->count = m->index = 0;
   m->zoomed = false;
+  m->menu_open = false;
 }
 
 // the message the media come from: one of the channel shown, or one a
@@ -683,8 +795,15 @@ void media_tile(App *app, civue_id id, Snowflake message_id,
       h(px(size.y)), rounded(px(radius)), bg(k->surface), overflow_hidden,
       cursor_pointer) {
     civue_rect r = here();
+    civue_ui *ui = civue_ui_current();
+    bool hidden = item->spoiler && !app_revealed(app, id);
 
-    if (item->spoiler && !app_revealed(app, id)) {
+    if (ui->input.pressed[1] && over(r) && !hidden &&
+        !civue_under_overlay(ui, ui->input.mouse)) {
+      image_ref_set(&app->context_image, item);
+    }
+
+    if (hidden) {
       spoiler_cover(app, item, r, radius);
 
       if (button().activated) {
@@ -1091,6 +1210,13 @@ static void viewer_media(App *app, const MediaItem *item, civue_rect at,
                       : m->zoomed ? CIVUE_CURSOR_GRABBING
                                   : CIVUE_CURSOR_ZOOM_IN,
             .has_cursor = true)) {
+    civue_ui *ui = civue_ui_current();
+
+    if (ui->input.pressed[1] && over(here())) {
+      m->menu_open = true;
+      m->menu_at = ui->input.mouse;
+    }
+
     if (image) {
       viewer_image(app, item, id_in(id, "press"), here(), url, play);
     }
@@ -1098,6 +1224,74 @@ static void viewer_media(App *app, const MediaItem *item, civue_rect at,
       viewer_video(app, item, id, here(), url, close);
     }
   }
+}
+
+constexpr float VIEWER_MENU_WIDTH = 220;
+
+// what a right click on the media offers, over a catch of the window's
+// presses that closes it.
+static void viewer_menu(App *app, const MediaItem *item) {
+  const Look *k = &app->look;
+  civue_ui *ui = civue_ui_current();
+  struct Media *m = media_of(app);
+  bool picture = item->kind == MEDIA_IMAGE;
+  float height = 10 + (picture ? 4 : 3) * 40;
+  civue_rect room = overlay_room();
+  float left = fminf(m->menu_at.x, (float)room.x1 - VIEWER_MENU_WIDTH);
+  float top = fminf(m->menu_at.y, (float)room.y1 - height);
+  civue_id base = id("viewer-menu");
+  bool copy = false, save = false, link = false, open = false;
+
+  div(key(id_in(base, "catch")), absolute, left(0), top(0), w(px(ui->size.x)),
+      h(px(ui->size.y))) {
+    civue_response r =
+      civue_interact(ui, id_in(base, "catch"), here(), CIVUE_SENSE_CLICK);
+
+    if (r.pressed) {
+      m->menu_open = false;
+    }
+  }
+
+  div(key(base), absolute, flex, flex_col, left(px(left)), top(px(top)),
+      w(px(VIEWER_MENU_WIDTH)), p(1), rounded(xl), bg(k->popover), border(1),
+      border_color(k->border_strong), shadow(lg)) {
+    if (picture) {
+      copy = menu_row(app, id_at(base, 1), CIVUE_ICON(mingcute, pic_fill),
+                      "Copy Image", k->text);
+    }
+
+    save = menu_row(app, id_at(base, 2), CIVUE_ICON(mingcute, download_2_fill),
+                    picture ? "Save Image" : "Save Video", k->text);
+    link = menu_row(app, id_at(base, 3), CIVUE_ICON(mingcute, link_fill),
+                    "Copy Link", k->text);
+    open = menu_row(app, id_at(base, 4),
+                    CIVUE_ICON(mingcute, external_link_fill), "Open Link",
+                    k->text);
+  }
+
+  if (!copy && !save && !link && !open) {
+    return;
+  }
+
+  ImageRef ref = {};
+
+  image_ref_set(&ref, item);
+  m->menu_open = false;
+
+  if (copy) {
+    media_copy_image(&ref);
+  }
+  else if (save) {
+    media_save_image(&ref);
+  }
+  else if (link && item->url) {
+    civue_clipboard_set_text(item->url, strlen(item->url));
+  }
+  else if (open && item->url) {
+    civue_open_url(item->url);
+  }
+
+  image_ref_drop(&ref);
 }
 
 static void viewer_thumbs(App *app, size_t *to) {
@@ -1180,10 +1374,20 @@ void media_viewer(App *app) {
           viewer_thumbs(app, &to);
         }
       }
+
+      if (m->menu_open) {
+        viewer_menu(app, item);
+      }
     }
   }
 
-  close |= civue_key_pressed(ui, CIVUE_KEY_ESCAPE);
+  // escape closes the menu before the viewer.
+  if (m->menu_open && civue_key_pressed(ui, CIVUE_KEY_ESCAPE)) {
+    m->menu_open = false;
+  }
+  else {
+    close |= civue_key_pressed(ui, CIVUE_KEY_ESCAPE);
+  }
 
   // space plays a video, and goes on through the rest.
   if (several) {

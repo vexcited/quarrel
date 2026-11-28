@@ -1192,6 +1192,77 @@ static void failure(App *app, const Channel *c, const Message *m) {
   }
 }
 
+// FakeNitro's transformAst: a link to a sticker is shown as the sticker.
+static bool shows_words(App *app, const Message *m) {
+  FakeSticker linked;
+
+  return *m->content &&
+         !fake_sticker_message(app->session->store, m->content, &linked);
+}
+
+// how a message's words are drawn, those of the list being selected.
+static MarkupOptions words_of(const Channel *c, const Message *m,
+                              float width) {
+  return (MarkupOptions){
+    .guild_id = c->guild_id,
+    .edited = m->edited_at != 0,
+    .fake_emojis = true,
+    .hint = width - GUTTER - 48,
+    .select = key_scope ? 0 : m->id,
+  };
+}
+
+// what a message forwards, behind a bar with where and when it was sent.
+static void forwarded(App *app, const Channel *c, const Message *m,
+                      float width) {
+  const Look *k = &app->look;
+  const Message *f = m->referenced;
+  const Channel *from = store_channel(app->session->store, f->channel_id);
+  civue_id kept = key_scope;
+  char name[128], stamp[48], line[192];
+
+  format_stamp(f->timestamp, stamp, sizeof stamp);
+
+  if (from && !channel_is_private(from)) {
+    store_channel_name(app->session->store, from, name, sizeof name);
+    snprintf(line, sizeof line, "#%s • %s", name, stamp);
+  }
+  else {
+    snprintf(line, sizeof line, "%s", stamp);
+  }
+
+  // the original may be in the list too, its keys must not meet these.
+  key_scope = id_at(message_key(m), 0x504);
+
+  div(flex, flex_col, gap(1), pl(3), border_l(4), rounded_l(sm),
+      border_color(k->rule)) {
+    div(flex, items_center, gap(1), text_color(k->subtle)) {
+      icon(mingcute, share_forward_fill, size(4), flex_shrink_0);
+      text("Forwarded", italic, font_weight(medium));
+    }
+
+    if (shows_words(app, f)) {
+      markup(app, id_at(message_key(f), 1), f->content,
+             &(MarkupOptions){
+               .guild_id = c->guild_id,
+               .edited = f->edited_at != 0,
+               .fake_emojis = true,
+               .hint = width - GUTTER - 48 - 16,
+             });
+    }
+
+    attachments(app, f);
+    embeds(app, f, c->guild_id);
+    stickers(app, f);
+
+    if (f->timestamp) {
+      text(line, text_size(px(12)), text_color(k->faint));
+    }
+  }
+
+  key_scope = kept;
+}
+
 // what a message says, in a node GUTTER points in on the left: the line of
 // what it answers, its author when `head`, then its text in `ink` and what
 // it carries. the avatar is drawn over `ring`.
@@ -1239,19 +1310,15 @@ static void message_body(App *app, const Channel *c, const Message *m,
     text(waits, text_color(app->look.faint));
   }
 
-  FakeSticker linked;
+  if (shows_words(app, m)) {
+    MarkupOptions o = words_of(c, m, width);
 
-  // FakeNitro's transformAst: a link to a sticker is shown as the sticker.
-  if (*m->content &&
-      !fake_sticker_message(app->session->store, m->content, &linked)) {
-    markup(app, id_at(id, 1), m->content,
-           &(MarkupOptions){
-             .guild_id = c->guild_id,
-             .color = ink,
-             .edited = m->edited_at != 0,
-             .fake_emojis = true,
-             .hint = width - GUTTER - 48,
-           });
+    o.color = ink;
+    markup(app, id_at(id, 1), m->content, &o);
+  }
+
+  if (m->forwarded && m->referenced) {
+    forwarded(app, c, m, width);
   }
 
   attachments(app, m);
@@ -1334,7 +1401,63 @@ static void message(App *app, Channel *c, Message *m, bool head, float width) {
     if (hot && m->state == MESSAGE_SENT) {
       toolbar(app, c, m);
     }
+
+    // what its nodes found under a right click is in the menu it opens.
+    if (ui->input.pressed[1] && m->id && m->state == MESSAGE_SENT &&
+        ui->input.has_mouse && civue_rect_contains(r, mouse) &&
+        civue_rect_contains(civue_clip_rect(ui), mouse) &&
+        !civue_under_overlay(ui, mouse)) {
+      message_menu_at(app, m, mouse);
+    }
   }
+}
+
+// appends `n` bytes of `s` to the text being copied.
+static void put(char **text, size_t *len, const char *s, size_t n) {
+  *text = realloc(*text, *len + n + 1);
+  memcpy(*text + *len, s, n);
+  *len += n;
+  (*text)[*len] = 0;
+}
+
+void selection_copy(App *app, const Channel *c) {
+  float width = (float)last_size(id("messages")).x;
+  char *text = nullptr;
+  size_t len = 0;
+
+  for (size_t i = 0; i < c->nmessages; i++) {
+    const Message *m = c->messages[i];
+    uint32_t from, to;
+
+    if (!shows_words(app, m) || !selection_range(app, m->id, &from, &to)) {
+      continue;
+    }
+
+    if (len && text[len - 1] != '\n') {
+      put(&text, &len, "\n", 1);
+    }
+
+    MarkupOptions o = words_of(c, m, width);
+
+    markup_text(app, m->content, &o, from, to, &text, &len);
+  }
+
+  // the break a message ends with is no line of its own at either end.
+  size_t from = 0;
+
+  while (len && text[len - 1] == '\n') {
+    len--;
+  }
+
+  while (from < len && text[from] == '\n') {
+    from++;
+  }
+
+  if (len > from) {
+    civue_clipboard_set_text(text + from, len - from);
+  }
+
+  free(text);
 }
 
 static void divider(const Look *k, const char *label, bool fresh) {
@@ -1506,6 +1629,18 @@ void message_list(App *app, Channel *c) {
   place_list(app, c, list, inner);
   app->hover_next = 0;
 
+  // a right click's finds are this frame's.
+  free(app->context_link);
+  app->context_link = nullptr;
+  image_ref_drop(&app->context_image);
+
+  bool pressed = ui->input.pressed[0] && ui->input.has_mouse &&
+                 !civue_under_overlay(ui, ui->input.mouse);
+
+  if (app->selection.channel_id && app->selection.channel_id != c->id) {
+    selection_clear(app);
+  }
+
   div(key(list), flex_1, min_h(0), overflow_y_scroll, scrollbars(&app->bars)) {
     div(key(inner), flex, flex_col, justify_end, min_h(full),
         pb(px(MESSAGE_FOOT))) {
@@ -1556,6 +1691,8 @@ void message_list(App *app, Channel *c) {
           app->popover == POPOVER_COMPONENT_SELECT &&
             app->select_message == known,
           head,
+          selection_covers(app, known) ? app->selection.version : 0,
+          app->selection.dragging ? ui->frames : 0,
           (uint64_t)width,
           (uint64_t)day_of((int64_t)store_now(store) * 1000),
         };
@@ -1568,6 +1705,12 @@ void message_list(App *app, Channel *c) {
         before = m;
       }
     }
+  }
+
+  selection_step(app, c->id, pressed);
+
+  if (selection_on(app) && !ui->focus && civue_shortcut(ui, 'c', false)) {
+    selection_copy(app, c);
   }
 
   if (app->hover_next != app->hover_message) {

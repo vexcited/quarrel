@@ -86,10 +86,31 @@ typedef struct {
   bool fake_emojis;
   // the width laid out at until the node has one of its own.
   float hint;
+  // the message of the list whose words these are, which a drag selects.
+  // 0 for words that are not selected.
+  Snowflake select;
 } MarkupOptions;
 
 // discord's markdown as a node as wide as what holds it, known by `key`.
 void markup(App *app, civue_id key, const char *source, const MarkupOptions *o);
+// appends what the words of `source` read as from byte `from` to `to` of it,
+// as a TextPlace counts them.
+void markup_text(App *app, const char *source, const MarkupOptions *o,
+                 uint32_t from, uint32_t to, char **out, size_t *len);
+
+// the selection holds words, and it holds some of `message`'s.
+[[gnu::pure]] bool selection_on(const App *app);
+[[gnu::pure]] bool selection_covers(const App *app, Snowflake message);
+// the bytes of `message` selected, false when it has none.
+bool selection_range(const App *app, Snowflake message, uint32_t *from,
+                     uint32_t *to);
+void selection_clear(App *app);
+// the selection takes what the words of `channel` said of the pointer this
+// frame: a press on them starts it, by words when double and by paragraphs
+// when triple, one with shift held moves an end of it, and it follows the
+// pointer by that unit until the press is let go. `pressed` anywhere else
+// ends it.
+void selection_step(App *app, Snowflake channel, bool pressed);
 
 // where a card over the rest may go, 8 points in from the screen's edges
 // or from the window's where it cannot leave it. lets this frame's overlays
